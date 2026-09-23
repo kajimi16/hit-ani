@@ -1,58 +1,36 @@
 /**
- * 会话层：HMAC 签名的无状态 Cookie。
+ * 会话层（Next.js 侧）：Cookie 读写与会话用户解析。
  *
- * 只保存 `userId`，其余信息每次请求回库读取 —— 便于封禁/改校后即时生效。
+ * 纯令牌逻辑在 `session-token.ts` —— 那个模块不依赖 web 框架，
+ * 因此弹幕网关（独立常驻进程，没有 Next.js 请求上下文）也能复用。
+ *
+ * 会话只保存 `userId`，其余信息每次请求回库读取 —— 便于封禁/改校后即时生效。
  * 学校维度（`schoolId`）是本校弹幕/评论筛选的根基，因此绝不由客户端传递，
  * 一律从会话 → 数据库读取。
  */
 
-import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
+import {
+  SESSION_COOKIE,
+  SESSION_MAX_AGE_SECONDS,
+  createSessionToken,
+  isConfiguredAdmin,
+  verifySessionToken,
+} from "./session-token";
 
-export const SESSION_COOKIE = "hitani_session";
-const MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
-
-function secret(): string {
-  const value = process.env.SESSION_SECRET;
-  if (!value) {
-    throw new Error("缺少环境变量 SESSION_SECRET");
-  }
-  return value;
-}
-
-function sign(payload: string): string {
-  return createHmac("sha256", secret()).update(payload).digest("base64url");
-}
-
-export function createSessionToken(userId: string, now = Date.now()): string {
-  const expiresAt = now + MAX_AGE_SECONDS * 1000;
-  const payload = `${userId}.${expiresAt}`;
-  return `${payload}.${sign(payload)}`;
-}
-
-/** 校验并解出 userId；失败返回 null（不抛异常，调用方决定是否 401）。 */
-export function verifySessionToken(
-  token: string | undefined,
-  now = Date.now(),
-): string | null {
-  if (!token) return null;
-  const parts = token.split(".");
-  if (parts.length !== 3) return null;
-
-  const [userId, expiresAtRaw, signature] = parts;
-  const payload = `${userId}.${expiresAtRaw}`;
-  const expected = sign(payload);
-
-  const a = Buffer.from(signature);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
-
-  const expiresAt = Number(expiresAtRaw);
-  if (!Number.isFinite(expiresAt) || expiresAt < now) return null;
-
-  return userId;
-}
+// 纯逻辑从这里转发，保持既有导入路径可用（避免大范围改调用方）
+export {
+  OAUTH_STATE_COOKIE,
+  SESSION_COOKIE,
+  adminEmails,
+  createSessionToken,
+  generateOAuthState,
+  isConfiguredAdmin,
+  parseCookieHeader,
+  sessionUserIdFromCookieHeader,
+  verifySessionToken,
+} from "./session-token";
 
 export interface SessionUser {
   id: string;
@@ -68,28 +46,6 @@ export interface SessionUser {
   jellyfinConnected: boolean;
   /** 管理员：可修改共享的抓取源配置。 */
   isAdmin: boolean;
-}
-
-/**
- * 从 `ADMIN_EMAILS` 环境变量读取管理员邮箱清单（逗号分隔）。
- *
- * 为什么用环境变量而非 DB 字段作为授予途径：部署时改一个环境变量就能加管理员，
- * 不需要连数据库手改。DB 里的 `isAdmin` 是快照，登录时按此清单同步。
- */
-export function adminEmails(): Set<string> {
-  const raw = process.env.ADMIN_EMAILS ?? "";
-  return new Set(
-    raw
-      .split(",")
-      .map((email) => email.trim().toLowerCase())
-      .filter((email) => email.length > 0),
-  );
-}
-
-/** 该邮箱是否为配置的管理员。 */
-export function isConfiguredAdmin(email: string | null | undefined): boolean {
-  if (!email) return false;
-  return adminEmails().has(email.toLowerCase());
 }
 
 /** 读取当前会话用户；未登录返回 null。 */
@@ -150,13 +106,6 @@ export class UnauthorizedError extends Error {
   }
 }
 
-/** OAuth state 参数（防 CSRF），随会话 Cookie 短期存放。 */
-export const OAUTH_STATE_COOKIE = "hitani_oauth_state";
-
-export function generateOAuthState(): string {
-  return randomBytes(16).toString("base64url");
-}
-
 export async function setSessionCookie(userId: string): Promise<void> {
   const store = await cookies();
   store.set(SESSION_COOKIE, createSessionToken(userId), {
@@ -164,7 +113,7 @@ export async function setSessionCookie(userId: string): Promise<void> {
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     path: "/",
-    maxAge: MAX_AGE_SECONDS,
+    maxAge: SESSION_MAX_AGE_SECONDS,
   });
 }
 

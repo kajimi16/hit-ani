@@ -22,7 +22,7 @@
 
 import { createServer } from "node:http";
 import { WebSocketServer, type WebSocket } from "ws";
-import { verifySessionToken, SESSION_COOKIE } from "@/lib/auth/session";
+import { sessionUserIdFromCookieHeader } from "@/lib/auth/session-token";
 import { validateSendInput } from "@/lib/danmaku/engine";
 import { isBlocked } from "@/lib/danmaku/filter";
 import { danmakuRateLimiter } from "@/lib/danmaku/rate-limit";
@@ -62,17 +62,6 @@ function send(socket: WebSocket, payload: unknown): void {
   if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(payload));
 }
 
-function parseCookies(header: string | undefined): Record<string, string> {
-  const result: Record<string, string> = {};
-  if (!header) return result;
-  for (const part of header.split(";")) {
-    const index = part.indexOf("=");
-    if (index === -1) continue;
-    result[part.slice(0, index).trim()] = decodeURIComponent(part.slice(index + 1).trim());
-  }
-  return result;
-}
-
 interface ResolvedSession {
   userId: string;
   schoolId: string;
@@ -80,8 +69,7 @@ interface ResolvedSession {
 
 /** WS 无法用 next/headers 的 cookies()，直接从 upgrade 请求头解析。 */
 async function resolveSession(cookieHeader: string | undefined): Promise<ResolvedSession | null> {
-  const cookies = parseCookies(cookieHeader);
-  const userId = verifySessionToken(cookies[SESSION_COOKIE]);
+  const userId = sessionUserIdFromCookieHeader(cookieHeader);
   if (!userId) return null;
 
   const user = await prisma.user.findUnique({

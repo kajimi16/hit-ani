@@ -3,13 +3,13 @@
 import Hls from "hls.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { allocateTracks, sortByPlayTime } from "@/lib/danmaku/engine";
+import { danmakuRoomUrl } from "@/lib/danmaku/ws-url";
 import {
   DanmakuLocation,
   type DanmakuDto,
   type DanmakuLocationValue,
 } from "@/lib/danmaku/types";
 
-const WS_BASE = process.env.NEXT_PUBLIC_DANMAKU_WS_URL ?? "ws://localhost:3102";
 const TRACK_COUNT = 8;
 const CANVAS_HEIGHT = TRACK_COUNT * 26;
 const TRACK_HEIGHT = 26;
@@ -117,12 +117,11 @@ export default function VideoPlayer({
     setError(null);
     setConnection("connecting");
 
-    const url = new URL(`${WS_BASE}/danmaku/room/${episodeId}`);
-    if (schoolOnly) url.searchParams.set("schoolOnly", "true");
+    const roomUrl = danmakuRoomUrl(episodeId, schoolOnly);
 
     let socket: WebSocket;
     try {
-      socket = new WebSocket(url);
+      socket = new WebSocket(roomUrl);
     } catch {
       setConnection("fallback");
       void fetchRest(schoolOnly).catch((e: unknown) =>

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { sortByPlayTime } from "@/lib/danmaku/engine";
+import { danmakuRoomUrl } from "@/lib/danmaku/ws-url";
 import {
   applyLocalFilters,
   isValidPattern,
@@ -9,7 +10,6 @@ import {
 } from "@/lib/danmaku/local-filter";
 import type { DanmakuDto } from "@/lib/danmaku/types";
 
-const WS_BASE = process.env.NEXT_PUBLIC_DANMAKU_WS_URL ?? "ws://localhost:3102";
 
 interface Props {
   episodeId: number;
@@ -98,12 +98,9 @@ export default function DanmakuList({
   /** 订阅实时新增 —— 别人在播的时候发的弹幕，这里也能看到。 */
   useEffect(() => {
     let cancelled = false;
-    const url = new URL(`${WS_BASE}/danmaku/room/${episodeId}`);
-    if (schoolOnly) url.searchParams.set("schoolOnly", "true");
-
     let socket: WebSocket;
     try {
-      socket = new WebSocket(url);
+      socket = new WebSocket(danmakuRoomUrl(episodeId, schoolOnly));
     } catch {
       return; // WS 不可用不影响列表（已由 REST 拉取）
     }
