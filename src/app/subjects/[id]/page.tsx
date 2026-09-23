@@ -148,6 +148,7 @@ export default async function SubjectPage({
         canInteract={user !== null}
         schoolId={user?.schoolId}
         bgmBound={user?.bgmBound ?? false}
+        hasPlayer={user?.jellyfinConnected ?? false}
       />
     </div>
   );

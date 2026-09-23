@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import DanmakuPanel from "@/components/danmaku-panel";
+import DanmakuList from "@/components/danmaku-list";
 import ReviewPanel from "@/components/review-panel";
 
 export interface EpisodeItem {
@@ -30,6 +30,8 @@ interface Props {
   canInteract: boolean;
   schoolId?: string;
   bgmBound: boolean;
+  /** 是否已连接媒体库 —— 决定弹幕列表的提示文案。 */
+  hasPlayer: boolean;
 }
 
 /** 章节选择 + 进度标记 + 弹幕 / 评论面板的组合容器。 */
@@ -39,6 +41,7 @@ export default function EpisodeWorkspace({
   canInteract,
   schoolId,
   bgmBound,
+  hasPlayer,
 }: Props) {
   const [selectedId, setSelectedId] = useState<number | null>(episodes[0]?.id ?? null);
   const [progress, setProgress] = useState<Record<number, number>>({});
@@ -174,12 +177,13 @@ export default function EpisodeWorkspace({
         </ul>
       </section>
 
-      <DanmakuPanel
+      <DanmakuList
         key={selected.id}
         episodeId={selected.id}
         episodeLabel={label}
         canInteract={canInteract}
         schoolId={schoolId}
+        hasPlayer={hasPlayer}
       />
 
       <ReviewPanel subjectId={subjectId} canInteract={canInteract} schoolId={schoolId} />

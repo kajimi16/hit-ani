@@ -203,16 +203,16 @@ export default function ExternalResources({ subjectId, sourceCount, hasConnectio
                 磁力链接浏览器点了没用，只能用 qBittorrent 这类软件下载后再播放。
               </p>
               <p>
-                要能在线看，需要到{" "}
-                <a href="/sources" className="underline">
-                  媒体源
-                </a>{" "}
-                页面配置 <strong>web-selector</strong> 类型的源（指向流媒体站）
-                {hasConnections ? (
-                  "。你已连接媒体库，可直接用上方的「在这里看」。"
-                ) : (
-                  <>，或连接自己的 <strong>Jellyfin / Emby</strong> 媒体库。</>
-                )}
+                {hasConnections
+                  ? "你已连接媒体库，可直接用上方的「在这里看」。"
+                  : <>
+                      要能在线看，请到{" "}
+                      <a href="/settings" className="underline">
+                        设置
+                      </a>{" "}
+                      页面连接你自己的 <strong>Jellyfin / Emby</strong> 媒体库；
+                      或联系管理员配置指向流媒体站的抓取源。
+                    </>}
               </p>
             </div>
           )}

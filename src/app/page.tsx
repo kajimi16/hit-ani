@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 export default async function HomePage({
   searchParams,
 }: {
-  searchParams: Promise<{ keyword?: string; tags?: string; sort?: string }>;
+  searchParams: Promise<{ keyword?: string; tags?: string; sort?: string; page?: string }>;
 }) {
   const params = await searchParams;
   const keyword = (params.keyword ?? "").trim();
@@ -25,6 +25,10 @@ export default async function HomePage({
     ? (params.sort as "match" | "heat" | "rank" | "score")
     : "match";
 
+  const PAGE_SIZE = 24;
+  const rawPage = Number(params.page ?? 1);
+  const page = Number.isFinite(rawPage) && rawPage >= 1 ? Math.floor(rawPage) : 1;
+
   const result = keyword
     ? await searchSubjects(
         {
@@ -32,9 +36,20 @@ export default async function HomePage({
           sort,
           filter: { type: [SubjectType.Anime] as never, ...(tags.length ? { tag: tags } : {}), nsfw: false },
         },
-        { limit: 24 },
+        { limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE },
       ).catch(() => null)
     : null;
+
+  const totalPages = result ? Math.max(1, Math.ceil(result.total / PAGE_SIZE)) : 1;
+  /** 构造分页链接：保留当前筛选条件，只换 page。 */
+  const pageHref = (target: number) => {
+    const search = new URLSearchParams();
+    search.set("keyword", keyword);
+    if (params.tags) search.set("tags", params.tags);
+    if (sort !== "match") search.set("sort", sort);
+    if (target > 1) search.set("page", String(target));
+    return `/?${search.toString()}`;
+  };
 
   return (
     <div className="space-y-8">
@@ -131,6 +146,39 @@ export default async function HomePage({
               </li>
             ))}
           </ul>
+
+          {totalPages > 1 && (
+            <nav className="flex items-center justify-center gap-2 pt-2 text-sm">
+              {page > 1 && (
+                <Link
+                  href={pageHref(page - 1)}
+                  className="rounded border border-neutral-700 px-3 py-1.5 hover:bg-neutral-800"
+                >
+                  上一页
+                </Link>
+              )}
+              {/*
+                只给「上一页 / 下一页」+ 当前页码，不做数字罗列 ——
+                番剧搜索常有几十页，罗列出来反而是噪音。
+              */}
+              <span className="px-2 text-neutral-500">
+                {page} / {totalPages}
+              </span>
+              {page < totalPages && (
+                <Link
+                  href={pageHref(page + 1)}
+                  className="rounded border border-neutral-700 px-3 py-1.5 hover:bg-neutral-800"
+                >
+                  下一页
+                </Link>
+              )}
+              {page !== 1 && (
+                <Link href={pageHref(1)} className="ml-2 text-xs text-neutral-500 underline">
+                  回到第一页
+                </Link>
+              )}
+            </nav>
+          )}
         </section>
       )}
     </div>
