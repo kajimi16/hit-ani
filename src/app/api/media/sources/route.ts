@@ -13,17 +13,39 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * 媒体源管理。
+ * 媒体源管理（**仅管理员**）。
  *
- * ⚠️ 权限说明：当前**任何登录用户**都可增删改源。校内自用场景下这是可接受的简化，
- * 但公开部署前必须加管理员角色 —— 否则任何人都能配置一个指向内网或恶意站点的源。
- * （SSRF 防护已挡住内网，但源的增删改本身仍应受限。）
+ * 抓取源是**全站共享**配置：改一个源会影响所有人的搜索结果，
+ * 而且 SSRF 防护虽挡住内网，配置本身仍可能被用来骚扰第三方站点。
+ * 因此读也限管理员 —— 普通用户不需要、也不应该看到这类基础设施配置。
+ *
+ * 用户自己的 Jellyfin/Emby 连接**不在这里**（那是个人配置，见 /settings）。
  */
+
+/** 统一的权限检查：未登录 401，非管理员 403。 */
+async function requireAdmin(): Promise<
+  { ok: true; userId: string } | { ok: false; response: NextResponse }
+> {
+  const user = await requireSessionUser().catch(() => null);
+  if (!user) {
+    return { ok: false, response: NextResponse.json({ error: "请先登录" }, { status: 401 }) };
+  }
+  if (!user.isAdmin) {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { error: "只有管理员可以管理抓取源。如需配置你自己的媒体服务器，请到「设置」页面。" },
+        { status: 403 },
+      ),
+    };
+  }
+  return { ok: true, userId: user.id };
+}
 
 /** GET /api/media/sources — 列出已配置的源与可用预设。 */
 export async function GET() {
-  const user = await requireSessionUser().catch(() => null);
-  if (!user) return NextResponse.json({ error: "请先登录" }, { status: 401 });
+  const auth = await requireAdmin();
+  if (!auth.ok) return auth.response;
 
   const sources = await listSources();
   return NextResponse.json({ sources, presets: SOURCE_PRESETS });
@@ -40,8 +62,8 @@ const createSchema = z.object({
 
 /** POST /api/media/sources — 新建源。 */
 export async function POST(request: Request) {
-  const user = await requireSessionUser().catch(() => null);
-  if (!user) return NextResponse.json({ error: "请先登录" }, { status: 401 });
+  const auth = await requireAdmin();
+  if (!auth.ok) return auth.response;
 
   let body;
   try {
@@ -72,8 +94,8 @@ const updateSchema = createSchema.partial();
 
 /** PUT /api/media/sources?id= — 更新源。 */
 export async function PUT(request: Request) {
-  const user = await requireSessionUser().catch(() => null);
-  if (!user) return NextResponse.json({ error: "请先登录" }, { status: 401 });
+  const auth = await requireAdmin();
+  if (!auth.ok) return auth.response;
 
   const id = new URL(request.url).searchParams.get("id");
   if (!id) return NextResponse.json({ error: "缺少 id" }, { status: 400 });
@@ -105,8 +127,8 @@ export async function PUT(request: Request) {
 
 /** DELETE /api/media/sources?id= — 删除源。 */
 export async function DELETE(request: Request) {
-  const user = await requireSessionUser().catch(() => null);
-  if (!user) return NextResponse.json({ error: "请先登录" }, { status: 401 });
+  const auth = await requireAdmin();
+  if (!auth.ok) return auth.response;
 
   const id = new URL(request.url).searchParams.get("id");
   if (!id) return NextResponse.json({ error: "缺少 id" }, { status: 400 });

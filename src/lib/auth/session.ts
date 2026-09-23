@@ -66,6 +66,30 @@ export interface SessionUser {
   bgmUsername: string | null;
   /** 是否已连接至少一台 Jellyfin/Emby —— 决定条目页是否显示播放面板。 */
   jellyfinConnected: boolean;
+  /** 管理员：可修改共享的抓取源配置。 */
+  isAdmin: boolean;
+}
+
+/**
+ * 从 `ADMIN_EMAILS` 环境变量读取管理员邮箱清单（逗号分隔）。
+ *
+ * 为什么用环境变量而非 DB 字段作为授予途径：部署时改一个环境变量就能加管理员，
+ * 不需要连数据库手改。DB 里的 `isAdmin` 是快照，登录时按此清单同步。
+ */
+export function adminEmails(): Set<string> {
+  const raw = process.env.ADMIN_EMAILS ?? "";
+  return new Set(
+    raw
+      .split(",")
+      .map((email) => email.trim().toLowerCase())
+      .filter((email) => email.length > 0),
+  );
+}
+
+/** 该邮箱是否为配置的管理员。 */
+export function isConfiguredAdmin(email: string | null | undefined): boolean {
+  if (!email) return false;
+  return adminEmails().has(email.toLowerCase());
 }
 
 /** 读取当前会话用户；未登录返回 null。 */
@@ -86,9 +110,16 @@ export async function getSessionUser(): Promise<SessionUser | null> {
       qqBinding: { select: { userId: true } },
       bgmBinding: { select: { bgmUsername: true } },
       jellyfinConnections: { select: { id: true }, take: 1 },
+      isAdmin: true,
     },
   });
   if (!user) return null;
+
+  // 环境变量是管理员的权威来源：登录时同步到 DB，避免两处状态不一致。
+  const shouldBeAdmin = isConfiguredAdmin(user.email);
+  if (user.isAdmin !== shouldBeAdmin) {
+    await prisma.user.update({ where: { id: userId }, data: { isAdmin: shouldBeAdmin } });
+  }
 
   return {
     id: user.id,
@@ -101,6 +132,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     bgmBound: user.bgmBinding !== null,
     bgmUsername: user.bgmBinding?.bgmUsername ?? null,
     jellyfinConnected: user.jellyfinConnections.length > 0,
+    isAdmin: shouldBeAdmin,
   };
 }
 

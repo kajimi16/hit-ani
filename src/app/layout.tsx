@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import UserMenu from "@/components/user-menu";
 import "./globals.css";
 import { getSessionUser } from "@/lib/auth/session";
 
@@ -30,21 +31,22 @@ export default async function RootLayout({
             <Link href="/library" className="text-neutral-400 hover:text-neutral-100">
               我的追番
             </Link>
-            <Link href="/sources" className="text-neutral-400 hover:text-neutral-100">
-              媒体源
-            </Link>
+            {user?.isAdmin && (
+              <Link href="/sources" className="text-neutral-400 hover:text-neutral-100">
+                媒体源
+              </Link>
+            )}
             <div className="ml-auto flex items-center gap-4">
               {user ? (
                 <>
-                  <span className="text-neutral-500">
-                    {user.nickname}
-                    <span className="ml-2 rounded bg-neutral-800 px-2 py-0.5 text-xs">
-                      {user.schoolId}
-                    </span>
-                  </span>
                   <Link href="/settings" className="text-neutral-400 hover:text-neutral-100">
                     设置
                   </Link>
+                  <UserMenu
+                    nickname={user.nickname}
+                    schoolId={user.schoolId}
+                    isAdmin={user.isAdmin}
+                  />
                 </>
               ) : (
                 <>

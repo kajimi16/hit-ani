@@ -1,5 +1,4 @@
 import { redirect } from "next/navigation";
-import JellyfinManager from "@/components/jellyfin-manager";
 import SourceManager from "@/components/source-manager";
 import { getSessionUser } from "@/lib/auth/session";
 
@@ -9,16 +8,17 @@ export const metadata = { title: "媒体源 · hit-ani" };
 export default async function SourcesPage() {
   const user = await getSessionUser();
   if (!user) redirect("/login");
+  // 抓取源是全站共享配置，只有管理员能看/改。
+  // 用户自己的媒体服务器连接在「设置」页（个人配置）。
+  if (!user.isAdmin) redirect("/settings");
 
   return (
     <div className="space-y-8">
       <section className="space-y-3">
-        <h1 className="text-2xl font-semibold">媒体源与播放</h1>
+        <h1 className="text-2xl font-semibold">抓取源（管理员）</h1>
         <p className="text-sm text-neutral-400">
-          两种方式：<strong className="text-neutral-300">媒体服务器</strong>（推荐）
-          —— 视频直连你自己的 Jellyfin，平台不传视频；
-          <strong className="text-neutral-300">抓取源</strong>
-          —— 只保存「去哪里找资源」的规则，不含视频文件、种子或直链。
+          全站共享的「去哪里找资源」规则。只保存查找规则（URL 模板、CSS 选择器、正则），
+          <strong className="text-neutral-300">不含视频文件、种子或直链</strong>。
         </p>
         <div className="rounded border border-amber-900/70 bg-amber-950/30 p-4 text-xs text-amber-200/90">
           <p className="font-medium">使用前请确认</p>
@@ -30,14 +30,7 @@ export default async function SourcesPage() {
         </div>
       </section>
 
-      <section className="space-y-3 border-t border-neutral-800 pt-8">
-        <JellyfinManager />
-      </section>
-
-      <section className="space-y-3 border-t border-neutral-800 pt-8">
-        <h1 className="text-xl font-semibold">抓取源</h1>
-        <SourceManager />
-      </section>
+      <SourceManager />
     </div>
   );
 }

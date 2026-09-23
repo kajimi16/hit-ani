@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import JellyfinManager from "@/components/jellyfin-manager";
 import SettingsClient from "@/components/settings-client";
 import { isBgmOAuthConfigured } from "@/lib/auth/bgm-oauth";
 import { getSessionUser } from "@/lib/auth/session";
@@ -26,6 +27,17 @@ export default async function SettingsPage() {
         bgmUsername={user.bgmUsername}
         oauthConfigured={isBgmOAuthConfigured()}
       />
+
+      <section className="space-y-3 border-t border-neutral-800 pt-8">
+        <h2 className="text-lg font-semibold">我的媒体服务器</h2>
+        <p className="text-sm text-neutral-400">
+          连接你自己的 Jellyfin / Emby，就能在条目页直接播放媒体库里的内容。
+          <strong className="text-neutral-300">
+            视频由你的服务器直连播放器，不经过本平台。
+          </strong>
+        </p>
+        <JellyfinManager />
+      </section>
 
       <section className="text-sm">
         <Link href="/library" className="text-sky-400 underline">
