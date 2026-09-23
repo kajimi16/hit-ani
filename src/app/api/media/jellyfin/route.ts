@@ -66,7 +66,13 @@ export async function POST(request: Request) {
 
 const connectSchema = z.object({
   name: z.string().min(1).max(64),
+  /** 服务端访问地址（容器部署时是内部服务名） */
   baseUrl: z.string().min(1).max(2048),
+  /**
+   * 浏览器侧访问地址。容器部署时必填 —— 服务端走内部服务名，
+   * 而学生浏览器解析不了它。留空则与 baseUrl 相同。
+   */
+  publicBaseUrl: z.string().max(2048).nullish(),
   username: z.string().min(1).max(128),
   password: z.string().min(1).max(256),
   allowPrivateHost: z.boolean().optional(),
@@ -101,6 +107,7 @@ export async function PUT(request: Request) {
       userId: user.id,
       name: body.name,
       baseUrl: body.baseUrl,
+      publicBaseUrl: body.publicBaseUrl ?? null,
       username: body.username,
       password: body.password,
       allowPrivateHost: body.allowPrivateHost,

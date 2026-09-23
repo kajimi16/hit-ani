@@ -301,8 +301,15 @@ model JellyfinConnection {
   userId        String
   /// 展示名，如「宿舍服务器」
   name          String
-  /// 服务器地址（已归一化，无尾斜杠）
+  /// 服务器地址（已归一化，无尾斜杠）—— **服务端**用它调 API。
+  /// 容器部署时通常是内部服务名（如 `http://jellyfin:8096`）。
   baseUrl       String
+  /// **浏览器侧**访问地址，用于生成播放 / 封面 URL。
+  ///
+  /// 为什么必须与服务端地址分开：容器部署时服务端走内部服务名，
+  /// 而**学生浏览器解析不了那个名字**（它是 Docker 网络内的）。
+  /// 留空则回退用 baseUrl（裸机部署下两者相同）。
+  publicBaseUrl String?
   /// Jellyfin 侧的 access token —— 敏感，绝不回显
   accessToken   String
   /// 该 token 所属的 Jellyfin 用户 id

@@ -9,6 +9,7 @@ interface Connection {
   remoteUserName: string;
   serverName: string | null;
   serverVersion: string | null;
+  publicBaseUrl: string | null;
   allowPrivateHost: boolean;
   lastCheckedAt: string | null;
   warning: string | null;
@@ -31,6 +32,7 @@ export default function JellyfinManager() {
 
   const [name, setName] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
+  const [publicBaseUrl, setPublicBaseUrl] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [allowPrivate, setAllowPrivate] = useState(true);
@@ -88,6 +90,7 @@ export default function JellyfinManager() {
         body: JSON.stringify({
           name: name.trim() || baseUrl,
           baseUrl,
+          publicBaseUrl: publicBaseUrl.trim() || null,
           username,
           password,
           allowPrivateHost: allowPrivate,
@@ -155,6 +158,11 @@ export default function JellyfinManager() {
                 <div className="flex flex-wrap items-center gap-3">
                 <span className="font-medium">{connection.name}</span>
                 <span className="font-mono text-xs text-neutral-500">{connection.baseUrl}</span>
+                {connection.publicBaseUrl && (
+                  <span className="font-mono text-xs text-sky-400">
+                    → {connection.publicBaseUrl}
+                  </span>
+                )}
                 <span className="text-xs text-neutral-400">账号 {connection.remoteUserName}</span>
                 {connection.serverVersion && (
                   <span className="rounded bg-neutral-800 px-2 py-0.5 text-xs text-neutral-400">
@@ -206,6 +214,18 @@ export default function JellyfinManager() {
               仅测试连通
             </button>
           </div>
+
+          <input
+            value={publicBaseUrl}
+            onChange={(event) => setPublicBaseUrl(event.target.value)}
+            placeholder="浏览器侧地址（容器部署时必填），例如 http://10.0.0.5:3103"
+            className="w-full rounded border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-sky-500"
+          />
+          <p className="text-xs text-neutral-500">
+            若服务器地址填的是 Docker 内部服务名（如 <code>jellyfin</code>），
+            <strong className="text-amber-300">这里必须填学生能访问到的地址</strong> ——
+            否则播放链接会指向容器内部、学生点开是黑屏。
+          </p>
 
           <input
             value={name}

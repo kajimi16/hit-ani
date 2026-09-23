@@ -31,6 +31,8 @@ export interface JellyfinConnectionView {
   id: string;
   name: string;
   baseUrl: string;
+  /** 浏览器侧地址；与 baseUrl 不同时说明服务端走内部名、客户端走对外名 */
+  publicBaseUrl: string | null;
   remoteUserName: string;
   serverName: string | null;
   serverVersion: string | null;
@@ -49,6 +51,7 @@ interface ConnectionRow {
   userId: string;
   name: string;
   baseUrl: string;
+  publicBaseUrl: string | null;
   accessToken: string;
   remoteUserId: string;
   remoteUserName: string;
@@ -59,21 +62,62 @@ interface ConnectionRow {
   createdAt: Date;
 }
 
+/**
+ * 浏览器侧地址的归一化。
+ *
+ * 未显式提供时与 `baseUrl` 相同 —— 裸机部署下两者本就是一个地址。
+ */
+function publicBaseUrlOf(input: ConnectInput): string | null {
+  if (!input.publicBaseUrl || input.publicBaseUrl.trim().length === 0) return null;
+  return normalizeBaseUrl(input.publicBaseUrl);
+}
+
 function toView(row: ConnectionRow): JellyfinConnectionView {
   return {
     id: row.id,
     name: row.name,
     baseUrl: row.baseUrl,
+    publicBaseUrl: row.publicBaseUrl,
     remoteUserName: row.remoteUserName,
     serverName: row.serverName,
     serverVersion: row.serverVersion,
     allowPrivateHost: row.allowPrivateHost,
     lastCheckedAt: row.lastCheckedAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
-    warning: isLoopbackUrl(row.baseUrl)
-      ? "该地址是 localhost，只有服务器本机能播放。请改用服务器在局域网中的地址（例如 http://10.0.0.5:8096），否则其他用户打开页面会播不了。"
-      : null,
+    warning: describeAddressWarning(row),
   };
+}
+
+/**
+ * 检查地址配置是否会让**学生**播不了。
+ *
+ * 三种情况：
+ * 1. 服务端地址是 localhost —— 容器外的用户连不上
+ * 2. 服务端地址是 Docker 内部服务名（无点号、非 IP）—— 浏览器解析不了
+ * 3. 两者不同但浏览器侧地址本身也是 localhost —— 同样只有本机能播
+ */
+function describeAddressWarning(row: ConnectionRow): string | null {
+  const browserUrl = row.publicBaseUrl ?? row.baseUrl;
+
+  if (isLoopbackUrl(browserUrl)) {
+    return "浏览器侧地址是 localhost，只有服务器本机能播放。请改用服务器在局域网中的地址（例如 http://10.0.0.5:8096）。";
+  }
+
+  // Docker 内部服务名：不含点、不是 IP —— 浏览器无法解析
+  if (!row.publicBaseUrl) {
+    try {
+      const host = new URL(row.baseUrl).hostname;
+      const looksLikeServiceName =
+        !host.includes(".") && !/^\d+(\.\d+)*$/.test(host) && host !== "localhost";
+      if (looksLikeServiceName) {
+        return `服务端地址 "${host}" 像是容器内部服务名，学生浏览器解析不了。请另外填写「浏览器侧地址」（如 http://10.0.0.5:3103）。`;
+      }
+    } catch {
+      /* 地址不合法的情况由连接时校验兜底 */
+    }
+  }
+
+  return null;
 }
 
 export async function listConnections(userId: string): Promise<JellyfinConnectionView[]> {
@@ -88,6 +132,12 @@ export interface ConnectInput {
   userId: string;
   name: string;
   baseUrl: string;
+  /**
+   * 浏览器侧地址。容器部署时必填 —— 服务端用内部服务名调 API，
+   * 而学生浏览器解析不了那个名字。
+   * 留空则与 `baseUrl` 相同（裸机部署的常态）。
+   */
+  publicBaseUrl?: string | null;
   username: string;
   password: string;
   allowPrivateHost?: boolean;
@@ -122,6 +172,7 @@ export async function connectJellyfin(input: ConnectInput): Promise<JellyfinConn
       userId: input.userId,
       name: input.name,
       baseUrl,
+      publicBaseUrl: publicBaseUrlOf(input),
       accessToken: auth.accessToken,
       remoteUserId: auth.userId,
       remoteUserName: auth.userName,
@@ -132,6 +183,7 @@ export async function connectJellyfin(input: ConnectInput): Promise<JellyfinConn
     },
     update: {
       name: input.name,
+      publicBaseUrl: publicBaseUrlOf(input),
       accessToken: auth.accessToken,
       remoteUserId: auth.userId,
       remoteUserName: auth.userName,
@@ -240,7 +292,7 @@ export async function matchSubjectOnConnections(
           id: best.item.Id,
           name: best.item.Name,
           year: best.item.ProductionYear ?? null,
-          posterUrl: buildImageUrl(connection.baseUrl, best.item.Id),
+          posterUrl: buildImageUrl(connection.publicBaseUrl ?? connection.baseUrl, best.item.Id),
         },
         matchMethod: best.exact ? MatchMethod.ExactName : MatchMethod.Fuzzy,
         distance: best.exact ? null : best.distance,
@@ -306,7 +358,13 @@ export async function listPlayableEpisodes(
         durationMs,
         played: item.UserData?.Played === true,
         positionMs,
-        streamUrl: buildStreamUrl(connection.baseUrl, item.Id, connection.accessToken),
+        // 用**浏览器侧**地址生成播放 URL —— 服务端地址可能是容器内部名，
+        // 学生浏览器解析不了。
+        streamUrl: buildStreamUrl(
+          connection.publicBaseUrl ?? connection.baseUrl,
+          item.Id,
+          connection.accessToken,
+        ),
         resumeFromMs: nearlyDone ? 0 : positionMs,
       };
     })
