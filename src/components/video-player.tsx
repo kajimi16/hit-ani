@@ -18,6 +18,14 @@ const SPEED_PX_PER_MS = 0.18;
 const CHAR_WIDTH = 16;
 /** seek 后重建屏幕的时间窗（对齐 Animeko 的 repopulateDistance = 20s）。 */
 const REPOPULATE_WINDOW_MS = 20_000;
+
+/**
+ * seek 上报的防抖间隔。
+ *
+ * 拖动进度条时 `seeked` 连续触发，每次都上报等于把网关当压测目标。
+ * 取 250ms：既在拖动中不断取消，又让松手后无明显等待感。
+ */
+const SEEK_DEBOUNCE_MS = 250;
 /** 播放进度上报节流。 */
 const PROGRESS_REPORT_INTERVAL_MS = 15_000;
 
@@ -63,6 +71,13 @@ export default function VideoPlayer({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
+  /**
+   * seek 上报的防抖计时器。
+   *
+   * 用 `undefined` 而非 `null`：`clearTimeout(undefined)` 是合法的 no-op，
+   * 因此取消时无需守卫（项目规则也禁止对 clearTimeout 加平凡守卫）。
+   */
+  const seekTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const [danmakus, setDanmakus] = useState<DanmakuDto[]>([]);
   /** rAF 循环里读取的弹幕列表 —— 用 ref 避免把整个列表塞进 effect 依赖。 */
@@ -253,6 +268,9 @@ export default function VideoPlayer({
     return () => {
       cancelled = true;
       socketRef.current = null;
+      // 未发出的 seek 上报要清掉，否则会在旧连接/旧集上触发
+      clearTimeout(seekTimerRef.current);
+      seekTimerRef.current = undefined;
       socket.close();
     };
   }, [episodeId, schoolOnly, fetchRest, mergeDanmaku]);
@@ -447,20 +465,31 @@ export default function VideoPlayer({
       syncTime();
 
       /*
-       * 通知服务端重新锚定弹幕窗口。
+       * 通知服务端重新锚定弹幕窗口（**防抖**）。
        *
-       * 没有这一步的话，跳到后半段会**完全没有弹幕** —— 进房时那次窗口
-       * 只覆盖开头几分钟，而 seek 本身不会触发任何弹幕请求。
-       *
-       * 同时重置 refill 的窗口记录：位置变了，之前的「已请求过」不再适用。
+       * 没有这一步的话，跳到后半段会完全没有弹幕。
+       * 但没有防抖的话，用户**拖动**进度条时 `seeked` 会连发几十次 ——
+       * 每次都查库、还可能打 dandanplay。因此等停顿后再发一次，
+       * 拖动途中不断取消上一条。
        */
       requestedFromRef.current = null;
-      const socket = socketRef.current;
-      if (socket?.readyState === WebSocket.OPEN) {
-        socket.send(
-          JSON.stringify({ type: "seek", playTimeMs: Math.round(video.currentTime * 1000) }),
-        );
-      }
+
+      clearTimeout(seekTimerRef.current);
+      seekTimerRef.current = setTimeout(() => {
+        seekTimerRef.current = undefined;
+        const socket = socketRef.current;
+        if (socket?.readyState !== WebSocket.OPEN) return;
+
+        // 按实际时长钳制：客户端比服务端更清楚边界
+        const raw = Math.round(video.currentTime * 1000);
+        const durationMs = Number.isFinite(video.duration)
+          ? Math.round(video.duration * 1000)
+          : null;
+        const playTimeMs =
+          durationMs === null ? Math.max(0, raw) : Math.min(Math.max(0, raw), durationMs);
+
+        socket.send(JSON.stringify({ type: "seek", playTimeMs }));
+      }, SEEK_DEBOUNCE_MS);
     };
     const onLoadedMetadata = () => {
       setDurationMs(Number.isFinite(video.duration) ? video.duration * 1000 : 0);

@@ -29,7 +29,7 @@ import { danmakuRateLimiter } from "@/lib/danmaku/rate-limit";
 import { MAX_DANMAKU_PER_SOURCE, fetchExternalDanmaku } from "@/lib/danmaku/external";
 import { createDanmaku, listDanmaku } from "@/lib/danmaku/repository";
 import { DANMAKU_LIMITS, type DanmakuDto } from "@/lib/danmaku/types";
-import { repopulateWindow } from "@/lib/danmaku/window";
+import { canRefillNow, clampPlayTime, repopulateWindow } from "@/lib/danmaku/window";
 import { prisma } from "@/lib/prisma";
 
 const PORT = Number(process.env.DANMAKU_GATEWAY_PORT ?? 3002);
@@ -43,6 +43,11 @@ interface Client {
   schoolId: string;
   userId: string;
   alive: boolean;
+  /**
+   * 上次回填的时刻（毫秒）。用于服务端节流 ——
+   * 客户端可能被篡改，程序化 seek 也会绕过客户端的防抖。
+   */
+  lastRefillAt: number;
 }
 
 /** episodeId → 已连接的客户端。 */
@@ -142,7 +147,15 @@ httpServer.on("upgrade", (request, socket, head) => {
  * 窗口策略与理由见 `lib/danmaku/window.ts`。
  */
 async function sendWindow(client: Client, playTimeMs: number): Promise<void> {
-  const { fromMs, toMs } = repopulateWindow(playTimeMs);
+  /*
+   * 先钳制再算窗口，并**回显钳制后的值**。
+   *
+   * 客户端上报的位置不可信（实测收到过 -999999、`null`、9e15 等）。
+   * 窗口计算内部已钳制，但若回显原始值，客户端会拿它当锚点算错 ——
+   * 例如把 9e15 当成当前位置，后续 seek 的窗口就全错了。
+   */
+  const anchor = clampPlayTime(playTimeMs);
+  const { fromMs, toMs } = repopulateWindow(anchor);
 
   const local = await listDanmaku({
     episodeId: client.episodeId,
@@ -178,7 +191,8 @@ async function sendWindow(client: Client, playTimeMs: number): Promise<void> {
   send(client.socket, {
     type: "repopulate",
     list: merged,
-    playTimeMs,
+    // 回显钳制后的位置，保证客户端锚点与服务端窗口一致
+    playTimeMs: anchor,
     schoolOnly: client.schoolOnly,
   } satisfies RoomPayload);
 }
@@ -198,9 +212,11 @@ async function onConnection(
     schoolId: session.schoolId,
     userId: session.userId,
     alive: true,
+    lastRefillAt: 0,
   };
   roomOf(episodeId).add(client);
 
+  client.lastRefillAt = Date.now();
   await sendWindow(client, initialPlayTimeMs);
   socket.on("message", (raw) => {
     void handleMessage(client, raw.toString());
@@ -252,10 +268,18 @@ async function handleMessage(client: Client, raw: string): Promise<void> {
    * 任何弹幕请求（`onSeeked` 只重锚渲染时钟）。
    */
   if (parsed.type === "seek") {
-    const position = Number(parsed.playTimeMs);
-    if (Number.isFinite(position) && position >= 0) {
-      await sendWindow(client, position);
-    }
+    /*
+     * 服务端节流。
+     *
+     * 用户**拖动**进度条时 `seeked` 会连发几十次 —— 每次都查库、还可能打
+     * dandanplay。客户端的防抖是第一道防线，但客户端可被篡改，
+     * 程序化修改 `currentTime` 也会绕过它，因此这里必须独立设限。
+     */
+    const now = Date.now();
+    if (!canRefillNow(client.lastRefillAt, now)) return;
+
+    client.lastRefillAt = now;
+    await sendWindow(client, Number(parsed.playTimeMs));
     return;
   }
 

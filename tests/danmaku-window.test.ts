@@ -19,8 +19,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  MAX_PLAY_TIME_MS,
+  MIN_REFILL_INTERVAL_MS,
   REPOPULATE_LOOKAHEAD_MS,
   REPOPULATE_LOOKBACK_MS,
+  canRefillNow,
+  clampPlayTime,
   repopulateWindow,
 } from "@/lib/danmaku/window";
 
@@ -85,4 +89,105 @@ test("回看量远小于回看后量 —— 载荷由后者主导", () => {
     REPOPULATE_LOOKBACK_MS < REPOPULATE_LOOKAHEAD_MS,
     "回看量应明显小于前瞻量",
   );
+});
+
+/* ---------------------------------------------------------------- *
+ * 播放位置钳制 —— 客户端上报的值不可信
+ * ---------------------------------------------------------------- */
+
+test("clampPlayTime 把非法值归零", () => {
+  for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, -1, -1000, 0]) {
+    assert.equal(clampPlayTime(bad), 0, `${bad} 应归零`);
+  }
+});
+
+test("clampPlayTime 保留正常值", () => {
+  assert.equal(clampPlayTime(1000), 1000);
+  assert.equal(clampPlayTime(600_000), 600_000);
+});
+
+test("clampPlayTime 钳住超大值（客户端可能被篡改）", () => {
+  // 越界值会让窗口落到不可能的区间，既查不到数据也让「已请求过」记录失真
+  assert.equal(clampPlayTime(MAX_PLAY_TIME_MS + 1), MAX_PLAY_TIME_MS);
+  assert.equal(clampPlayTime(Number.MAX_SAFE_INTEGER), MAX_PLAY_TIME_MS);
+});
+
+test("repopulateWindow 对畸形输入不产生畸形窗口", () => {
+  for (const bad of [Number.NaN, -1, Number.POSITIVE_INFINITY, 1e15]) {
+    const w = repopulateWindow(bad);
+    assert.ok(Number.isFinite(w.fromMs), `${bad}: fromMs 应有限`);
+    assert.ok(Number.isFinite(w.toMs), `${bad}: toMs 应有限`);
+    assert.ok(w.fromMs >= 0);
+    assert.ok(w.toMs >= w.fromMs);
+    assert.ok(w.toMs <= MAX_PLAY_TIME_MS + REPOPULATE_LOOKAHEAD_MS);
+  }
+});
+
+/* ---------------------------------------------------------------- *
+ * 网关节流 —— 拖动进度条不应打爆服务端
+ * ---------------------------------------------------------------- */
+
+test("canRefillNow 在节流窗口内拒绝", () => {
+  const t = 1_000_000;
+  assert.equal(canRefillNow(t, t + 0), false, "同一时刻应拒绝");
+  assert.equal(canRefillNow(t, t + 100), false, "100ms 后仍应拒绝");
+  assert.equal(canRefillNow(t, t + MIN_REFILL_INTERVAL_MS - 1), false, "差 1ms 应拒绝");
+});
+
+test("canRefillNow 在节流窗口外放行", () => {
+  const t = 1_000_000;
+  assert.equal(canRefillNow(t, t + MIN_REFILL_INTERVAL_MS), true, "恰好到期应放行");
+  assert.equal(canRefillNow(t, t + 5000), true);
+});
+
+test("canRefillNow 首次调用（lastRefillAt=0）放行", () => {
+  assert.equal(canRefillNow(0, Date.now()), true);
+});
+
+test("节流间隔明显大于客户端的防抖间隔（服务端只作防御）", () => {
+  // 客户端防抖 250ms 是主要防线；服务端设 300ms 兜底。
+  // 若服务端间隔小于客户端防抖，正常拖动会被服务端误拒。
+  const CLIENT_SEEK_DEBOUNCE_MS = 250;
+  assert.ok(
+    MIN_REFILL_INTERVAL_MS >= CLIENT_SEEK_DEBOUNCE_MS,
+    `服务端节流(${MIN_REFILL_INTERVAL_MS}) 应 ≥ 客户端防抖(${CLIENT_SEEK_DEBOUNCE_MS})，否则会误拒正常上报`,
+  );
+});
+
+test("模拟拖动：连发 seek 只按时间窗放行", () => {
+  // 用户拖动进度条时 seeked 连发；若无节流，全部都会打到数据库。
+  // 放行次数 = 拖动时长 / 节流间隔（向上取整），与事件次数无关 —— 这正是要点。
+  const dragDurationMs = 400;
+  const intervalMs = 10;
+  const events = dragDurationMs / intervalMs;
+  const expectedAllowed = Math.floor(dragDurationMs / MIN_REFILL_INTERVAL_MS) + 1;
+
+  let lastRefillAt = 0;
+  let allowed = 0;
+  let now = 100_000;
+  for (let i = 0; i < events; i += 1) {
+    now += intervalMs;
+    if (canRefillNow(lastRefillAt, now)) {
+      allowed += 1;
+      lastRefillAt = now;
+    }
+  }
+
+  assert.equal(allowed, expectedAllowed, `应为 ${expectedAllowed} 次（按时间窗），实际 ${allowed}`);
+  assert.ok(allowed < events / 10, `${events} 次事件应被压到个位数，实际 ${allowed}`);
+});
+
+test("模拟停顿式拖动：每次停顿后都放行", () => {
+  // 用户拖一下停一下：每次停顿都该生效，否则会丢位置
+  let lastRefillAt = 0;
+  let allowed = 0;
+  let now = 100_000;
+  for (let i = 0; i < 5; i += 1) {
+    now += 500; // 超过节流间隔
+    if (canRefillNow(lastRefillAt, now)) {
+      allowed += 1;
+      lastRefillAt = now;
+    }
+  }
+  assert.equal(allowed, 5, "每次停顿都该放行");
 });
