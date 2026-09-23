@@ -105,7 +105,10 @@ USER nextjs
 # 3100 = Next.js（页面 + API）；3102 = 弹幕 WebSocket 网关
 EXPOSE 3100 3102
 
-# 健康检查打 /api/health —— 它同时验证进程存活与数据库连通
+# 镜像级健康检查针对 **web**：打 /api/health，同时验证进程存活与数据库连通。
+#
+# ⚠️ 网关容器必须**覆盖**它 —— 网关只监听 3102，去请求 3100 会一直失败。
+# compose 里为 gateway 显式定义了打自身端口的 healthcheck。
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD curl -fsS http://localhost:3100/api/health || exit 1
 

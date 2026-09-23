@@ -109,6 +109,15 @@ services:
       SESSION_SECRET: ${SESSION_SECRET:?必须在 .env 里设置 SESSION_SECRET}
       # 网关同样要做屏蔽词校验：REST 与 WS 是两条独立的写入通道
       DANMAKU_BLOCKED_WORDS: ${DANMAKU_BLOCKED_WORDS:-}
+    healthcheck:
+      # **必须覆盖**镜像级检查：镜像里那个打的是 3100（web 的端口），
+      # 而网关只监听 3102 —— 不覆盖会导致容器永久显示 unhealthy，
+      # 掩盖真实的健康状态。这里直接打网关自己的 HTTP 状态端点。
+      test: ["CMD", "curl", "-fsS", "http://localhost:3102/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     depends_on:
       migrate:
         condition: service_completed_successfully
