@@ -1,14 +1,13 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { UnauthorizedError, getSessionUser, requireSessionUser } from "@/lib/auth/session";
-import { validateSendInput } from "@/lib/danmaku/engine";
+import { normalizeQuery, validateSendInput } from "@/lib/danmaku/engine";
 import { isBlocked } from "@/lib/danmaku/filter";
 import { danmakuRateLimiter } from "@/lib/danmaku/rate-limit";
 import { fetchExternalDanmaku } from "@/lib/danmaku/external";
 import { countDanmaku, createDanmaku, listDanmaku } from "@/lib/danmaku/repository";
 import { danmakuQuerySchema, danmakuSendSchema } from "@/lib/danmaku/schema";
 import { prisma } from "@/lib/prisma";
-import type { DanmakuQuery } from "@/lib/danmaku/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -46,14 +45,23 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "仅看本校弹幕需要登录" }, { status: 401 });
   }
 
-  const effectiveQuery: DanmakuQuery = {
+  /*
+   * 用 `normalizeQuery` 把 limit 归一化到**一个值**，后续所有截断都用它。
+   *
+   * 不能直接用 `query.limit` —— 未指定时它是 `undefined`，
+   * 于是 `maxItems: undefined` 会退回单源上限（3000）、
+   * `.slice(0, undefined)` 则等于不截断。表面上"能用"，
+   * 实际默认上限变成了 3000 而非文档写的 `defaultLimit`。
+   * 归一化后由一处决定，不会再出现这种不一致。
+   */
+  const effectiveQuery = normalizeQuery({
     episodeId: query.episodeId,
     fromMs: query.fromMs,
     toMs: query.toMs,
     limit: query.limit,
     schoolOnly,
     schoolId: sessionUser?.schoolId,
-  };
+  });
 
   const [local, total, schoolTotal] = await Promise.all([
     listDanmaku(effectiveQuery),
@@ -68,19 +76,25 @@ export async function GET(request: Request) {
    *
    * 「只看本校」时**不拉取** —— 外部弹幕不属于任何学校，拉回来也全会被过滤掉，
    * 白白消耗上游配额与响应时间。
+   *
+   * `maxItems` 必须传：实测 dandanplay 单集返回 **4920 条**（约 1 MB），
+   * 而这里原先只对 `local` 应用了 `take: limit` —— 于是 `?limit=100`
+   * 实际返回 4920 条，浏览器要渲染几千个 DOM 节点。
    */
   const external = schoolOnly
-    ? { items: [], sources: [] }
+    ? { items: [], sources: [], totalAvailable: 0 }
     : await fetchExternalDanmaku({
         episodeId: query.episodeId,
         // dandanplay 需要条目信息做匹配；查得到才传
         subjectId: await subjectIdOf(query.episodeId),
-      }).catch(() => ({ items: [], sources: [] }));
+        maxItems: effectiveQuery.limit,
+      }).catch(() => ({ items: [], sources: [], totalAvailable: 0 }));
 
-  // 合并后按时间排序，让本地与外部弹幕交织在同一条时间轴上
-  const merged = [...local, ...external.items].sort(
-    (a, b) => a.playTimeMs - b.playTimeMs || (a.id < b.id ? -1 : 1),
-  );
+  // 合并后按时间排序，让本地与外部弹幕交织在同一条时间轴上。
+  // 再截一次：本地与外部各自可能都接近上限，合并后会超。
+  const merged = [...local, ...external.items]
+    .sort((a, b) => a.playTimeMs - b.playTimeMs || (a.id < b.id ? -1 : 1))
+    .slice(0, effectiveQuery.limit);
 
   return NextResponse.json({
     episodeId: query.episodeId,
@@ -93,6 +107,8 @@ export async function GET(request: Request) {
     external: {
       localCount: local.length,
       externalCount: external.items.length,
+      /** 该集外部弹幕的**真实**总数；大于 externalCount 说明被截断了 */
+      externalTotalAvailable: external.totalAvailable,
       sources: external.sources,
     },
     data: merged,

@@ -152,9 +152,16 @@ async function onConnection(
    *
    * 「只看本校」时跳过 —— 外部弹幕无学校归属，拉回来也会被全部过滤。
    */
+  // 外部弹幕同样限量 —— 实测单集可达 4900+ 条，全量推给每个新连接
+  // 会让网关内存与网络流量都无谓增长。
   const external = schoolOnly
     ? []
-    : await fetchExternalDanmaku({ episodeId }).then((r) => r.items).catch(() => []);
+    : await fetchExternalDanmaku({
+        episodeId,
+        maxItems: DANMAKU_LIMITS.defaultLimit,
+      })
+        .then((r) => r.items)
+        .catch(() => []);
 
   const merged = [...nearby, ...external.filter((d) => d.playTimeMs <= REPOPULATE_WINDOW_MS)].sort(
     (a, b) => a.playTimeMs - b.playTimeMs || (a.id < b.id ? -1 : 1),

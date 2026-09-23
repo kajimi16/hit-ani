@@ -101,23 +101,38 @@ async function main(): Promise<void> {
   }
 
   // ---------------------------------------------------------------- 2
+  //
+  // 逐个名称试搜索，**报出每个名字的结果**。
+  //
+  // 只试中文名会误报失败：中文译名常在 dandanplay 搜不到，
+  // 而日文原名能搜到 —— 匹配链正是靠「逐个别名试」来覆盖这种差异的。
   console.log("\n2. 名称搜索（匹配链第二级）");
-  const searchName = subject.nameCn?.trim() || subject.name;
-  try {
-    const found = await searchEpisodes(searchName);
-    const animeCount = found.animes?.length ?? 0;
-    check(`按「${searchName}」搜到 ${animeCount} 部`, animeCount > 0);
-    if (animeCount > 0) {
-      const first = found.animes[0];
+  const candidateNames = [subject.nameCn, subject.name].filter(
+    (value): value is string => typeof value === "string" && value.trim().length > 0,
+  );
+
+  let anyNameWorked = false;
+  for (const name of candidateNames) {
+    try {
+      const found = await searchEpisodes(name);
+      const animeCount = found.animes?.length ?? 0;
+      const first = found.animes?.[0];
       console.log(
-        `     首个：${first.animeTitle}（${first.episodes?.length ?? 0} 集）`,
+        `     「${name}」→ ${animeCount} 部` +
+          (first ? `，首个：${first.animeTitle}（${first.episodes?.length ?? 0} 集）` : ""),
       );
+      if (animeCount > 0) anyNameWorked = true;
+    } catch (error) {
+      // 404 表示该名字搜不到，属正常 —— 换个别名再试
+      const message = error instanceof Error ? error.message : String(error);
+      console.log(`     「${name}」→ ${message.includes("404") ? "无结果" : message}`);
     }
-  } catch (error) {
-    // 404 表示没搜到，不算失败
-    const message = error instanceof Error ? error.message : String(error);
-    check("名称搜索可用", message.includes("404"), message);
   }
+  check(
+    `至少一个名称能搜到（试了 ${candidateNames.length} 个）`,
+    anyNameWorked,
+    candidateNames,
+  );
 
   // ---------------------------------------------------------------- 3
   console.log("\n3. 端到端：BGM 条目 → dandanplay 剧集");

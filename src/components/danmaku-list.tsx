@@ -50,6 +50,8 @@ export default function DanmakuList({
   const [external, setExternal] = useState<{
     localCount: number;
     externalCount: number;
+    /** 该集外部弹幕的真实总数；大于 externalCount 说明被截断 */
+    externalTotalAvailable: number;
     sources: { service: string; ok: boolean; count: number; error: string | null }[];
   } | null>(null);
   /** 每条弹幕的举报状态，避免重复提交。 */
@@ -76,6 +78,7 @@ export default function DanmakuList({
           external?: {
             localCount: number;
             externalCount: number;
+            externalTotalAvailable: number;
             sources: { service: string; ok: boolean; count: number; error: string | null }[];
           };
         };
@@ -186,6 +189,15 @@ export default function DanmakuList({
           <span>
             本校 {external.localCount} 条
             {external.externalCount > 0 && ` · 外部源 ${external.externalCount} 条`}
+            {/*
+              如实告知被截断 —— 普通番剧单集几千条弹幕，全量渲染既没必要也很卡。
+              不说明的话用户会以为「这集只有这么点弹幕」。
+            */}
+            {external.externalTotalAvailable > external.externalCount && (
+              <span className="text-neutral-600">
+                （共 {external.externalTotalAvailable} 条，已显示前 {external.externalCount} 条）
+              </span>
+            )}
           </span>
           {external.sources.map((source) => (
             <span
