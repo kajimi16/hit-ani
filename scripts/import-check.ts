@@ -1,26 +1,22 @@
 /**
- * BGM 导入任务的状态机单测 —— 用真实数据库，桩掉上游 API。
+ * 「轻量导入 + 访问时补齐」策略验证。
  *
- * 覆盖两个真实 bug：
+ * 核心要验证的是**请求量** —— 这是这次改造的全部意义：
  *
- *  1. **外键顺序**：`Collection.subjectId` 指向 `Subject`。启动任务时若先写收藏关系，
- *     会撞 `Collection_subjectId_fkey`，整次导入在第一秒就 502。
- *     正确顺序是「快照 → 逐条导入 Subject → 再写 Collection」。
+ * | 阶段 | 早先实现 | 现在 |
+ * | --- | --- | --- |
+ * | 导入 377 个收藏 | 上千次请求、447 秒 | ⌈377/100⌉ = 4 次 |
+ * | 打开某个条目 | 0（已全部导完） | 3 次（详情 + 章节 + 进度） |
  *
- *  2. **完成后的幂等**：任务 `done` 之后，任何多余的 POST 都不得重新抓快照、
- *     把 `cursor` 清零。真实事故里正是这一点让一个跑完的 377 条任务被打回 180。
+ * 所以本脚本统计真实发生的上游请求次数，而不只是"跑通了"。
+ * 用桩替换上游，因此不依赖网络，也不会消耗 BGM 配额。
  *
- * 运行：`npm run import-check`（需要可写的 DATABASE_URL）
+ * 运行：`npm run import-check`
  */
 
 import { prisma } from "@/lib/prisma";
 import { hashPassword } from "@/lib/auth/password";
-import {
-  BATCH_SIZE,
-  getImportJob,
-  runImportTick,
-  startImportJob,
-} from "@/lib/bgm/import";
+import { enrichSubject, importUserLibrary } from "@/lib/bgm/import";
 
 let failures = 0;
 let checks = 0;
@@ -37,78 +33,129 @@ function check(label: string, condition: boolean, detail?: unknown): void {
 
 const REAL_FETCH = globalThis.fetch;
 
-/** 桩：返回 `count` 条收藏，每个条目有 2 集、1 条进度。 */
-function stubUpstream(count: number): void {
-  const subjectIds = Array.from({ length: count }, (_, i) => 900_000 + i);
+/** 统计桩拦截到的上游请求，按路径分类。 */
+interface RequestLog {
+  collections: number;
+  subjects: number;
+  episodes: number;
+  progress: number;
+  total: number;
+}
+
+const log: RequestLog = { collections: 0, subjects: 0, episodes: 0, progress: 0, total: 0 };
+
+function resetLog(): void {
+  log.collections = 0;
+  log.subjects = 0;
+  log.episodes = 0;
+  log.progress = 0;
+  log.total = 0;
+}
+
+const SUBJECT_COUNT = 250;
+const EPISODES_PER_SUBJECT = 3;
+
+/** 桩：250 个收藏、每个 3 集、每个 1 条进度。 */
+function stubUpstream(): void {
+  const ids = Array.from({ length: SUBJECT_COUNT }, (_, i) => 800_000 + i);
 
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    log.total += 1;
+
     const json = (body: unknown) =>
       new Response(JSON.stringify(body), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
 
+    // 收藏列表 —— 内嵌 SlimSubject（这正是「轻量导入」的依据）
     if (url.includes("/collections?")) {
+      log.collections += 1;
       const parsed = new URL(url);
       const offset = Number(parsed.searchParams.get("offset") ?? 0);
       const limit = Number(parsed.searchParams.get("limit") ?? 100);
-      const slice = subjectIds.slice(offset, offset + limit);
+      const slice = ids.slice(offset, offset + limit);
       return json({
-        total: subjectIds.length,
+        total: ids.length,
         limit,
         offset,
-        data: slice.map((id, i) => ({
-          subject_id: id,
-          subject_type: 2,
-          rate: (offset + i) % 11,
-          type: ((offset + i) % 3) + 1,
-          comment: `note-${id}`,
-          tags: [],
-          ep_status: 0,
-          vol_status: 0,
-          updated_at: new Date().toISOString(),
-          private: false,
-        })),
+        data: slice.map((id, i) => {
+          const index = offset + i;
+          return {
+            subject_id: id,
+            subject_type: 2,
+            rate: (index % 11) + 1,
+            type: (index % 3) + 1,
+            comment: null,
+            tags: [],
+            ep_status: 0,
+            vol_status: 0,
+            updated_at: new Date().toISOString(),
+            private: false,
+            // 列表接口内嵌的轻量条目数据
+            subject: {
+              id,
+              type: 2,
+              name: `Stub ${id}`,
+              name_cn: `桩条目 ${id}`,
+              short_summary: `截短简介 ${id}`,
+              images: {
+                large: `https://lain.bgm.tv/large/${id}.jpg`,
+                common: `https://lain.bgm.tv/common/${id}.jpg`,
+              },
+              eps: EPISODES_PER_SUBJECT,
+              collection_total: 100,
+              score: 7.5,
+              rank: 100 + index,
+              tags: [{ name: "测试", count: 1, total_count: 1 }],
+            },
+          };
+        }),
       });
     }
 
+    // 条目详情
     const subjectMatch = /\/v0\/subjects\/(\d+)/.exec(url);
     if (subjectMatch) {
+      log.subjects += 1;
       const id = Number(subjectMatch[1]);
       return json({
         id,
         type: 2,
         name: `Stub ${id}`,
         name_cn: `桩条目 ${id}`,
-        summary: "stub",
+        // 完整简介（轻量数据里只有短版本）
+        summary: `完整简介 ${id} —— 这一段在导入时不会拉取`,
         series: false,
         nsfw: false,
         locked: false,
         date: "2020-01-01",
         platform: "",
-        images: { large: "https://lain.bgm.tv/x.jpg", common: "https://lain.bgm.tv/x.jpg" },
+        images: { large: `https://lain.bgm.tv/large/${id}.jpg` },
         volumes: 0,
-        eps: 2,
-        total_episodes: 2,
-        rating: { rank: 1, total: 1, count: {}, score: 7 },
+        eps: EPISODES_PER_SUBJECT,
+        total_episodes: EPISODES_PER_SUBJECT,
+        rating: { rank: 100, total: 10, count: {}, score: 7.5 },
       });
     }
 
+    // 章节列表
     if (url.includes("/v0/episodes?")) {
+      log.episodes += 1;
       const parsed = new URL(url);
       const subjectId = Number(parsed.searchParams.get("subject_id"));
       return json({
-        total: 2,
+        total: EPISODES_PER_SUBJECT,
         limit: 100,
         offset: 0,
-        data: [1, 2].map((n) => ({
-          id: subjectId * 10 + n,
+        data: Array.from({ length: EPISODES_PER_SUBJECT }, (_, i) => ({
+          id: subjectId * 10 + i + 1,
           type: 0,
-          name: `EP${n}`,
-          name_cn: `第 ${n} 话`,
-          sort: n,
-          ep: n,
+          name: `EP${i + 1}`,
+          name_cn: `第 ${i + 1} 话`,
+          sort: i + 1,
+          ep: i + 1,
           airdate: "2020-01-01",
           comment: 0,
           duration: "24m",
@@ -118,9 +165,10 @@ function stubUpstream(count: number): void {
       });
     }
 
+    // 单集进度
     if (url.includes("/collections/") && url.includes("/episodes")) {
-      const parsed = new URL(url);
-      const subjectId = Number(/\/collections\/(\d+)\/episodes/.exec(parsed.pathname)?.[1]);
+      log.progress += 1;
+      const subjectId = Number(/\/collections\/(\d+)\/episodes/.exec(new URL(url).pathname)?.[1]);
       return json({
         total: 1,
         limit: 100,
@@ -151,7 +199,7 @@ function stubUpstream(count: number): void {
 }
 
 async function main(): Promise<void> {
-  console.log("=== BGM 导入任务状态机验证（上游打桩）===\n");
+  console.log("=== 轻量导入 + 访问时补齐 验证（上游打桩）===\n");
 
   const user = await prisma.user.create({
     data: {
@@ -163,86 +211,103 @@ async function main(): Promise<void> {
     select: { id: true },
   });
 
-  const TOTAL = BATCH_SIZE + 3; // 覆盖「刚好一批」与「多出几条」
-
   try {
-    stubUpstream(TOTAL);
+    stubUpstream();
+    resetLog();
 
-    // ------------------------------------------------------------ 快照
-    console.log("1. 启动任务：抓快照");
-    const started = await startImportJob(user.id, {
+    // ---------------------------------------------------------------- 导入
+    console.log(`1. 导入 ${SUBJECT_COUNT} 个收藏（只写轻量数据）`);
+    const stats = await importUserLibrary(user.id, {
       username: "stub_user",
       accessToken: "stub-token",
     });
-    check("状态为 running", started.status === "running", started.status);
-    check("总数等于上游收藏数", started.total === TOTAL, started.total);
-    check("游标归零", started.processed === 0, started.processed);
 
-    // ★ 这一条正是外键 bug：启动阶段不得写 Collection（Subject 还不存在）
+    check(`条目数 = ${SUBJECT_COUNT}`, stats.subjects === SUBJECT_COUNT, stats.subjects);
+    check(`收藏数 = ${SUBJECT_COUNT}`, stats.collections === SUBJECT_COUNT, stats.collections);
+    check("首次导入全部为新建", stats.created === SUBJECT_COUNT && stats.updated === 0, stats);
+
+    // ★ 核心指标：请求量应约等于页数，而不是收藏数
+    const expectedPages = Math.ceil(SUBJECT_COUNT / 100);
+    console.log(`     上游请求：收藏列表 ${log.collections} 次 · 条目详情 ${log.subjects} 次 · ` +
+      `章节 ${log.episodes} 次 · 进度 ${log.progress} 次（共 ${log.total}）`);
     check(
-      "启动阶段未写 Collection（避免外键约束失败）",
-      (await prisma.collection.count({ where: { userId: user.id } })) === 0,
+      `只打了 ⌈${SUBJECT_COUNT}/100⌉ = ${expectedPages} 次收藏列表请求`,
+      log.collections === expectedPages,
+      log.collections,
+    );
+    check("导入阶段**不**拉条目详情", log.subjects === 0, log.subjects);
+    check("导入阶段**不**拉章节", log.episodes === 0, log.episodes);
+    check("导入阶段**不**拉进度", log.progress === 0, log.progress);
+
+    // ---------------------------------------------------------------- 轻量数据质量
+    console.log("\n2. 轻量数据足以渲染列表");
+    // 必须按具体 ID 查 —— 用 findFirst 会拿到本地库里已有的真实条目
+    const sample = await prisma.subject.findUnique({
+      where: { id: 800_000 },
+      select: { nameCn: true, coverUrl: true, score: true, rank: true, tags: true, summary: true, detailSyncedAt: true },
+    });
+    check("有中文名", Boolean(sample?.nameCn), sample?.nameCn);
+    check("有封面", Boolean(sample?.coverUrl), sample?.coverUrl);
+    check("有评分与排名", sample?.score !== null && sample?.rank !== null);
+    check("标签已从对象数组拍平为字符串", Array.isArray(sample?.tags) && typeof sample?.tags[0] === "string", sample?.tags);
+    check("有截短简介", Boolean(sample?.summary));
+    check("detailSyncedAt 仍为 null（还没拉过详情）", sample?.detailSyncedAt === null, sample?.detailSyncedAt);
+
+    // ---------------------------------------------------------------- 访问时补齐
+    console.log("\n3. 打开某个条目时才拉详情");
+    resetLog();
+    const targetId = 800_000;
+    const enriched = await enrichSubject(targetId, { userId: user.id, accessToken: "stub-token" });
+
+    check("本次确实去上游拉了数据", enriched.fetched === true);
+    check(`补齐了 ${EPISODES_PER_SUBJECT} 个章节`, enriched.episodes === EPISODES_PER_SUBJECT, enriched.episodes);
+    check("同步了 1 条单集进度", enriched.progress === 1, enriched.progress);
+    console.log(`     上游请求：条目详情 ${log.subjects} 次 · 章节 ${log.episodes} 次 · 进度 ${log.progress} 次`);
+    check("请求数 = 详情 1 + 章节 1 + 进度 1", log.total === 3, log.total);
+
+    const after = await prisma.subject.findUnique({
+      where: { id: targetId },
+      select: { detailSyncedAt: true, summary: true, _count: { select: { episodes: true } } },
+    });
+    check("detailSyncedAt 已置位", after?.detailSyncedAt !== null);
+    check("简介已升级为完整版", after?.summary?.includes("完整简介") === true, after?.summary);
+    check("章节已落库", (after?._count.episodes ?? 0) === EPISODES_PER_SUBJECT);
+
+    // ---------------------------------------------------------------- 缓存命中
+    console.log("\n4. 再次打开同一集：走缓存，零请求");
+    resetLog();
+    const cached = await enrichSubject(targetId, { userId: user.id, accessToken: "stub-token" });
+    check("标记为未拉取（缓存命中）", cached.fetched === false);
+    check("**零**上游请求", log.total === 0, log.total);
+
+    // ---------------------------------------------------------------- 幂等
+    console.log("\n5. 重复导入应幂等");
+    resetLog();
+    const again = await importUserLibrary(user.id, {
+      username: "stub_user",
+      accessToken: "stub-token",
+    });
+    check("条目数不变（无重复插入）", again.subjects === SUBJECT_COUNT, again.subjects);
+    check("统计标记为更新而非新建", again.created === 0 && again.updated === SUBJECT_COUNT, again);
+    check(
+      "重复导入不会把已拉详情的条目降级回轻量态",
+      (await prisma.subject.findUnique({ where: { id: targetId }, select: { detailSyncedAt: true } }))?.detailSyncedAt !== null,
     );
 
-    // ------------------------------------------------------------ 第一批
-    console.log("\n2. 推进第一批");
-    const first = await runImportTick(user.id, "stub-token");
-    check(
-      "游标推进一批",
-      first.processed === Math.min(BATCH_SIZE, TOTAL),
-      first.processed,
-    );
-    check("状态仍为 running", first.status === "running", first.status);
-    check("无失败", first.failureCount === 0, first.failures);
-    check(
-      "第一批已写入 Collection（此时 Subject 已存在）",
-      (await prisma.collection.count({ where: { userId: user.id } })) === BATCH_SIZE,
-    );
-    check(
-      "Collection 关联的 Subject 均存在（外键成立）",
-      (await prisma.collection.count({
-        where: { userId: user.id, subject: { is: {} } },
-      })) === BATCH_SIZE,
-    );
-    check("章节已落库", first.stats.episodes === BATCH_SIZE * 2, first.stats.episodes);
-    check("进度已落库", first.stats.progress === BATCH_SIZE, first.stats.progress);
-
-    // ------------------------------------------------------------ 收尾
-    console.log("\n3. 推进至完成");
-    let view = first;
-    while (view.status === "running") {
-      view = await runImportTick(user.id, "stub-token");
-    }
-    check("最终状态为 done", view.status === "done", view.status);
-    check("游标等于总数", view.processed === TOTAL, view.processed);
-    check("条目数等于总数", view.stats.subjects === TOTAL, view.stats.subjects);
-    check("失败数为 0", view.failureCount === 0, view.failures);
-
-    const binding = await prisma.bgmBinding.findFirst({ where: { userId: user.id } });
-    // 未建立 BgmBinding，同步时间更新会抛错 —— 因此这里只断言任务本身
-    void binding;
-
-    // ------------------------------------------------------------ 幂等
-    console.log("\n4. 完成后重复 POST 不得重跑（真实事故点）");
-    const afterDone = await getImportJob(user.id);
-    check("再次读取仍是 done", afterDone?.status === "done", afterDone?.status);
-    check("游标未被清零", afterDone?.processed === TOTAL, afterDone?.processed);
-    check(
-      "统计未被重置",
-      afterDone?.stats.subjects === TOTAL,
-      afterDone?.stats.subjects,
-    );
-
-    // 直接调 runImportTick 也应当是 no-op
-    const tickAfterDone = await runImportTick(user.id, "stub-token");
-    check(
-      "对已完成任务调用 tick 不改变状态",
-      tickAfterDone.status === "done" && tickAfterDone.processed === TOTAL,
-      { status: tickAfterDone.status, processed: tickAfterDone.processed },
-    );
+    // 只数桩范围内 —— 本地开发库里本来就有真实条目，不能假设全库等于桩数量
+    const stubCounts = await prisma.subject.count({
+      where: { id: { gte: 800_000, lt: 800_000 + SUBJECT_COUNT } },
+    });
+    check(`桩条目数 = ${SUBJECT_COUNT}（无重复插入）`, stubCounts === SUBJECT_COUNT, stubCounts);
   } finally {
     globalThis.fetch = REAL_FETCH;
     await prisma.user.delete({ where: { id: user.id } }).catch(() => undefined);
+    // 清理桩数据，避免污染本地库
+    await prisma.danmaku.deleteMany({ where: { episode: { subjectId: { gte: 800_000, lt: 900_000 } } } }).catch(() => undefined);
+    await prisma.collection.deleteMany({ where: { subjectId: { gte: 800_000, lt: 900_000 } } }).catch(() => undefined);
+    await prisma.episodeProgress.deleteMany({ where: { episode: { subjectId: { gte: 800_000, lt: 900_000 } } } }).catch(() => undefined);
+    await prisma.episode.deleteMany({ where: { subjectId: { gte: 800_000, lt: 900_000 } } }).catch(() => undefined);
+    await prisma.subject.deleteMany({ where: { id: { gte: 800_000, lt: 900_000 } } }).catch(() => undefined);
   }
 
   console.log(`\n通过 ${checks - failures} / ${checks}`);
@@ -250,7 +315,7 @@ async function main(): Promise<void> {
     console.error(`✘ ${failures} 项失败`);
     process.exitCode = 1;
   } else {
-    console.log("✔ 全部通过（快照顺序正确、分批推进、完成后幂等）");
+    console.log("✔ 全部通过（导入只打页数级请求；详情在访问时补齐并缓存）");
   }
 }
 

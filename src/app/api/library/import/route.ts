@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { z } from "zod";
 import {
   BgmNotBoundError,
   BgmTokenExpiredError,
@@ -8,47 +7,38 @@ import {
 } from "@/lib/auth/bgm-oauth";
 import { unbindQqAccount } from "@/lib/auth/qq-oauth";
 import { requireSessionUser } from "@/lib/auth/session";
-import { getImportJob, runImportTick, startImportJob } from "@/lib/bgm/import";
+import { importUserLibrary } from "@/lib/bgm/import";
+import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+/** 大收藏量的账号需要拉取多页，放宽时限。 */
+export const maxDuration = 300;
 
 /**
- * GET /api/library/import — 当前导入进度。
+ * POST /api/library/import — 一键导入 Bangumi 收藏。
  *
- * 这个端点存在的意义：导入需要数分钟、上千次上游请求，必须让客户端能问
- * 「现在到哪了」，而不是盯着一个永不结束的「导入中」。
- */
-export async function GET() {
-  const user = await requireSessionUser().catch(() => null);
-  if (!user) return NextResponse.json({ error: "请先登录" }, { status: 401 });
-
-  const job = await getImportJob(user.id);
-  return NextResponse.json({ job });
-}
-
-const startSchema = z.object({
-  /** true = 丢弃当前进度，重新抓取上游快照 */
-  restart: z.boolean().optional(),
-});
-
-/**
- * POST /api/library/import — 启动或推进导入。
+ * **一次请求完成**：导入只写「轻量数据」（条目骨架 + 收藏关系），
+ * 数据全部来自收藏列表接口内嵌的 `SlimSubject`，因此请求量只有
+ * `⌈收藏数 / 100⌉ + 1` 次 —— 377 个收藏只需 4 次。
  *
- * - 无任务，或 `restart: true`：抓取上游快照，返回初始进度
- * - 已有进行中的任务：推进一批，返回新进度
- * - 任务已完成：原样返回
+ * 完整详情（简介 / 章节 / 单集进度）留到用户真正打开某个条目时
+ * 由 `enrichSubject` 补齐，见 `src/lib/bgm/import.ts`。
  *
- * 客户端循环调用本端点直至 `status === "done"`，从而把一次长任务拆成多个有界请求。
+ * 早先的实现逐条拉详情，377 个收藏要上千次请求、447 秒，
+ * 因此才需要「快照 + 游标」的批处理机制。现在那个复杂度不再必要。
  */
 export async function POST(request: Request) {
   const user = await requireSessionUser().catch(() => null);
   if (!user) return NextResponse.json({ error: "请先登录" }, { status: 401 });
 
-  const body = await request
-    .json()
-    .then((value) => startSchema.parse(value))
-    .catch(() => ({ restart: false }) satisfies z.infer<typeof startSchema>);
+  const binding = await prisma.bgmBinding.findUnique({
+    where: { userId: user.id },
+    select: { bgmUsername: true },
+  });
+  if (!binding) {
+    return NextResponse.json({ error: "尚未绑定 Bangumi 账号" }, { status: 409 });
+  }
 
   let accessToken: string;
   let bgmUsername: string;
@@ -64,34 +54,45 @@ export async function POST(request: Request) {
     throw error;
   }
 
-  const existing = await getImportJob(user.id);
-
-  // 已完成的任务必须幂等：重复 POST 只回读状态，**不得**悄悄重跑。
-  // 重跑只有显式 `restart: true` 才允许 —— 否则任何多余的轮询都会把进度清零。
-  if (existing && existing.status === "done" && body.restart !== true) {
-    return NextResponse.json({ ok: true, bgmUsername, job: existing });
-  }
-
   try {
-    const job =
-      body.restart === true || existing === null
-        ? await startImportJob(user.id, { username: bgmUsername, accessToken })
-        : await runImportTick(user.id, accessToken);
-
-    return NextResponse.json({ ok: true, bgmUsername, job });
+    const stats = await importUserLibrary(user.id, { username: bgmUsername, accessToken });
+    return NextResponse.json({ ok: true, bgmUsername, stats });
   } catch (error) {
-    // 把失败写进任务状态，让下一次 GET 也能看到原因，而不是只丢给这一次响应
-    const message = error instanceof Error ? error.message : String(error);
-    console.error(`[bgm-import] userId=${user.id} 推进失败：${message}`);
-
     return NextResponse.json(
-      { error: "导入推进失败", detail: message, job: await getImportJob(user.id) },
+      {
+        error: "导入失败",
+        detail: error instanceof Error ? error.message : String(error),
+      },
       { status: 502 },
     );
   }
 }
 
-/** DELETE /api/library/import?target=bgm|qq — 解除绑定（同时清理导入任务）。 */
+/** GET /api/library/import — 上次同步时间与规模，供设置页展示。 */
+export async function GET() {
+  const user = await requireSessionUser().catch(() => null);
+  if (!user) return NextResponse.json({ error: "请先登录" }, { status: 401 });
+
+  const [binding, collectionCount, subjectCount] = await Promise.all([
+    prisma.bgmBinding.findUnique({
+      where: { userId: user.id },
+      select: { syncedAt: true, bgmUsername: true },
+    }),
+    prisma.collection.count({ where: { userId: user.id } }),
+    prisma.subject.count(),
+  ]);
+
+  return NextResponse.json({
+    bound: binding !== null,
+    bgmUsername: binding?.bgmUsername ?? null,
+    syncedAt: binding?.syncedAt?.toISOString() ?? null,
+    collectionCount,
+    /** 本地缓存的条目总数（所有用户共享） */
+    subjectCount,
+  });
+}
+
+/** DELETE /api/library/import?target=bgm|qq — 解除绑定。 */
 export async function DELETE(request: Request) {
   let user;
   try {

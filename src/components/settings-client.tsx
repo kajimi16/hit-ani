@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 interface Props {
   qqBound: boolean;
@@ -11,23 +11,19 @@ interface Props {
   oauthConfigured: boolean;
 }
 
-interface ImportJobStats {
+interface ImportStats {
   subjects: number;
-  episodes: number;
   collections: number;
-  progress: number;
+  created: number;
+  updated: number;
 }
 
-interface ImportJobView {
-  status: "running" | "done" | "failed";
-  total: number;
-  processed: number;
-  stats: ImportJobStats;
-  failures: { subjectId: number; reason: string }[];
-  failureCount: number;
-  lastError: string | null;
-  startedAt: string;
-  finishedAt: string | null;
+interface SyncState {
+  bound: boolean;
+  bgmUsername: string | null;
+  syncedAt: string | null;
+  collectionCount: number;
+  subjectCount: number;
 }
 
 /** 绑定 / 解绑 QQ 与 Bangumi，以及分批导入收藏。 */
@@ -38,88 +34,61 @@ export default function SettingsClient({
   oauthConfigured,
 }: Props) {
   const router = useRouter();
-  const [job, setJob] = useState<ImportJobView | null>(null);
+  const [sync, setSync] = useState<SyncState | null>(null);
+  const [stats, setStats] = useState<ImportStats | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [token, setToken] = useState("");
   const [binding, setBinding] = useState(false);
 
-  /** 防止重复驱动同一次导入。 */
-  const driving = useRef(false);
+  const loadSyncState = useCallback(async () => {
+    try {
+      const response = await fetch("/api/library/import", { cache: "no-store" });
+      if (!response.ok) return;
+      setSync((await response.json()) as SyncState);
+    } catch {
+      /* 读不到状态不影响页面可用 */
+    }
+  }, []);
 
-  /** 挂载时回读既有进度 —— 上次没跑完的任务应能直接看到并续上。 */
   useEffect(() => {
-    if (!bgmBound) return;
-    let cancelled = false;
-    fetch("/api/library/import", { cache: "no-store" })
-      .then((response) => response.json() as Promise<{ job?: ImportJobView | null }>)
-      .then((body) => {
-        if (!cancelled) setJob(body.job ?? null);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [bgmBound]);
+    if (bgmBound) void loadSyncState();
+  }, [bgmBound, loadSyncState]);
 
   /**
-   * 循环推动导入直至完成。
+   * 一键导入。
    *
-   * 每次请求只处理一批（服务端 `BATCH_SIZE`），单个 HTTP 请求时长有界；
-   * 中途失败不丢进度 —— 服务端游标已持久化，重新点击即从断点继续。
+   * **一次请求完成** —— 导入只写轻量数据（条目骨架 + 收藏关系），
+   * 数据全部来自收藏列表内嵌的 `SlimSubject`，因此请求量只有
+   * ⌈收藏数 / 100⌉ 次。377 个收藏约 4 次请求、几秒内结束。
+   *
+   * 完整详情（简介 / 章节 / 单集进度）留到用户打开某个条目时再拉。
    */
-  const driveImport = useCallback(
-    async (restart = false) => {
-      if (driving.current) return;
-      driving.current = true;
-      setImporting(true);
-      setError(null);
-
-      try {
-        let next = true;
-        let first = true;
-
-        while (next) {
-          const response = await fetch("/api/library/import", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ restart: restart && first }),
-          });
-          const body = (await response.json()) as {
-            job?: ImportJobView | null;
-            error?: string;
-            detail?: string;
-          };
-          first = false;
-
-          if (body.job) setJob(body.job);
-
-          if (!response.ok) {
-            throw new Error(
-              body.detail
-                ? `${body.error ?? "导入失败"}：${body.detail}`
-                : (body.error ?? "导入失败"),
-            );
-          }
-
-          next = body.job?.status === "running";
-        }
-
-        router.refresh();
-      } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
-        // 失败后回读一次，展示服务端已持久化的进度
-        await fetch("/api/library/import", { cache: "no-store" })
-          .then((r) => r.json() as Promise<{ job?: ImportJobView | null }>)
-          .then((body) => setJob(body.job ?? null))
-          .catch(() => undefined);
-      } finally {
-        setImporting(false);
-        driving.current = false;
+  const runImport = async () => {
+    setImporting(true);
+    setError(null);
+    setStats(null);
+    try {
+      const response = await fetch("/api/library/import", { method: "POST" });
+      const body = (await response.json()) as {
+        stats?: ImportStats;
+        error?: string;
+        detail?: string;
+      };
+      if (!response.ok) {
+        throw new Error(
+          body.detail ? `${body.error ?? "导入失败"}：${body.detail}` : (body.error ?? "导入失败"),
+        );
       }
-    },
-    [router],
-  );
+      setStats(body.stats ?? null);
+      await loadSyncState();
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setImporting(false);
+    }
+  };
 
   const unbind = async (target: "bgm" | "qq") => {
     setError(null);
@@ -166,17 +135,15 @@ export default function SettingsClient({
               <div className="flex flex-wrap items-center gap-3">
                 <button
                   type="button"
-                  onClick={() => void driveImport(job !== null && job.status !== "done")}
+                  onClick={() => void runImport()}
                   disabled={importing || !bgmBound}
                   className="rounded bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-50"
                 >
                   {importing
-                    ? `导入中… ${job ? `${job.processed} / ${job.total}` : ""}`
-                    : job?.status === "done"
-                      ? "重新导入全部收藏与进度"
-                      : job && job.processed > 0
-                        ? `继续导入（${job.processed} / ${job.total}）`
-                        : "一键导入全部收藏与进度"}
+                    ? "导入中…（几秒内完成）"
+                    : sync && sync.collectionCount > 0
+                      ? "重新导入全部收藏"
+                      : "一键导入全部收藏"}
                 </button>
                 <button
                   type="button"
@@ -188,7 +155,25 @@ export default function SettingsClient({
                 </button>
               </div>
 
-              {job && <ImportProgress job={job} importing={importing} />}
+              {stats && !importing && (
+                <p className="text-xs text-emerald-400">
+                  导入完成：{stats.collections} 个收藏
+                  （新建 {stats.created} · 更新 {stats.updated}）
+                </p>
+              )}
+
+              {sync?.syncedAt && !importing && (
+                <p className="text-xs text-neutral-500">
+                  上次同步 {new Date(sync.syncedAt).toLocaleString("zh-CN")} ·
+                  已导入 {sync.collectionCount} 个收藏 ·
+                  本地缓存 {sync.subjectCount} 个条目
+                  <br />
+                  <span className="text-neutral-600">
+                    条目的简介与章节在**首次打开时**才从 Bangumi 拉取并缓存，
+                    因此导入很快，也不会为几百个收藏打出上千次请求。
+                  </span>
+                </p>
+              )}
             </div>
           </div>
         ) : (
@@ -295,86 +280,3 @@ export default function SettingsClient({
     </div>
   );
 }
-
-/**
- * 导入进度。把「导入中」这种不可验证的状态，换成可核对的数字：
- * 已处理 / 总数 + 逐项统计 + 失败明细。
- */
-function ImportProgress({ job, importing }: { job: ImportJobView; importing: boolean }) {
-  const percent = job.total > 0 ? Math.floor((job.processed / job.total) * 100) : 0;
-  const done = job.status === "done";
-
-  return (
-    <div
-      className={`space-y-3 rounded border p-4 ${
-        job.status === "failed"
-          ? "border-red-900 bg-red-950/30"
-          : done
-            ? "border-emerald-900 bg-emerald-950/30"
-            : "border-neutral-800 bg-neutral-900/40"
-      }`}
-    >
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <p
-          className={`font-medium ${
-            job.status === "failed"
-              ? "text-red-300"
-              : done
-                ? "text-emerald-300"
-                : "text-sky-300"
-          }`}
-        >
-          {job.status === "failed" ? "导入中断" : done ? "导入完成" : "正在导入"}
-        </p>
-        <p className="font-mono text-xs text-neutral-400">
-          {job.processed} / {job.total}（{percent}%）
-        </p>
-      </div>
-
-      <div className="h-1.5 w-full overflow-hidden rounded bg-neutral-800">
-        <div
-          className={`h-full transition-[width] duration-300 ${
-            job.status === "failed" ? "bg-red-500" : done ? "bg-emerald-500" : "bg-sky-500"
-          }`}
-          style={{ width: `${percent}%` }}
-        />
-      </div>
-
-      <ul className="grid grid-cols-2 gap-x-4 gap-y-1 text-neutral-300 sm:grid-cols-4">
-        <li>条目：{job.stats.subjects}</li>
-        <li>章节：{job.stats.episodes}</li>
-        <li>收藏：{job.stats.collections}</li>
-        <li>进度：{job.stats.progress}</li>
-      </ul>
-
-      {job.lastError && job.status === "failed" && (
-        <p className="font-mono text-xs text-red-300">{job.lastError}</p>
-      )}
-
-      {job.failureCount > 0 && (
-        <details className="text-amber-300">
-          <summary className="cursor-pointer text-xs">
-            {job.failureCount} 个条目导入失败（不影响其余条目）
-          </summary>
-          <ul className="mt-2 space-y-1 font-mono text-xs">
-            {job.failures.map((failure) => (
-              <li key={failure.subjectId}>
-                {failure.subjectId}: {failure.reason}
-              </li>
-            ))}
-            {job.failureCount > job.failures.length && (
-              <li className="text-neutral-500">…另有 {job.failureCount - job.failures.length} 条</li>
-            )}
-          </ul>
-        </details>
-      )}
-
-      {!done && !importing && job.processed > 0 && (
-        <p className="text-xs text-neutral-400">
-          进度已保存。可以直接关掉页面，稍后回来点「继续导入」从断点接着跑。
-        </p>
-      )}
-    </div>
-  );
-}
-
