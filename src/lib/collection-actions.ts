@@ -12,6 +12,7 @@
 
 import { statusLabel, type CollectionStatusValue } from "@/lib/collection";
 import { postUserCollection } from "@/lib/bgm/client";
+import { decideMirror, logMirrorWrite } from "@/lib/bgm/mirror-guard";
 import { getFreshBgmAccessToken } from "@/lib/auth/bgm-oauth";
 import { prisma } from "@/lib/prisma";
 
@@ -37,6 +38,11 @@ export interface SetCollectionStatusOptions {
   comment?: string | null;
   /** 是否绑定 BGM（由调用方从会话取，避免这里多查一次库）。 */
   bgmBound: boolean;
+  /**
+   * 账号邮箱。用于判断是否允许写上游 ——
+   * 测试账号（`smoke-*` / `test-*`）一律不写，见 `mirror-guard.ts`。
+   */
+  userEmail?: string | null;
   /** 用于解析 OAuth 回调地址；纯个人令牌模式不会用到。 */
   origin: string;
 }
@@ -61,7 +67,7 @@ export async function getCollectionStatus(
 export async function setCollectionStatus(
   options: SetCollectionStatusOptions,
 ): Promise<SetCollectionStatusResult> {
-  const { userId, subjectId, status, rating, comment, bgmBound, origin } = options;
+  const { userId, subjectId, status, rating, comment, bgmBound, origin, userEmail } = options;
 
   // 条目必须先在本地存在 —— `Collection.subjectId` 是外键。
   const subject = await prisma.subject.findUnique({
@@ -92,18 +98,31 @@ export async function setCollectionStatus(
   let bgmSynced: boolean | null = null;
   let bgmError: string | null = null;
 
-  if (bgmBound) {
+  /*
+   * 闸门在发送**之前** —— 见 `mirror-guard.ts` 记录的真实事故：
+   * 拿绑定了真实 Bangumi 的账号做接口测试，测试文案被写进了用户的账号。
+   */
+  const mirror = decideMirror({ email: userEmail });
+  if (bgmBound && !mirror.allowed) {
+    bgmSynced = false;
+    bgmError = mirror.reason;
+    console.warn(`[bgm-mirror] 已阻止写入：${mirror.reason}`);
+  } else if (bgmBound) {
     try {
       const { accessToken } = await getFreshBgmAccessToken(userId, origin);
-      await postUserCollection(
+      const payload = {
+        type: status,
+        ...(rating !== undefined && rating !== null ? { rate: rating } : {}),
+        ...(comment !== undefined && comment !== null ? { comment } : {}),
+      };
+      await postUserCollection(subjectId, payload, { accessToken });
+      logMirrorWrite({
+        userId,
+        email: userEmail,
+        target: "collection",
         subjectId,
-        {
-          type: status,
-          ...(rating !== undefined && rating !== null ? { rate: rating } : {}),
-          ...(comment !== undefined && comment !== null ? { comment } : {}),
-        },
-        { accessToken },
-      );
+        fields: payload,
+      });
       bgmSynced = true;
     } catch (error) {
       bgmSynced = false;

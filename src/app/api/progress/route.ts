@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getFreshBgmAccessToken } from "@/lib/auth/bgm-oauth";
 import { requireSessionUser } from "@/lib/auth/session";
 import { EpisodeCollectionType, getEpisode, putEpisodeCollection } from "@/lib/bgm/client";
+import { decideMirror, logMirrorWrite } from "@/lib/bgm/mirror-guard";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -69,7 +70,15 @@ export async function PUT(request: Request) {
   // 用 false 表示「未绑定」会被误读为「同步失败」。
   let bgmSynced: boolean | null = null;
   let bgmError: string | null = null;
-  if (user.bgmBound) {
+  /*
+   * 与 `collection-actions` 同一道闸门 —— 进度同样会镜像到上游，
+   * 也不能被测试账号触发（见 mirror-guard.ts 记录的真实事故）。
+   */
+  const mirror = decideMirror({ email: user.email });
+  if (user.bgmBound && !mirror.allowed) {
+    bgmError = mirror.reason;
+    console.warn(`[bgm-mirror] 已阻止进度写入：${mirror.reason}`);
+  } else if (user.bgmBound) {
     try {
       const { accessToken } = await getFreshBgmAccessToken(
         user.id,
@@ -94,6 +103,13 @@ export async function PUT(request: Request) {
       }
 
       await putEpisodeCollection(episode.id, body.type, { accessToken });
+      logMirrorWrite({
+        userId: user.id,
+        email: user.email,
+        target: "episode-progress",
+        episodeId: episode.id,
+        fields: { type: body.type },
+      });
       bgmSynced = true;
     } catch (error) {
       bgmError = error instanceof Error ? error.message : String(error);

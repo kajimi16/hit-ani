@@ -102,6 +102,7 @@ export async function PUT(request: Request) {
       rating: body.rating ?? undefined,
       comment: body.comment ?? undefined,
       bgmBound: user.bgmBound,
+      userEmail: user.email,
       origin: new URL(request.url).origin,
     });
 
