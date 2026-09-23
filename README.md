@@ -180,18 +180,28 @@ npm run bgm:types   # openapi-typescript .bgm-v0.yaml -o src/lib/bgm/schema.d.ts
 
 ## 部署
 
-```
-[VPS / Railway / Render]
- ├── next start          :3100   SSR + API
- ├── danmaku-gateway     :3102   ← 必须常驻，不可放 Vercel
- └── postgres:16         :5432
+一条命令起全套（PostgreSQL + Web + 弹幕网关）：
+
+```bash
+cp .env.example .env      # 填 POSTGRES_PASSWORD 与 SESSION_SECRET
+docker compose up -d
+docker compose ps         # 三个服务都应 healthy / Up
 ```
 
-反向代理（Caddy / Nginx）负责 TLS，并把 `/danmaku/room/*` 升级转发到网关。
-生产环境务必替换 `SESSION_SECRET`，并通过 `NEXT_PUBLIC_DANMAKU_WS_URL` 指向
-`wss://<域名>`。
+**完整说明见 [`docs/DEPLOY.md`](docs/DEPLOY.md)**，含裸机 systemd 方案、
+反向代理配置、上线前必办清单、备份恢复。
+
+```
+[任意有 Docker 的机器]
+ ├── web          :3100   页面 + API（对外唯一入口）
+ ├── gateway      :3102   弹幕 WebSocket（必须常驻，不可 Serverless）
+ └── postgres     :5432   仅容器网络内可达，不映射到宿主机
+```
 
 最低 2C4G 可支撑单校规模。
+
+> ⚠️ **不要用 `next dev` 对外服务**，也不要让服务绑在交互式会话里 ——
+> 前者是开发模式（按需编译、无压缩），后者会话一断就停。
 
 ## MVP 完成度
 
