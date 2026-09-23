@@ -47,3 +47,7 @@ yarn-error.log*
 # 开发库口令（不入库）
 .dev-db-password
 .container-db-password
+.jellyfin-credentials
+
+# 选片清单（生成物，且含部署方的库容决策）
+data/curation.json

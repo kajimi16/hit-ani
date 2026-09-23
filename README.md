@@ -54,6 +54,7 @@ npm run sources:import  # 导入 Animeko 源配置并逐个试搜验证（源清
 npm run sources:probe   # 探测完整链路：搜索→剧集→视频直链
 npm run dandanplay:check # 验证 dandanplay 凭据（申请后跑一次）
 npm run import-check    # 验证导入策略（统计真实上游请求数）
+npm run media:curation  # 生成本地媒体库选片清单（不下载内容）
 ```
 
 `npm run smoke` 覆盖真实链路：Bangumi 直连、注册登录、弹幕 REST 与 WebSocket、
