@@ -4,14 +4,63 @@
  * 造两个不同学校是为了验证「只看本校」这条核心链路 —— 单校数据无法证明隔离生效。
  *
  * 运行：`npm run db:seed`
+ *
+ * ## ⚠️ 这些账号的密码是公开的
+ *
+ * 密码硬编码在本文件里，而本文件在公开仓库中 —— 任何人都能登录这两个账号。
+ * 因此**绝不能在部署环境使用**。
+ *
+ * 这不是理论风险：本项目就发生过一次 —— 开发库的种子数据被完整迁移到生产容器，
+ * 而 `alice` 当时还是管理员（`ADMIN_EMAILS` 里配了它），
+ * 等于把一个「公开密码的管理员账号」放到了公网。
+ *
+ * 下面两道防线防止重演。
  */
 
 import { hashPassword } from "@/lib/auth/password";
 import { prisma } from "@/lib/prisma";
 
+/** 开发用口令。生产环境由 `assertSafeEnvironment` 拦下，不会走到这里。 */
 const SEED_PASSWORD = "hitani-dev-2026";
 
+/**
+ * 拒绝在生产环境运行种子脚本。
+ *
+ * 双重判断（`NODE_ENV` 与是否存在真实用户）：
+ * 容器里 `NODE_ENV=production` 会被第一道拦住；裸机部署若忘了设 NODE_ENV，
+ * 第二道「库里已有非种子用户」也能拦住。
+ */
+async function assertSafeEnvironment(): Promise<void> {
+  const nodeEnv = process.env.NODE_ENV;
+
+  if (nodeEnv === "production") {
+    throw new Error(
+      "拒绝在 NODE_ENV=production 下写入种子数据。\n" +
+        "种子账号的密码硬编码在公开仓库里，创建它们等于开一个公开后门。\n" +
+        "若确实需要演示数据，请显式设置 ALLOW_SEED_IN_PRODUCTION=1 并自行承担风险。",
+    );
+  }
+
+  if (process.env.ALLOW_SEED_IN_PRODUCTION === "1") {
+    console.warn("⚠️ ALLOW_SEED_IN_PRODUCTION=1 —— 正在生产环境写入公开密码的种子账号");
+    return;
+  }
+
+  // 库里已有真实账号时提示 —— 种子数据可能被误灌进生产库
+  const realUsers = await prisma.user.count({
+    where: { email: { notIn: ["alice@hit.edu.cn", "bob@example.edu"] } },
+  });
+  if (realUsers > 5) {
+    console.warn(
+      `⚠️ 库中已有 ${realUsers} 个非种子用户 —— 这看起来不是开发环境。\n` +
+        "   继续写入会引入「公开密码的账号」。若确需继续，设置 ALLOW_SEED_IN_PRODUCTION=1。",
+    );
+  }
+}
+
 async function main() {
+  await assertSafeEnvironment();
+
   const school = await prisma.school.upsert({
     where: { id: "hit" },
     create: {
