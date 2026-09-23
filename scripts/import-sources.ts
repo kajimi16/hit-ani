@@ -15,11 +15,32 @@ import { createSource, listSources, searchAllSources, updateSource } from "@/lib
 import { clearResourceCache } from "@/lib/media/resource-service";
 
 const KEYWORD = process.argv.find((arg) => arg.startsWith("--keyword="))?.split("=")[1] ?? "魔法少女";
-const FILE = process.argv.find((arg) => arg.startsWith("--file="))?.split("=")[1] ??
+const FILE =
+  process.argv.find((arg) => arg.startsWith("--file="))?.split("=")[1] ??
+  process.env.ANIMEKO_SOURCES_FILE ??
   "data/animeko-sources.json";
 
 async function main(): Promise<void> {
-  const raw = await readFile(FILE, "utf8");
+  let raw: string;
+  try {
+    raw = await readFile(FILE, "utf8");
+  } catch {
+    /*
+     * 源清单是**部署配置**而非代码，因此不在版本库里（见 .gitignore）。
+     * 克隆仓库后没有这个文件是正常的 —— 给出可操作的指引，而不是一句 ENOENT。
+     */
+    console.error(
+      `读不到源配置文件：${FILE}\n\n` +
+        "这是预期行为 —— 站点清单属于部署方自备，不在版本库中。用法：\n" +
+        "  1. 在 Animeko 客户端里导出源配置（设置 → 数据源 → 导出）\n" +
+        "  2. 保存为 JSON 后导入：\n" +
+        "       npm run sources:import -- --file=你的导出.json\n" +
+        "  或者设环境变量 ANIMEKO_SOURCES_FILE 指定路径。\n\n" +
+        "字段格式见 examples/animeko-sources.example.json（合成样例，非真实站点）。",
+    );
+    process.exitCode = 1;
+    return;
+  }
   const payload = JSON.parse(raw) as { sources: AnimekoSource[] };
   console.log(`读取 ${payload.sources.length} 个源：${FILE}\n`);
 

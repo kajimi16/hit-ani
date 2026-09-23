@@ -44,7 +44,7 @@ npm test            # 纯逻辑单测（241 项：弹幕/限流/收藏/匹配链
 npm run bgm:check   # Bangumi 客户端联调（16 项，只读，无需授权）
 npm run bgm:bind-check  # Bangumi 绑定落库验证（19 项，上游打桩，需可写 DB）
 npm run smoke       # 端到端冒烟（54 项，需 dev + gateway 已启动）
-npm run sources:import  # 导入 Animeko 源配置并逐个试搜验证
+npm run sources:import  # 导入 Animeko 源配置并逐个试搜验证（源清单需自备，见下）
 npm run sources:probe   # 探测完整链路：搜索→剧集→视频直链
 npm run dandanplay:check # 验证 dandanplay 凭据（申请后跑一次）
 ```
@@ -208,6 +208,7 @@ npm run bgm:types   # openapi-typescript .bgm-v0.yaml -o src/lib/bgm/schema.d.ts
 | 收藏状态站内可改（并镜像 BGM） | ✅ |
 | 弹幕源匹配链 + dandanplay 客户端 | ✅ 代码完成（需申请 AppId/AppSecret） |
 | 抓取源（web-selector / RSS）+ 管理界面 | ✅ 实测抓到真实资源（仅管理员） |
+| 源清单 | 📄 **部署方自备** —— 不收录在版本库，格式见 `examples/` |
 | Jellyfin / Emby 连接与匹配 | ✅ 实测连接真实服务器并匹配成功 |
 | 播放器 + 弹幕叠加（两时钟分离） | ✅ 数据链路已验证，待真实浏览器确认渲染 |
 | 外部资源索引（按集分组 + 可播性筛选） | ✅ 实测抓到真实资源并按集正确分组 |
