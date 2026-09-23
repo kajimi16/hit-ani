@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import SourcePlayer from "@/components/source-player";
 
 interface ExternalResource {
   sourceId: string;
@@ -24,6 +25,8 @@ interface SourceSummary {
   ok: boolean;
   error: string | null;
   count: number;
+  /** 该源能否站内播放（web-selector + 有视频地址正则） */
+  playable: boolean;
 }
 
 interface Props {
@@ -31,6 +34,9 @@ interface Props {
   /** 已配置的抓取源数量；为 0 时提示去配置。 */
   sourceCount: number;
   hasConnections: boolean;
+  /** BGM 的剧集，用于把外部源的集数对齐到弹幕 */
+  bgmEpisodes: { id: number; sort: number; ep: number | null }[];
+  canInteract: boolean;
 }
 
 function formatSize(bytes: number | null): string | null {
@@ -46,7 +52,20 @@ function formatSize(bytes: number | null): string | null {
  * ⚠️ 边界：这里只展示「哪里能找到」，链接由浏览器直接打开。
  * 本平台不代理视频字节、不存储资源（见 docs/MEDIA.md §6.4）。
  */
-export default function ExternalResources({ subjectId, sourceCount, hasConnections }: Props) {
+export default function ExternalResources({
+  subjectId,
+  sourceCount,
+  hasConnections,
+  bgmEpisodes,
+  canInteract,
+}: Props) {
+  /** 正在站内播放的源与条目页 */
+  const [playingSource, setPlayingSource] = useState<{
+    sourceId: string;
+    sourceName: string;
+    detailUrl: string;
+  } | null>(null);
+
   const [groups, setGroups] = useState<ResourceGroup[] | null>(null);
   const [sources, setSources] = useState<SourceSummary[]>([]);
   const [cached, setCached] = useState(false);
@@ -108,6 +127,8 @@ export default function ExternalResources({ subjectId, sourceCount, hasConnectio
   }
 
   const failedSources = sources.filter((s) => !s.ok);
+  /** 支持站内播放的源 id —— 只对这些源显示播放按钮 */
+  const playableSources = new Set(sources.filter((s) => s.playable).map((s) => s.sourceId));
 
   const allResources = groups?.flatMap((g) => g.items) ?? [];
   const playableCount = allResources.filter((r) => !r.isTorrent).length;
@@ -150,6 +171,17 @@ export default function ExternalResources({ subjectId, sourceCount, hasConnectio
           {loading ? "检索中…" : "重新检索"}
         </button>
       </div>
+
+      {playingSource && (
+        <SourcePlayer
+          bgmEpisodes={bgmEpisodes}
+          sourceId={playingSource.sourceId}
+          sourceName={playingSource.sourceName}
+          detailUrl={playingSource.detailUrl}
+          canInteract={canInteract}
+          onClose={() => setPlayingSource(null)}
+        />
+      )}
 
       {/*
         「能不能在线看」是这个面板最该先说清的事。
@@ -277,6 +309,22 @@ export default function ExternalResources({ subjectId, sourceCount, hasConnectio
                       {item.publishedTime > 0 && (
                         <span>{new Date(item.publishedTime).toISOString().slice(0, 10)}</span>
                       )}
+
+                      {playableSources.has(item.sourceId) ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setPlayingSource({
+                              sourceId: item.sourceId,
+                              sourceName: item.sourceName,
+                              detailUrl: item.url,
+                            })
+                          }
+                          className="rounded border border-sky-700 bg-sky-950/40 px-1.5 text-sky-300 hover:bg-sky-900/40"
+                        >
+                          站内播放
+                        </button>
+                      ) : null}
 
                       {item.isTorrent ? (
                         <>

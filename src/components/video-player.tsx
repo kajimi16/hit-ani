@@ -1,5 +1,6 @@
 "use client";
 
+import Hls from "hls.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { allocateTracks, sortByPlayTime } from "@/lib/danmaku/engine";
 import {
@@ -269,6 +270,68 @@ export default function VideoPlayer({
   }, []);
 
   /* -------------------------------------------------------------- *
+   * HLS 装配
+   *
+   * Chrome/Firefox 不原生支持 m3u8（只有 Safari 支持），必须用 hls.js
+   * 把播放列表喂给 MSE。直接给 `<video src="...m3u8">` 在这些浏览器上
+   * 会静默失败 —— 看起来像「视频加载不出来」，实际是格式不被支持。
+   * -------------------------------------------------------------- */
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !streamUrl) return;
+
+    const isHls = /\.m3u8(\?|$)/i.test(streamUrl);
+
+    // 非 HLS（mp4 等）直接给 src
+    if (!isHls) {
+      video.src = streamUrl;
+      return;
+    }
+
+    // ⚠️ 判断顺序很关键，实测踩过：
+    //
+    // Chrome 对 `canPlayType("application/vnd.apple.mpegurl")` 返回 **"maybe"**，
+    // 但它其实**播不了** HLS（`MediaSource.isTypeSupported` 为 false）。
+    // 若先信 canPlayType 走原生路径，Chrome/Edge/Firefox 用户会看到黑屏 ——
+    // 且没有任何报错，因为 video 元素只是静默地不加载。
+    //
+    // 因此优先用 hls.js（凡支持 MSE 的浏览器都能用），
+    // 原生只作为老 Safari 的兜底。
+    if (!Hls.isSupported()) {
+      if (video.canPlayType("application/vnd.apple.mpegurl")) {
+        video.src = streamUrl;
+        return;
+      }
+      setError("当前浏览器不支持 HLS 播放，请更换浏览器或使用外部播放器");
+      return;
+    }
+
+    const hls = new Hls({
+      // 直播/点播都不需要低延迟；默认缓冲更保守，带宽受限的环境更稳
+      maxBufferLength: 30,
+      enableWorker: true,
+    });
+    hls.loadSource(streamUrl);
+    hls.attachMedia(video);
+
+    hls.on(Hls.Events.ERROR, (_event, data) => {
+      // 只报致命错误 —— 非致命错误（如单分片失败）hls.js 会自行重试，
+      // 弹出来只会干扰用户
+      if (data.fatal) {
+        setError(
+          data.type === Hls.ErrorTypes.NETWORK_ERROR
+            ? "视频加载失败：可能是资源失效或跨域限制"
+            : "视频播放出错",
+        );
+      }
+    });
+
+    return () => {
+      hls.destroy();
+    };
+  }, [streamUrl]);
+
+  /* -------------------------------------------------------------- *
    * 媒体时钟：由 video 事件驱动（低频，仅用于「该发哪条弹幕」）
    * -------------------------------------------------------------- */
   useEffect(() => {
@@ -405,7 +468,6 @@ export default function VideoPlayer({
       <div className="relative overflow-hidden rounded border border-neutral-800 bg-black">
         <video
           ref={videoRef}
-          src={streamUrl}
           controls
           playsInline
           preload="metadata"

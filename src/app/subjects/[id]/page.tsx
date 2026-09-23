@@ -140,6 +140,12 @@ export default async function SubjectPage({
         subjectId={subject.id}
         sourceCount={enabledSources}
         hasConnections={user?.jellyfinConnected ?? false}
+        bgmEpisodes={episodes.map((episode) => ({
+          id: episode.id,
+          sort: episode.sort,
+          ep: episode.ep,
+        }))}
+        canInteract={user !== null}
       />
 
       <EpisodeWorkspace

@@ -17,11 +17,14 @@
     "smoke": "tsx --env-file=.env scripts/smoke.ts",
     "bgm:check": "tsx --env-file=.env scripts/bgm-check.ts",
     "bgm:bind-check": "tsx --env-file=.env scripts/bgm-bind-check.ts",
-    "import-check": "tsx --env-file=.env scripts/import-check.ts"
+    "import-check": "tsx --env-file=.env scripts/import-check.ts",
+    "sources:import": "tsx --env-file=.env scripts/import-sources.ts",
+    "sources:probe": "tsx --env-file=.env scripts/probe-chain.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.0",
     "cheerio": "^1.2.0",
+    "hls.js": "^1.7.3",
     "next": "15.5.26",
     "react": "19.1.0",
     "react-dom": "19.1.0",
