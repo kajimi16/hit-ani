@@ -19,8 +19,10 @@ npm install
 cp .env.example .env      # 填写 DATABASE_URL、SESSION_SECRET，BGM/QQ 凭据可留空
 
 # 3. 数据库（需一个 PostgreSQL 16）
+#    端口务必绑回环：-p 127.0.0.1:55432:5432
+#    裸写 -p 55432:5432 会绑 0.0.0.0，等于把数据库暴露给整个局域网
 npm run db:push
-npm run db:seed           # 写入 hit / demo-other 两所学校 + episode 8 的测试弹幕
+npm run db:seed           # 写入 hit / demo-other 两所学校 + episode 522 的测试弹幕
 
 # 4. 两个进程（弹幕网关必须独立常驻）
 npm run dev               # http://localhost:3100

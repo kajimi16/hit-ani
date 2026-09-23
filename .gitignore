@@ -43,3 +43,6 @@ yarn-error.log*
 
 # 生产实例的管理员口令（不入库）
 .alice-credentials
+
+# 开发库口令（不入库）
+.dev-db-password
