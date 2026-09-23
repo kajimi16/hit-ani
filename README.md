@@ -46,7 +46,7 @@ npm run gateway           # ws://localhost:3102
 
 ```bash
 npm run typecheck   # tsc --noEmit
-npm test            # 纯逻辑单测（261 项）
+npm test            # 纯逻辑单测（272 项，缓存相关需数据库）
 npm run bgm:check   # Bangumi 客户端联调（16 项，只读，无需授权）
 npm run bgm:bind-check  # Bangumi 绑定落库验证（19 项，上游打桩，需可写 DB）
 npm run smoke       # 端到端冒烟（58 项，需 dev + gateway 已启动；自行清理测试数据）
@@ -237,7 +237,8 @@ docker compose ps         # 三个服务都应 healthy / Up
 | 单集进度标记（本地 + BGM 回写） | ✅ |
 | 新番时间表（可前后翻周） | ✅ |
 | 播放器与片源 | ⏳ 未做（明确不含片源托管） |
-| 外部弹幕源（Animeko 免费 / dandanplay 需凭据） | ✅ Animeko 实测可用 |
+| 外部弹幕源（Animeko 免费 / dandanplay 需凭据） | ✅ 两者均已实测可用 |
+| 外部弹幕持久化缓存（gzip 93% 压缩） | ✅ 缓存命中比回源快约 100 倍 |
 | 弹幕屏蔽词（服务端全局 + 客户端本地正则） | ✅ |
 | 弹幕举报 | ✅ 落库待处理，管理员可后续处理 |
 | 登出 / 搜索分页 | ✅ |

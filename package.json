@@ -25,7 +25,8 @@
     "gateway:prod": "node dist/danmaku-gateway.mjs",
     "docker:build": "docker compose build",
     "docker:up": "docker compose up -d",
-    "docker:logs": "docker compose logs -f"
+    "docker:logs": "docker compose logs -f",
+    "cache:prune": "tsx --env-file=.env scripts/prune-cache.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.0",
