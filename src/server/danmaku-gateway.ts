@@ -26,9 +26,10 @@ import { sessionUserIdFromCookieHeader } from "@/lib/auth/session-token";
 import { validateSendInput } from "@/lib/danmaku/engine";
 import { isBlocked } from "@/lib/danmaku/filter";
 import { danmakuRateLimiter } from "@/lib/danmaku/rate-limit";
-import { fetchExternalDanmaku } from "@/lib/danmaku/external";
+import { MAX_DANMAKU_PER_SOURCE, fetchExternalDanmaku } from "@/lib/danmaku/external";
 import { createDanmaku, listDanmaku } from "@/lib/danmaku/repository";
 import { DANMAKU_LIMITS, type DanmakuDto } from "@/lib/danmaku/types";
+import { repopulateWindow } from "@/lib/danmaku/window";
 import { prisma } from "@/lib/prisma";
 
 const PORT = Number(process.env.DANMAKU_GATEWAY_PORT ?? 3002);
@@ -114,6 +115,8 @@ httpServer.on("upgrade", (request, socket, head) => {
 
   const episodeId = Number(match[1]);
   const schoolOnly = ["true", "1"].includes(url.searchParams.get("schoolOnly") ?? "false");
+  // 客户端上报的播放位置；缺省为 0（从开头播）
+  const playTimeMs = Number(url.searchParams.get("playTimeMs") ?? 0);
 
   resolveSession(request.headers.cookie)
     .then((session) => {
@@ -123,7 +126,7 @@ httpServer.on("upgrade", (request, socket, head) => {
         return;
       }
       wss.handleUpgrade(request, socket, head, (ws) => {
-        void onConnection(ws, episodeId, schoolOnly, session);
+        void onConnection(ws, episodeId, schoolOnly, session, playTimeMs);
       });
     })
     .catch(() => {
@@ -132,11 +135,61 @@ httpServer.on("upgrade", (request, socket, head) => {
     });
 });
 
+/**
+ * 按播放位置下发一段弹幕窗口。
+ *
+ * 进房与 seek 都走这里 —— 窗口锚定播放位置，而不是从 0 开始全量下发。
+ * 窗口策略与理由见 `lib/danmaku/window.ts`。
+ */
+async function sendWindow(client: Client, playTimeMs: number): Promise<void> {
+  const { fromMs, toMs } = repopulateWindow(playTimeMs);
+
+  const local = await listDanmaku({
+    episodeId: client.episodeId,
+    fromMs,
+    toMs,
+    schoolOnly: client.schoolOnly,
+    schoolId: client.schoolId,
+    limit: DANMAKU_LIMITS.defaultLimit,
+  });
+
+  /*
+   * 外部弹幕（Animeko / dandanplay）。
+   *
+   * `subjectId` 必须传 —— 缺了 dandanplay 会整源被跳过，
+   * 而那正是「库里有几千条、播放器只有几条」的成因。
+   *
+   * 外部源给的是整集快照，因此在合并时按窗口过滤（缓存命中，不额外请求）。
+   */
+  const external = client.schoolOnly
+    ? []
+    : await fetchExternalDanmaku({
+        episodeId: client.episodeId,
+        subjectId: await subjectIdOf(client.episodeId),
+        maxItems: MAX_DANMAKU_PER_SOURCE,
+      })
+        .then((r) => r.items)
+        .catch(() => []);
+
+  const merged = [...local, ...external.filter((d) => d.playTimeMs >= fromMs && d.playTimeMs <= toMs)]
+    .sort((a, b) => a.playTimeMs - b.playTimeMs || (a.id < b.id ? -1 : 1))
+    .slice(0, DANMAKU_LIMITS.defaultLimit);
+
+  send(client.socket, {
+    type: "repopulate",
+    list: merged,
+    playTimeMs,
+    schoolOnly: client.schoolOnly,
+  } satisfies RoomPayload);
+}
+
 async function onConnection(
   socket: WebSocket,
   episodeId: number,
   schoolOnly: boolean,
   session: ResolvedSession,
+  /** 客户端上报的当前播放位置 —— 窗口围绕它取，而不是钉死在 0。 */
+  initialPlayTimeMs: number,
 ): Promise<void> {
   const client: Client = {
     socket,
@@ -148,54 +201,7 @@ async function onConnection(
   };
   roomOf(episodeId).add(client);
 
-  /*
-   * 首屏回填。
-   *
-   * ⚠️ 这里曾有两个 bug，症状是「库里有几千条弹幕，播放时只出现十几条」：
-   *
-   * 1. **没传 `subjectId`** —— dandanplay 的查询依赖它做条目匹配，
-   *    缺了就直接跳过该源，只剩稀疏的 Animeko。
-   *    而 REST 端点传了，所以「弹幕列表」能看到几千条、播放器只有几条。
-   * 2. **硬编码 0–3 分钟窗口** —— 长番从第 3 分钟起就再也没有弹幕。
-   *
-   * 现在：传 subjectId，并取该集**全部**弹幕（受 `defaultLimit` 上限约束，
-   * 按时间轴从小到大）。客户端只渲染播放位置附近的那些，因此多发不会影响观感，
-   * 反而省掉了「播到一半还要再拉一次」的复杂度。
-   */
-  const local = await listDanmaku({
-    episodeId,
-    schoolOnly,
-    schoolId: client.schoolId,
-    limit: DANMAKU_LIMITS.defaultLimit,
-  });
-
-  /*
-   * 外部弹幕（Animeko / dandanplay）。
-   *
-   * 「只看本校」时跳过 —— 外部弹幕无学校归属，拉回来也会被全部过滤。
-   */
-  const external = schoolOnly
-    ? []
-    : await fetchExternalDanmaku({
-        episodeId,
-        // 必须传：缺了 dandanplay 会被整源跳过（见上方说明）
-        subjectId: await subjectIdOf(episodeId),
-        maxItems: DANMAKU_LIMITS.defaultLimit,
-      })
-        .then((r) => r.items)
-        .catch(() => []);
-
-  const merged = [...local, ...external]
-    .sort((a, b) => a.playTimeMs - b.playTimeMs || (a.id < b.id ? -1 : 1))
-    .slice(0, DANMAKU_LIMITS.defaultLimit);
-
-  send(socket, {
-    type: "repopulate",
-    list: merged,
-    playTimeMs: 0,
-    schoolOnly,
-  } satisfies RoomPayload);
-
+  await sendWindow(client, initialPlayTimeMs);
   socket.on("message", (raw) => {
     void handleMessage(client, raw.toString());
   });
@@ -235,6 +241,21 @@ async function handleMessage(client: Client, raw: string): Promise<void> {
 
   if (parsed.type === "ping") {
     send(client.socket, { type: "pong" });
+    return;
+  }
+
+  /*
+   * seek：客户端跳转后重新锚定窗口。
+   *
+   * 没有这条的话，「跳到后半段」会完全没有弹幕 ——
+   * 进房时那一次窗口只覆盖开头几分钟。实测确认过 seek 原先不触发
+   * 任何弹幕请求（`onSeeked` 只重锚渲染时钟）。
+   */
+  if (parsed.type === "seek") {
+    const position = Number(parsed.playTimeMs);
+    if (Number.isFinite(position) && position >= 0) {
+      await sendWindow(client, position);
+    }
     return;
   }
 

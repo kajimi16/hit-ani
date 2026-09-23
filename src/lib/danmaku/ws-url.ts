@@ -40,10 +40,20 @@ export function danmakuWsBase(): string {
   return `${scheme}//${window.location.hostname}:${WS_PORT}`;
 }
 
-/** 构造某集的弹幕房间地址。 */
-export function danmakuRoomUrl(episodeId: number, schoolOnly: boolean): string {
+/**
+ * 构造某集的弹幕房间地址。
+ *
+ * `playTimeMs` 是客户端**当前播放位置** —— 服务端据此决定回填哪一段窗口。
+ * 不传的话服务端会从 0 开始取，播到后段就没有弹幕（这是原先的 bug）。
+ */
+export function danmakuRoomUrl(
+  episodeId: number,
+  schoolOnly: boolean,
+  playTimeMs = 0,
+): string {
   const base = danmakuWsBase();
   const url = new URL(`${base}/danmaku/room/${episodeId}`);
   if (schoolOnly) url.searchParams.set("schoolOnly", "true");
+  if (playTimeMs > 0) url.searchParams.set("playTimeMs", String(Math.round(playTimeMs)));
   return url.toString();
 }

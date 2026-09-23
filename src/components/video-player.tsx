@@ -209,7 +209,11 @@ export default function VideoPlayer({
     setError(null);
     setConnection("connecting");
 
-    const roomUrl = danmakuRoomUrl(episodeId, schoolOnly);
+    // 带上当前播放位置 —— 服务端据此决定回填哪一段
+    // （不传的话只会从 0 开始取，跳到后段就没有弹幕）
+    const roomUrl = danmakuRoomUrl(episodeId, schoolOnly, videoRef.current?.currentTime
+      ? videoRef.current.currentTime * 1000
+      : 0);
 
     let socket: WebSocket;
     try {
@@ -441,6 +445,22 @@ export default function VideoPlayer({
       // seek 后清屏重建：把媒体时间差 1:1 映射到渲染时钟差
       anchorRef.current = { mediaMs: video.currentTime * 1000, renderMs: renderClockRef.current };
       syncTime();
+
+      /*
+       * 通知服务端重新锚定弹幕窗口。
+       *
+       * 没有这一步的话，跳到后半段会**完全没有弹幕** —— 进房时那次窗口
+       * 只覆盖开头几分钟，而 seek 本身不会触发任何弹幕请求。
+       *
+       * 同时重置 refill 的窗口记录：位置变了，之前的「已请求过」不再适用。
+       */
+      requestedFromRef.current = null;
+      const socket = socketRef.current;
+      if (socket?.readyState === WebSocket.OPEN) {
+        socket.send(
+          JSON.stringify({ type: "seek", playTimeMs: Math.round(video.currentTime * 1000) }),
+        );
+      }
     };
     const onLoadedMetadata = () => {
       setDurationMs(Number.isFinite(video.duration) ? video.duration * 1000 : 0);
