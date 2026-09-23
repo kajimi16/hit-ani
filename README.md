@@ -40,7 +40,7 @@ npm run gateway           # ws://localhost:3102
 
 ```bash
 npm run typecheck   # tsc --noEmit
-npm test            # 纯逻辑单测（225 项：弹幕/限流/收藏/匹配链/SSRF/解析/Jellyfin/过滤/源导入）
+npm test            # 纯逻辑单测（236 项：弹幕/限流/收藏/匹配链/SSRF/解析/Jellyfin/过滤/源导入）
 npm run bgm:check   # Bangumi 客户端联调（16 项，只读，无需授权）
 npm run bgm:bind-check  # Bangumi 绑定落库验证（19 项，上游打桩，需可写 DB）
 npm run smoke       # 端到端冒烟（54 项，需 dev + gateway 已启动）
@@ -107,6 +107,9 @@ src/
       service.ts                 CRUD + 多源编排
     collection-actions.ts        收藏状态写路径（本地 + BGM 镜像）
     danmaku/                     领域类型 / 纯逻辑 / 仓储 / 限流 / 校验 / 过滤
+      external.ts                外部弹幕源（Animeko / dandanplay，实时拉取 + 缓存）
+      animeko-mapping.ts         Animeko 格式映射（ARGB→RGB、位置枚举）
+      dandanplay-match.ts        BGM 剧集 → dandanplay 剧集 的映射
       dandanplay.ts              dandanplay v2 客户端（签名 + 7 端点 + p 字段解析）
       matching.ts                弹幕源匹配降级链（Levenshtein + 别名 + 前缀变体）
     review/                      评论影评仓储
@@ -214,6 +217,7 @@ npm run bgm:types   # openapi-typescript .bgm-v0.yaml -o src/lib/bgm/schema.d.ts
 | 单集进度标记（本地 + BGM 回写） | ✅ |
 | 新番时间表（可前后翻周） | ✅ |
 | 播放器与片源 | ⏳ 未做（明确不含片源托管） |
+| 外部弹幕源（Animeko 免费 / dandanplay 需凭据） | ✅ Animeko 实测可用 |
 | 弹幕屏蔽词（服务端全局 + 客户端本地正则） | ✅ |
 | 弹幕举报 | ✅ 落库待处理，管理员可后续处理 |
 | 登出 / 搜索分页 | ✅ |
