@@ -34,13 +34,27 @@
 
 import { mapAnimekoContent } from "./animeko-mapping";
 import { getComments, isConfigured as dandanplayConfigured, parseComments } from "./dandanplay";
+import { readDanmakuCache, writeDanmakuCache } from "./cache-repository";
 import { matchDandanplayEpisode } from "./dandanplay-match";
 import { TtlLruCache } from "./lru-cache";
 import { isBlocked } from "./filter";
 import type { DanmakuDto } from "./types";
 
-/** 缓存 TTL：弹幕会持续新增，但对同一集反复拉取没有意义。 */
-export const EXTERNAL_CACHE_TTL_MS = 5 * 60 * 1000;
+/**
+ * 持久化缓存的 TTL。
+ *
+ * 对齐 dandanplay 官方的缓存建议（§10）：「绝大部分数据都不会频繁变动…
+ * 可以根据 ID 等条件适当缓存一段时间（如 2-6 小时）」。
+ *
+ * 早先取 5 分钟，远低于这个区间 —— 等于白白重复回源，
+ * 而 dandanplay 明确会对调用量大的应用限流。
+ * 取 6 小时（区间上沿）：当季番的新弹幕最多延迟 6 小时出现，
+ * 对「看番」场景可接受，而上游请求量降到 1/72。
+ */
+export const EXTERNAL_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+
+/** 内存缓存的 TTL：进程内只挡高频重复请求，短一些无妨。 */
+export const MEMORY_CACHE_TTL_MS = 5 * 60 * 1000;
 /** 单次拉取超时。 */
 const FETCH_TIMEOUT_MS = 12_000;
 
@@ -92,8 +106,60 @@ export interface SourceDanmaku {
  */
 const cache = new TtlLruCache<SourceDanmaku>({
   maxSize: MAX_CACHED_EPISODES,
-  ttlMs: EXTERNAL_CACHE_TTL_MS,
+  ttlMs: MEMORY_CACHE_TTL_MS,
 });
+
+/**
+ * 两级缓存的统一读取：内存 → 数据库 → null（调用方回源）。
+ *
+ * 数据库那层是「重启不丢」的关键；内存那层只是挡高频重复。
+ */
+async function readThrough(
+  service: string,
+  episodeId: number,
+): Promise<SourceDanmaku | null> {
+  const memory = cache.get(cacheKey(service, episodeId));
+  if (memory) return memory;
+
+  try {
+    const persisted = await readDanmakuCache(service, episodeId, EXTERNAL_CACHE_TTL_MS);
+    if (!persisted) return null;
+    const value: SourceDanmaku = {
+      items: persisted.items as DanmakuDto[],
+      total: persisted.total,
+    };
+    // 回填内存层，后续请求不再打数据库
+    cache.set(cacheKey(service, episodeId), value);
+    return value;
+  } catch (error) {
+    // 缓存读失败不该让整集弹幕不可用 —— 退化为「直接回源」
+    console.warn(
+      `[external-danmaku] 读持久化缓存失败（${service}:${episodeId}）：` +
+        `${error instanceof Error ? error.message : String(error)}`,
+    );
+    return null;
+  }
+}
+
+/** 同时写两级缓存。持久化失败不影响本次返回。 */
+async function writeThrough(
+  service: string,
+  episodeId: number,
+  value: SourceDanmaku,
+): Promise<void> {
+  cache.set(cacheKey(service, episodeId), value);
+  try {
+    await writeDanmakuCache(service, episodeId, {
+      items: value.items,
+      total: value.total,
+    });
+  } catch (error) {
+    console.warn(
+      `[external-danmaku] 写持久化缓存失败（${service}:${episodeId}）：` +
+        `${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
 
 /** 测试与运维用：清空缓存。 */
 export function clearExternalCache(): void {
@@ -137,8 +203,7 @@ interface AnimekoDanmakuEntry {
  * 因此不需要任何 ID 映射，是本项目成本最低的外部弹幕源。
  */
 export async function fetchAnimekoDanmaku(episodeId: number): Promise<SourceDanmaku> {
-  const key = cacheKey(ExternalService.Animeko, episodeId);
-  const cached = cache.get(key);
+  const cached = await readThrough(ExternalService.Animeko, episodeId);
   if (cached) return cached;
 
   const response = await fetch(`${ANIMEKO_DANMAKU_API}/v1/danmaku/${episodeId}`, {
@@ -147,10 +212,11 @@ export async function fetchAnimekoDanmaku(episodeId: number): Promise<SourceDanm
     cache: "no-store",
   });
 
-  // 该集没有弹幕时服务端也可能返回 404 —— 视为「空」而不是错误
+  // 该集没有弹幕时服务端也可能返回 404 —— 视为「空」而不是错误。
+  // 空结果也缓存：否则每次访问都要回源确认一次「确实没有」。
   if (response.status === 404) {
     const empty: SourceDanmaku = { items: [], total: 0 };
-    cache.set(key, empty);
+    await writeThrough(ExternalService.Animeko, episodeId, empty);
     return empty;
   }
   if (!response.ok) {
@@ -186,7 +252,7 @@ export async function fetchAnimekoDanmaku(episodeId: number): Promise<SourceDanm
     total: items.length,
     items: items.slice(0, MAX_DANMAKU_PER_SOURCE),
   };
-  cache.set(key, result);
+  await writeThrough(ExternalService.Animeko, episodeId, result);
   return result;
 }
 
@@ -209,14 +275,15 @@ export async function fetchDandanplayDanmaku(params: {
 }): Promise<SourceDanmaku> {
   if (!dandanplayConfigured()) return { items: [], total: 0 };
 
-  const key = cacheKey(ExternalService.Dandanplay, params.bgmEpisodeId);
-  const cachedDdp = cache.get(key);
+  const cachedDdp = await readThrough(ExternalService.Dandanplay, params.bgmEpisodeId);
   if (cachedDdp) return cachedDdp;
 
   const episode = await matchDandanplayEpisode(params.subjectId, params.bgmEpisodeId);
   if (!episode) {
+    // 「匹配不到」也缓存 —— 匹配要查库、还可能打上游搜索接口，
+    // 不缓存会让冷门番每次访问都白跑一遍匹配链。
     const empty: SourceDanmaku = { items: [], total: 0 };
-    cache.set(key, empty);
+    await writeThrough(ExternalService.Dandanplay, params.bgmEpisodeId, empty);
     return empty;
   }
 
@@ -230,7 +297,7 @@ export async function fetchDandanplayDanmaku(params: {
     total: items.length,
     items: items.slice(0, MAX_DANMAKU_PER_SOURCE),
   };
-  cache.set(key, result);
+  await writeThrough(ExternalService.Dandanplay, params.bgmEpisodeId, result);
   return result;
 }
 

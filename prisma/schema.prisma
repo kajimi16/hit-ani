@@ -219,6 +219,34 @@ model DanmakuReport {
   @@index([status, createdAt])
 }
 
+/// 外部弹幕的**持久化**缓存。
+///
+/// 为什么需要落盘（内存 LRU 不够）：
+/// - dandanplay 的使用约定明确要求缓存，并会对调用量大的应用限流 ——
+///   网关每次重启都全量回源是明确的风险
+/// - 内存 LRU 只有 40 集、TTL 5 分钟，重启即全失
+///
+/// 体积：弹幕 JSON 高度重复，gzip 后 94% 压缩率（0.89MB → 56KB），
+/// 1 万集约 0.5GB —— 远小于视频，因此放数据库（内部盘）而非外挂硬盘更合适：
+/// 能随其余数据一起备份，也不受外挂盘掉线影响。
+model DanmakuCache {
+  /// 来源（Animeko / Dandanplay）
+  service   String
+  /// BGM 的 episodeId
+  episodeId Int
+  /// gzip 压缩后的弹幕 JSON
+  payload   Bytes
+  /// 实际存储条数（可能被上限截断）
+  count     Int
+  /// 截断前的真实条数 —— 界面据此提示「共 N 条，已显示前 M 条」
+  total     Int
+  fetchedAt DateTime @default(now())
+
+  @@id([service, episodeId])
+  /// 按时间清理过期条目
+  @@index([fetchedAt])
+}
+
 /// 评论 / 影评。kind: 0短评 1长评(影评)
 model Review {
   id        String   @id @default(cuid())

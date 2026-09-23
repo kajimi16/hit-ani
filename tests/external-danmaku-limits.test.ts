@@ -24,6 +24,7 @@ import {
   externalCacheSize,
   fetchExternalDanmaku,
 } from "@/lib/danmaku/external";
+import { clearDanmakuCache } from "@/lib/danmaku/cache-repository";
 import { DANMAKU_LIMITS } from "@/lib/danmaku/types";
 
 const REAL_FETCH = globalThis.fetch;
@@ -50,10 +51,15 @@ function stubAnimeko(count: number): void {
 
 async function withStub(fn: () => Promise<void>): Promise<void> {
   try {
+    // 两级缓存都要清：内存 LRU + **数据库**。只清内存会让上个用例的
+    // 持久化缓存命中本用例 —— 实测踩过（stub 返回 5000 条却读到 4909）。
+    await clearDanmakuCache();
+    clearExternalCache();
     await fn();
   } finally {
     globalThis.fetch = REAL_FETCH;
     clearExternalCache();
+    await clearDanmakuCache();
   }
 }
 
