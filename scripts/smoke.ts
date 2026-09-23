@@ -484,7 +484,74 @@ async function main(): Promise<void> {
   check("未登录标记进度被拒绝（401）", anonProgress.status === 401, anonProgress.status);
   await anonProgress.body?.cancel();
 
-  section("7. 新番时间表（由 air_date 检索聚合）");
+  section("7. 权限与内容治理");
+
+  // 抓取源是全站共享配置，普通用户不应能读写
+  const sourcesAsNonAdmin = await fetch(`${BASE_URL}/api/media/sources`, {
+    headers: { Cookie: bob.cookie },
+    cache: "no-store",
+  });
+  check(
+    "非管理员访问抓取源被拒（403）",
+    sourcesAsNonAdmin.status === 403,
+    sourcesAsNonAdmin.status,
+  );
+  await sourcesAsNonAdmin.body?.cancel();
+
+  const sourcesAnon = await fetch(`${BASE_URL}/api/media/sources`, { cache: "no-store" });
+  check("未登录访问抓取源被拒（401）", sourcesAnon.status === 401, sourcesAnon.status);
+  await sourcesAnon.body?.cancel();
+
+  // 弹幕屏蔽词：由 DANMAKU_BLOCKED_WORDS 配置，未配置时不应误伤
+  const blockedText = process.env.SMOKE_BLOCKED_WORD ?? "";
+  if (blockedText) {
+    const blocked = await postDanmaku(alice, `测试含${blockedText}的内容`, 15_000);
+    check(`含屏蔽词「${blockedText}」的弹幕被拒绝（400）`, blocked.status === 400, blocked.body);
+  } else {
+    // 未配置词表时验证「不误伤」——正常弹幕必须能发出去
+    const normal = await postDanmaku(alice, `屏蔽词未配置时的正常弹幕 ${Date.now()}`, 15_000);
+    check("未配置屏蔽词时不误伤正常弹幕", normal.status === 201, normal.body);
+  }
+
+  // 举报
+  const ownDanmaku = await postDanmaku(alice, `举报测试用 ${Date.now()}`, 16_000);
+  const ownId = (ownDanmaku.body as { data?: { id: string } }).data?.id;
+
+  if (ownId) {
+    const reportOwn = await fetch(`${BASE_URL}/api/danmaku/report`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: alice.cookie },
+      body: JSON.stringify({ danmakuId: ownId, reason: "测试" }),
+    });
+    check("不能举报自己的弹幕（400）", reportOwn.status === 400, reportOwn.status);
+    await reportOwn.body?.cancel();
+
+    const reportByOther = await fetch(`${BASE_URL}/api/danmaku/report`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: bob.cookie },
+      body: JSON.stringify({ danmakuId: ownId, reason: "测试举报" }),
+    });
+    check("他人可举报（201）", reportByOther.status === 201, reportByOther.status);
+    await reportByOther.body?.cancel();
+
+    const reportAgain = await fetch(`${BASE_URL}/api/danmaku/report`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: bob.cookie },
+      body: JSON.stringify({ danmakuId: ownId, reason: "重复举报" }),
+    });
+    check("重复举报被拒（409）", reportAgain.status === 409, reportAgain.status);
+    await reportAgain.body?.cancel();
+  }
+
+  const reportAnon = await fetch(`${BASE_URL}/api/danmaku/report`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ danmakuId: "nonexistent", reason: "x" }),
+  });
+  check("未登录举报被拒（401）", reportAnon.status === 401, reportAnon.status);
+  await reportAnon.body?.cancel();
+
+  section("8. 新番时间表（由 air_date 检索聚合）");
   const schedule = await fetchWithUpstreamRetry(`${BASE_URL}/api/schedule`);
   const scheduleBody = JSON.parse(schedule.text) as {
     weekStart?: string;

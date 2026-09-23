@@ -40,10 +40,10 @@ npm run gateway           # ws://localhost:3102
 
 ```bash
 npm run typecheck   # tsc --noEmit
-npm test            # 纯逻辑单测（197 项：弹幕/限流/时间表/收藏/超时/匹配链/SSRF/解析/Jellyfin）
+npm test            # 纯逻辑单测（208 项：弹幕/限流/时间表/收藏/超时/匹配链/SSRF/解析/Jellyfin/过滤）
 npm run bgm:check   # Bangumi 客户端联调（16 项，只读，无需授权）
 npm run bgm:bind-check  # Bangumi 绑定落库验证（19 项，上游打桩，需可写 DB）
-npm run smoke       # 端到端冒烟（45 项，需 dev + gateway 已启动）
+npm run smoke       # 端到端冒烟（54 项，需 dev + gateway 已启动）
 ```
 
 `npm run smoke` 覆盖真实链路：Bangumi 直连、注册登录、弹幕 REST 与 WebSocket、
@@ -82,6 +82,8 @@ src/
     review-panel.tsx             评论 / 影评
     episode-workspace.tsx        章节选择 + 进度标记容器
     collection-picker.tsx        五种收藏状态选择器
+    user-menu.tsx                顶部用户区（含登出）
+    danmaku-list.tsx             弹幕列表（只读浏览 + 本地过滤 + 举报）
     source-manager.tsx           抓取源管理 + 试搜
     jellyfin-manager.tsx         Jellyfin 连接管理
     jellyfin-panel.tsx           条目页「在这里看」面板
@@ -102,7 +104,7 @@ src/
       fetcher.ts                 网络层（逐跳重定向校验 / 超时 / 大小上限 / 限速）
       service.ts                 CRUD + 多源编排
     collection-actions.ts        收藏状态写路径（本地 + BGM 镜像）
-    danmaku/                     领域类型 / 纯逻辑 / 仓储 / 限流 / 校验
+    danmaku/                     领域类型 / 纯逻辑 / 仓储 / 限流 / 校验 / 过滤
       dandanplay.ts              dandanplay v2 客户端（签名 + 7 端点 + p 字段解析）
       matching.ts                弹幕源匹配降级链（Levenshtein + 别名 + 前缀变体）
     review/                      评论影评仓储
@@ -199,7 +201,7 @@ npm run bgm:types   # openapi-typescript .bgm-v0.yaml -o src/lib/bgm/schema.d.ts
 | 我的追番看板（五分组：想看/在看/看过/搁置/抛弃） | ✅ |
 | 收藏状态站内可改（并镜像 BGM） | ✅ |
 | 弹幕源匹配链 + dandanplay 客户端 | ✅ 代码完成（需申请 AppId/AppSecret） |
-| 抓取源（web-selector / RSS）+ 管理界面 | ✅ 实测抓到真实资源 |
+| 抓取源（web-selector / RSS）+ 管理界面 | ✅ 实测抓到真实资源（仅管理员） |
 | Jellyfin / Emby 连接与匹配 | ✅ 实测连接真实服务器并匹配成功 |
 | 播放器 + 弹幕叠加（两时钟分离） | ✅ 数据链路已验证，待真实浏览器确认渲染 |
 | 外部资源索引（按集分组 + 可播性筛选） | ✅ 实测抓到真实资源并按集正确分组 |
@@ -208,7 +210,9 @@ npm run bgm:types   # openapi-typescript .bgm-v0.yaml -o src/lib/bgm/schema.d.ts
 | 单集进度标记（本地 + BGM 回写） | ✅ |
 | 新番时间表（可前后翻周） | ✅ |
 | 播放器与片源 | ⏳ 未做（明确不含片源托管） |
-| 弹幕敏感词 / 举报审核队列 | ⏳ 未做，**上线前必须补** |
+| 弹幕屏蔽词（服务端全局 + 客户端本地正则） | ✅ |
+| 弹幕举报 | ✅ 落库待处理，管理员可后续处理 |
+| 登出 / 搜索分页 | ✅ |
 
 未完成项与上线前必办事项见 [`docs/PLAN.md`](docs/PLAN.md) §8。
 
