@@ -34,6 +34,9 @@ model User {
   schoolId     String
   nickname     String
   avatarUrl    String?
+  /// 管理员：可修改共享的抓取源配置。
+  /// 通过 `ADMIN_EMAILS` 环境变量在登录时自动授予（见 session.ts）。
+  isAdmin      Boolean  @default(false)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -44,6 +47,7 @@ model User {
   progress    EpisodeProgress[]
   danmakus    Danmaku[]
   reviews     Review[]
+  danmakuReports DanmakuReport[]
   importJob   ImportJob?
   jellyfinConnections JellyfinConnection[]
 
@@ -201,10 +205,34 @@ model Danmaku {
 
   episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reports DanmakuReport[]
 
   @@index([episodeId, playTimeMs])
   @@index([episodeId, schoolId, playTimeMs])
   @@index([userId, createdAt])
+}
+
+/// 弹幕举报。
+///
+/// 为什么需要：弹幕是校内 UGC，上线前必须有举报通道 ——
+/// 否则违规内容没人能处理，风险落在运营方（学校）。
+/// 同一用户对同一弹幕只能举报一次（唯一约束）。
+model DanmakuReport {
+  id        String   @id @default(cuid())
+  danmakuId String
+  reporterId String
+  /// 举报理由
+  reason    String
+  /// 0待处理 1已屏蔽 2已驳回
+  status    Int      @default(0)
+  createdAt DateTime @default(now())
+  handledAt DateTime?
+
+  danmaku  Danmaku @relation(fields: [danmakuId], references: [id], onDelete: Cascade)
+  reporter User    @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+
+  @@unique([danmakuId, reporterId])
+  @@index([status, createdAt])
 }
 
 /// 评论 / 影评。kind: 0短评 1长评(影评)

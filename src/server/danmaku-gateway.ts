@@ -24,6 +24,7 @@ import { createServer } from "node:http";
 import { WebSocketServer, type WebSocket } from "ws";
 import { verifySessionToken, SESSION_COOKIE } from "@/lib/auth/session";
 import { validateSendInput } from "@/lib/danmaku/engine";
+import { isBlocked } from "@/lib/danmaku/filter";
 import { danmakuRateLimiter } from "@/lib/danmaku/rate-limit";
 import { createDanmaku, listDanmaku } from "@/lib/danmaku/repository";
 import { DANMAKU_LIMITS, type DanmakuDto } from "@/lib/danmaku/types";
@@ -227,6 +228,13 @@ async function handleMessage(client: Client, raw: string): Promise<void> {
   const errors = validateSendInput(input as never);
   if (errors.length > 0) {
     send(client.socket, { type: "error", message: errors[0].message });
+    return;
+  }
+
+  // 与 REST 路径同样的屏蔽词校验 —— WS 是另一条写入通道，
+  // 只挡 REST 等于留了个绕过口子。
+  if (isBlocked(input.text)) {
+    send(client.socket, { type: "error", message: "弹幕包含被屏蔽的内容，请修改后重试" });
     return;
   }
 

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { UnauthorizedError, getSessionUser, requireSessionUser } from "@/lib/auth/session";
 import { validateSendInput } from "@/lib/danmaku/engine";
+import { isBlocked } from "@/lib/danmaku/filter";
 import { danmakuRateLimiter } from "@/lib/danmaku/rate-limit";
 import { countDanmaku, createDanmaku, listDanmaku } from "@/lib/danmaku/repository";
 import { danmakuQuerySchema, danmakuSendSchema } from "@/lib/danmaku/schema";
@@ -100,6 +101,15 @@ export async function POST(request: Request) {
   const errors = validateSendInput(body);
   if (errors.length > 0) {
     return NextResponse.json({ error: "参数不合法", details: errors }, { status: 400 });
+  }
+
+  // 服务端屏蔽词：违规内容不能因为用户没设本地过滤就进所有人的屏幕。
+  // 不告知具体命中哪个词 —— 那等于给出绕过词表的方法。
+  if (isBlocked(body.text)) {
+    return NextResponse.json(
+      { error: "弹幕包含被屏蔽的内容，请修改后重试" },
+      { status: 400 },
+    );
   }
 
   const decision = danmakuRateLimiter.consume(user.id);
