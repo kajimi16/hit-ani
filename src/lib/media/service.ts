@@ -27,14 +27,16 @@ import {
 } from "./source-config";
 import {
   extractEpisodes,
+  extractNestedUrl,
   extractSearchResults,
+  extractVideoUrl,
   filterFeedItems,
   parseFeed,
   type ExtractionDiagnostics,
   type RssItem,
   type SearchResultItem,
 } from "./extract";
-import { FetchError, fetchText, respectRateLimit } from "./fetcher";
+import { FetchError, describeNetworkError, fetchText, respectRateLimit } from "./fetcher";
 import { UnsafeUrlError } from "./url-safety";
 
 export interface MediaSourceRecord {
@@ -233,6 +235,10 @@ async function searchOneSource(
 function describeFetchFailure(error: unknown): string {
   if (error instanceof UnsafeUrlError) return `已拦截：${error.message}`;
   if (error instanceof FetchError) return error.message;
+  // 网络层错误（fetch failed / ECONNRESET 等）对用户没有意义，翻译一下
+  if (error instanceof TypeError || (error as { cause?: unknown })?.cause) {
+    return describeNetworkError(error, "站点");
+  }
   if (error instanceof Error) {
     if (error.name === "TimeoutError") return "请求超时";
     return error.message;
@@ -340,5 +346,166 @@ export async function fetchEpisodesFor(
     };
   } catch (error) {
     return { ok: false, error: describeFetchFailure(error), items: [], diagnostics: null };
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * 视频地址解析
+ * ------------------------------------------------------------------ */
+
+export interface ResolvedVideo {
+  ok: boolean;
+  error: string | null;
+  /** 视频直链（m3u8 / mp4）。浏览器直接用 `<video>` 拉流，**不经过本服务**。 */
+  videoUrl: string | null;
+  /** 解析过程中访问过的页面，便于排查 */
+  trail: string[];
+  /** 播放该地址所需的请求头（部分 CDN 校验 Referer/UA） */
+  headers: Record<string, string>;
+}
+
+/**
+ * 探测视频地址是否真的可用。
+ *
+ * 为什么需要：第三方源的质量参差不齐 —— 实测遇到过正则匹配出的 mp4 地址
+ * 其实是站点的死链（`ECONNREFUSED`）。直接把这种地址交给播放器，
+ * 用户只会看到一个没有任何提示的黑屏，无从判断是网络问题还是资源问题。
+ *
+ * 只请求 **1 字节**（Range），属于可达性探测而非内容获取 ——
+ * 服务器不会因此承载视频流量。
+ *
+ * ⚠️ 局限：探测走的是**服务器的网络**，用户网络不通的情况测不出来。
+ * 但能挡掉「地址本身已失效」这一类，是收益最大的那一档。
+ */
+async function probeVideoUrl(
+  videoUrl: string,
+  headers: Record<string, string> | undefined,
+  timeoutMs = 8000,
+): Promise<{ ok: boolean; reason: string | null }> {
+  try {
+    const response = await fetch(videoUrl, {
+      headers: { ...headers, Range: "bytes=0-0" },
+      signal: AbortSignal.timeout(timeoutMs),
+      redirect: "follow",
+      cache: "no-store",
+    });
+    await response.body?.cancel();
+
+    if (response.status >= 400) {
+      return { ok: false, reason: `资源返回 HTTP ${response.status}` };
+    }
+    return { ok: true, reason: null };
+  } catch (error) {
+    const code = (error as { cause?: { code?: string } })?.cause?.code;
+    const name = error instanceof Error ? error.name : "";
+    if (name === "TimeoutError") return { ok: false, reason: "资源响应超时" };
+    if (code === "ECONNREFUSED") return { ok: false, reason: "资源服务器拒绝连接（可能是死链）" };
+    if (code === "ENOTFOUND") return { ok: false, reason: "资源域名无法解析" };
+    return { ok: false, reason: `资源不可达${code ? `（${code}）` : ""}` };
+  }
+}
+
+/**
+ * 从播放页解析出视频直链。
+ *
+ * 链路：播放页 → （可选）嵌套跳转页 → 正则提取视频地址。
+ *
+ * API 边界：本函数只解析**页面 HTML**，不接触视频字节。
+ * 提取出的 URL 交给浏览器 `<video>`，视频由用户的浏览器直连 CDN ——
+ * 这是「索引」而非「分发」，详见 docs/MEDIA.md §6.4。
+ */
+export async function resolveVideoFor(
+  sourceId: string,
+  pageUrl: string,
+): Promise<ResolvedVideo> {
+  const source = await getSource(sourceId);
+  if (!source) throw new Error("源不存在");
+
+  const config = source.config as WebSelectorConfig;
+  const headers = config.headers;
+  const trail: string[] = [];
+  const interval = config.requestIntervalMs ?? DEFAULT_REQUEST_INTERVAL_MS;
+
+  const fetchPage = async (url: string): Promise<string | null> => {
+    await respectRateLimit(url, interval);
+    try {
+      const response = await fetchText(url, {
+        headers,
+        acceptContentTypes: ["text/html", "application/xhtml", "text/plain", "application/json"],
+      });
+      trail.push(url);
+      return response.body;
+    } catch {
+      return null;
+    }
+  };
+
+  try {
+    const body = await fetchPage(pageUrl);
+    if (body === null) {
+      return { ok: false, error: "播放页无法访问", videoUrl: null, trail, headers: headers ?? {} };
+    }
+
+    // 直接提链
+    if (config.videoUrlPattern) {
+      const direct = extractVideoUrl(body, config.videoUrlPattern);
+      if (direct) {
+        const probe = await probeVideoUrl(direct, headers);
+        if (probe.ok) {
+          return { ok: true, error: null, videoUrl: direct, trail, headers: headers ?? {} };
+        }
+        // 地址提取出来了但不可用 —— 明确告知，而不是让播放器黑屏
+        return {
+          ok: false,
+          error: `解析到地址但${probe.reason}，请换一集或换一个源`,
+          videoUrl: null,
+          trail,
+          headers: headers ?? {},
+        };
+      }
+    }
+
+    // 再试嵌套跳转页（部分站点把真实地址藏在中间页）
+    if (config.nestedUrlPattern) {
+      const nested = extractNestedUrl(body, config.nestedUrlPattern);
+      if (nested) {
+        const nestedUrl = nested.startsWith("http")
+          ? nested
+          : new URL(nested, pageUrl).toString();
+        const nestedBody = await fetchPage(nestedUrl);
+        if (nestedBody && config.videoUrlPattern) {
+          const fromNested = extractVideoUrl(nestedBody, config.videoUrlPattern);
+          if (fromNested) {
+            const probe = await probeVideoUrl(fromNested, headers);
+            if (probe.ok) {
+              return { ok: true, error: null, videoUrl: fromNested, trail, headers: headers ?? {} };
+            }
+            return {
+              ok: false,
+              error: `解析到地址但${probe.reason}，请换一集或换一个源`,
+              videoUrl: null,
+              trail,
+              headers: headers ?? {},
+            };
+          }
+        }
+      }
+    }
+
+    return {
+      ok: false,
+      error: "未能在页面中匹配到视频地址（站点结构可能已变更）",
+      videoUrl: null,
+      trail,
+      headers: headers ?? {},
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: describeFetchFailure(error),
+      videoUrl: null,
+      trail,
+      headers: headers ?? {},
+    };
   }
 }

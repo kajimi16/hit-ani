@@ -10,7 +10,7 @@
 
 import * as cheerio from "cheerio";
 import type { AnyNode } from "domhandler";
-import type { RssConfig, WebSelectorConfig } from "./source-config";
+import { SearchMode, type RssConfig, type WebSelectorConfig } from "./source-config";
 import { resolveUrl } from "./url-safety";
 
 /** 提取出的搜索条目。 */
@@ -92,7 +92,15 @@ function findHref(
   return hrefOf(node.find("a").first());
 }
 
-/** 从搜索结果页提取条目。 */
+/**
+ * 从搜索结果页提取条目。
+ *
+ * 支持两种 DOM 形态（见 `SearchMode`）：
+ * - `nested`：逐条目在容器内查找名字与链接
+ * - `parallel`：名字与链接是两个独立列表，按下标 zip
+ *
+ * 名字选择器省略时用**元素自身的文本** —— 条目元素本身就是 `<a>` 时很常见。
+ */
 export function extractSearchResults(
   html: string,
   config: WebSelectorConfig,
@@ -104,15 +112,7 @@ export function extractSearchResults(
   const dropped: { reason: string; sample: string }[] = [];
   const items: SearchResultItem[] = [];
 
-  const elements = $(config.searchItemSelector);
-  const matchedElements = elements.length;
-
-  elements.each((_index, element) => {
-    const node = $(element);
-    const name = node.find(config.searchNameSelector).first().text().trim();
-    const href = findHref(node, config.searchLinkSelector, tagNameOf(element) === "a");
-    const sample = name.slice(0, 40) || href.slice(0, 40) || node.text().trim().slice(0, 40);
-
+  const push = (name: string, href: string, sample: string): void => {
     if (name.length === 0) {
       dropped.push({ reason: "条目名为空（searchNameSelector 可能写错）", sample });
       return;
@@ -121,14 +121,50 @@ export function extractSearchResults(
       dropped.push({ reason: "未找到链接（searchLinkSelector 可能写错）", sample });
       return;
     }
-
     const url = resolveUrl(href, baseUrl ?? "");
     if (url === null) {
       dropped.push({ reason: "相对链接无法解析（缺少 baseUrl？）", sample: href });
       return;
     }
-
     items.push({ name, url, rawHref: href });
+  };
+
+  if (config.searchMode === SearchMode.Parallel) {
+    // 名字与链接是两份独立列表，靠下标对应。
+    // 只用较短的那个长度 —— 长度不一致说明页面结构变了，
+    // 强行配对的另一半一定是错的。
+    const nameNodes = $(config.searchNameSelector ?? "");
+    const linkNodes = $(config.searchLinkSelector ?? "");
+    const matchedElements = nameNodes.length;
+    const pairCount = Math.min(nameNodes.length, linkNodes.length);
+
+    if (nameNodes.length !== linkNodes.length) {
+      dropped.push({
+        reason: `名字与链接数量不一致（${nameNodes.length} vs ${linkNodes.length}），只取前 ${pairCount} 组`,
+        sample: "",
+      });
+    }
+
+    for (let i = 0; i < pairCount; i += 1) {
+      const name = nameNodes.eq(i).text().trim();
+      const href = hrefOf(linkNodes.eq(i));
+      push(name, href, name.slice(0, 40) || href.slice(0, 40));
+    }
+
+    return { items, diagnostics: { matchedElements, dropped, baseUrl } };
+  }
+
+  const elements = $(config.searchItemSelector ?? "");
+  const matchedElements = elements.length;
+
+  elements.each((_index, element) => {
+    const node = $(element);
+    // 未配置名字选择器 → 用元素自身文本（条目元素本身就是 <a> 的常见形态）
+    const name = config.searchNameSelector
+      ? node.find(config.searchNameSelector).first().text().trim()
+      : node.text().trim();
+    const href = findHref(node, undefined, tagNameOf(element) === "a");
+    push(name, href, name.slice(0, 40) || href.slice(0, 40));
   });
 
   return { items, diagnostics: { matchedElements, dropped, baseUrl } };
@@ -179,13 +215,52 @@ export function extractEpisodes(
 }
 
 /**
+ * 归一化内嵌配置里的转义，供视频地址匹配。
+ *
+ * **这是实测踩出来的**：绝大多数 CMS（MacCMS 系）把播放地址塞在
+ * `player_aaaa={"url":"https:\/\/play.example.com\/...\/index.m3u8"}` 里 ——
+ * 斜杠是 **JSON 转义**的。直接用 `https://` 去匹配永远找不到，
+ * 而作者在浏览器里看页面时地址早已被解析，所以这个坑很难从现象上看出来。
+ *
+ * 处理三种转义：
+ * - JSON 斜杠转义 `\/` → `/`（最常见的坑）
+ * - Unicode 转义 `\uXXXX` → 真实字符（部分站点用它藏中文/特殊字符）
+ * - HTML 实体 `&amp;` → `&`（query 参数会被截断）
+ */
+export function normalizeForVideoMatch(text: string): string {
+  return (
+    unescapeHtmlEntities(text)
+      // Unicode 转义：\u9b54\u6cd5 → 魔法
+      .replace(/\\u([0-9a-fA-F]{4})/g, (_match, hex: string) =>
+        String.fromCharCode(Number.parseInt(hex, 16)),
+      )
+      // JSON 斜杠转义：https:\/\/a.com → https://a.com
+      .replace(/\\\//g, "/")
+  );
+}
+
+/**
+ * 找出文本中的所有 URL 候选。
+ *
+ * 正则终止于空白、引号、尖括号、反斜杠、右括号 —— 这些都不会出现在合法 URL 里，
+ * 但一定会出现在 HTML 属性分隔与 JSON 结构上。
+ */
+export function findUrlCandidates(text: string): string[] {
+  return text.match(/https?:\/\/[^\s"'<>\\)]+/g) ?? [];
+}
+
+/**
  * 从播放页 HTML 提取真实视频地址。
  *
- * 支持 `(?<v>...)` 命名分组（对齐 Animeko 的 `matchVideoUrl`）：
- * 有命名分组时取该组，否则取整个匹配。
+ * **关键语义**：Animeko 的 `matchVideoUrl` 是用来测试**单个候选 URL** 的
+ * （它的候选来自 WebView 的网络拦截，每个本身就是一条完整 URL），
+ * 因此那些正则普遍带 `^` 锚点。若直接拿它匹配整篇 HTML，
+ * `^` 永远对不上 —— 地址明明在页面里却提取不出来。
+ *
+ * 所以这里先抽候选 URL、再逐个测试，与 Animeko 的语义一致。
+ * 失败后才退回整篇匹配（兼容不含 `^` 的正则）。
  */
 export function extractVideoUrl(html: string, pattern: string): string | null {
-  const source = unescapeHtmlEntities(html);
   let regex: RegExp;
   try {
     regex = new RegExp(pattern);
@@ -193,12 +268,27 @@ export function extractVideoUrl(html: string, pattern: string): string | null {
     return null;
   }
 
-  const match = regex.exec(source);
-  if (!match) return null;
+  const source = normalizeForVideoMatch(html);
 
-  const named = match.groups?.v ?? match.groups?.url ?? match.groups?.m3u8;
-  const value = (named ?? match[0]).trim();
-  return value.length > 0 ? value : null;
+  // 1) 主要路径：抽候选 URL 逐个测试（Animeko 语义）
+  for (const candidate of findUrlCandidates(source)) {
+    const match = regex.exec(candidate);
+    if (match) {
+      const named = match.groups?.v ?? match.groups?.url ?? match.groups?.m3u8;
+      const value = (named ?? match[0]).trim();
+      if (value.length > 0) return value;
+    }
+  }
+
+  // 2) 兜底：整篇匹配（不含 `^` 的正则，如「含 akamaized 的行」）
+  const whole = regex.exec(source);
+  if (whole) {
+    const named = whole.groups?.v ?? whole.groups?.url ?? whole.groups?.m3u8;
+    const value = (named ?? whole[0]).trim();
+    if (value.length > 0) return value;
+  }
+
+  return null;
 }
 
 /** 匹配嵌套跳转页地址（播放页里的中间页）。 */

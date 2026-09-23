@@ -15,6 +15,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { extractEpisodeNumber, extractSizeBytes, isTorrentLink } from "./extract";
+import { SourceFactory } from "./source-config";
 import { listSources, searchAllSources } from "./service";
 
 /** 缓存 TTL。资源更新以小时计，10 分钟足够新鲜。 */
@@ -45,6 +46,11 @@ export interface SourceSummary {
   ok: boolean;
   error: string | null;
   count: number;
+  /**
+   * 该源能否站内播放（需要 web-selector + 视频地址正则）。
+   * RSS/BT 源给的是磁力链接，浏览器无法播放 —— 界面据此决定是否显示播放按钮。
+   */
+  playable: boolean;
 }
 
 export interface SubjectResources {
@@ -147,12 +153,17 @@ export async function findSubjectResources(
     }
 
     resources.push(...collected);
+    const sourceConfig = sources.find((item) => item.id === result.sourceId);
     summaries.push({
       sourceId: result.sourceId,
       sourceName: result.sourceName,
       ok: result.ok,
       error: result.error,
       count: collected.length,
+      playable: Boolean(
+        sourceConfig?.factory === SourceFactory.WebSelector &&
+          (sourceConfig.config as { videoUrlPattern?: string }).videoUrlPattern,
+      ),
     });
   }
 

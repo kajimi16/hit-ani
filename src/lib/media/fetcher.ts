@@ -33,6 +33,24 @@ export const MAX_REDIRECTS = 5;
  * 看起来像网络问题，实际是请求头构造问题。
  */
 export const DEFAULT_USER_AGENT = "hit-ani/0.1 (+https://github.com/hit-ani)";
+/**
+ * 把底层网络错误翻译成可行动的说明。
+ *
+ * 裸露的 `fetch failed` 对用户没有任何意义 —— 安装/网络/站点三类问题
+ * 混在同一个错误里，排查只能靠猜。
+ */
+export function describeNetworkError(error: unknown, host: string): string {
+  const name = error instanceof Error ? error.name : "";
+  const code = (error as { cause?: { code?: string } })?.cause?.code;
+
+  if (name === "TimeoutError") return `${host} 响应超时`;
+  if (code === "ECONNREFUSED") return `${host} 拒绝连接`;
+  if (code === "ENOTFOUND" || code === "EAI_AGAIN") return `${host} 域名解析失败`;
+  if (code === "ECONNRESET") return `${host} 连接被重置`;
+  if (code?.startsWith("ERR_TLS") || code === "CERT_HAS_EXPIRED") return `${host} TLS 证书问题`;
+  return `${host} 请求失败${code ? `（${code}）` : ""}`;
+}
+
 export class FetchError extends Error {
   constructor(
     message: string,

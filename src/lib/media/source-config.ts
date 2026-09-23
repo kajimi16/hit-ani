@@ -44,16 +44,37 @@ export const DEFAULT_REQUEST_INTERVAL_MS = 3000;
 
 const headersSchema = z.record(z.string().max(64), z.string().max(1024));
 
+/**
+ * 搜索结果的两种 DOM 形态。Animeko 里对应 `subjectFormatId: "a" | "indexed"`。
+ *
+ * - `nested`：每个条目是一个容器元素，名字/链接在其中（或元素自身就是 `<a>`）
+ * - `parallel`：名字与链接是**两个独立的列表**，按下标一一对应
+ *   （很多 CMS 模板把标题和封面链接分开渲染，必须靠下标 zip）
+ */
+export const SearchMode = {
+  Nested: "nested",
+  Parallel: "parallel",
+} as const;
+
+export type SearchModeValue = (typeof SearchMode)[keyof typeof SearchMode];
+
 export const webSelectorConfigSchema = z.object({
   /** 搜索地址模板，必须含 `{keyword}` */
   searchUrl: z.string().min(1).max(2048),
   keywordMode: z.enum([KeywordMode.Raw, KeywordMode.FirstWord, KeywordMode.StripSpecial]).default(KeywordMode.Raw),
 
-  /** 搜索结果页：每个条目一个元素 */
-  searchItemSelector: z.string().min(1).max(512),
-  /** 相对条目元素，取条目名（取其文本） */
-  searchNameSelector: z.string().min(1).max(512),
-  /** 相对条目元素，取条目链接（取其 href）；省略则用条目元素自身若是 <a>，否则找第一个 <a> */
+  searchMode: z.enum([SearchMode.Nested, SearchMode.Parallel]).default(SearchMode.Nested),
+
+  /** nested 模式：每个条目一个容器元素 */
+  searchItemSelector: z.string().max(512).optional(),
+  /**
+   * nested 模式：相对条目元素取名字（取其文本）。
+   * **省略表示用条目元素自身的文本** —— 条目元素本身就是 `<a>` 时（很常见）不需要再套一层。
+   *
+   * parallel 模式：绝对选择器，取整页的名字列表。
+   */
+  searchNameSelector: z.string().max(512).optional(),
+  /** nested：相对条目元素取链接。省略则用元素自身（若是 `<a>`）或其中第一个 `<a>` */
   searchLinkSelector: z.string().max(512).optional(),
 
   /** 条目页：剧集列表项；省略表示搜索结果页直接给出可播放项 */
@@ -74,7 +95,36 @@ export const webSelectorConfigSchema = z.object({
   baseUrl: z.string().max(2048).optional(),
   /** 需要把页面里的 HTML 实体反转义后再匹配（部分站点会转义 &amp; 等） */
   unescapeHtml: z.boolean().default(true),
-});
+}).superRefine(refineSearchSelectors);
+
+/** 按 searchMode 校验必填项 —— 存进去一个永远搜不到东西的配置比报错更糟。 */
+function refineSearchSelectors(
+  config: {
+    searchMode: SearchModeValue;
+    searchItemSelector?: string;
+    searchNameSelector?: string;
+    searchLinkSelector?: string;
+  },
+  ctx: z.RefinementCtx,
+): void {
+  if (config.searchMode === SearchMode.Nested) {
+    if (!config.searchItemSelector) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["searchItemSelector"],
+        message: "nested 模式必须提供条目选择器",
+      });
+    }
+  } else {
+    if (!config.searchNameSelector || !config.searchLinkSelector) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["searchNameSelector"],
+        message: "parallel 模式必须同时提供名字与链接选择器（两个列表按下标对应）",
+      });
+    }
+  }
+}
 
 export const rssConfigSchema = z.object({
   /** 订阅地址模板，含 `{keyword}`；含 `{page}` 时支持翻页 */
