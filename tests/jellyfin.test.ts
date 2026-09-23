@@ -408,7 +408,7 @@ test("isLoopbackUrl 识别 localhost / 127.0.0.1 / ::1", () => {
 });
 
 test("isLoopbackUrl 放行局域网与公网地址", () => {
-  assert.equal(isLoopbackUrl("http://10.249.61.10:8096"), false);
+  assert.equal(isLoopbackUrl("http://10.0.0.5:8096"), false);
   assert.equal(isLoopbackUrl("http://192.168.1.10:8096"), false);
   assert.equal(isLoopbackUrl("https://media.example.com"), false);
   assert.equal(isLoopbackUrl("jellyfin.lan:8096"), false);
