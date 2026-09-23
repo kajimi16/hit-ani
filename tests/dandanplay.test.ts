@@ -13,6 +13,8 @@ import { test } from "node:test";
 import { createHash } from "node:crypto";
 import {
   authHeaders,
+  authMode,
+  DandanplayError,
   generateSignature,
   parseComments,
   parseDandanplayComment,
@@ -49,11 +51,12 @@ test("签名对 secret 敏感（不同 secret 不同结果）", () => {
   assert.notEqual(a, b);
 });
 
-test("authHeaders 生成三个头，时间戳为秒", () => {
+test("authHeaders 签名模式生成三个头，时间戳为秒", () => {
   const headers = authHeaders(
     { appId: "myId", appSecret: "mySecret" },
     "/api/v2/comment/1",
     1_700_000_000_000, // 毫秒
+    "signature",
   );
   assert.equal(headers["X-AppId"], "myId");
   assert.equal(headers["X-Timestamp"], "1700000000");
@@ -150,4 +153,70 @@ test("parseComments 过滤坏数据并保留好数据", () => {
 
 test("请求间隔常量为正（避免限流）", () => {
   assert.ok(DANDANPLAY_REQUEST_INTERVAL_MS > 0);
+});
+
+/* ---------------------------------------------------------------- *
+ * 鉴权模式与错误信息透出
+ * ---------------------------------------------------------------- */
+
+test("默认使用凭证模式（服务器端推荐，少一类时间戳故障）", async () => {
+  const original = process.env.DANDANPLAY_AUTH_MODE;
+  try {
+    delete process.env.DANDANPLAY_AUTH_MODE;
+    assert.equal(authMode(), "credential");
+
+    process.env.DANDANPLAY_AUTH_MODE = "signature";
+    assert.equal(authMode(), "signature");
+
+    // 非法值回退默认，而不是抛错
+    process.env.DANDANPLAY_AUTH_MODE = "nonsense";
+    assert.equal(authMode(), "credential");
+  } finally {
+    if (original === undefined) delete process.env.DANDANPLAY_AUTH_MODE;
+    else process.env.DANDANPLAY_AUTH_MODE = original;
+  }
+});
+
+test("凭证模式的头部只含 AppId 与 AppSecret", () => {
+  const headers: Record<string, string> = authHeaders(
+    { appId: "id", appSecret: "secret" },
+    "/api/v2/comment/1",
+    1_700_000_000_000,
+    "credential",
+  );
+  // 用 key 集合断言，避免 assert.deepEqual 的断言签名把类型收窄
+  assert.deepEqual(Object.keys(headers).sort(), ["X-AppId", "X-AppSecret"]);
+  assert.equal(headers["X-AppId"], "id");
+  assert.equal(headers["X-AppSecret"], "secret");
+});
+
+test("签名模式的头部含时间戳与签名", () => {
+  const headers: Record<string, string> = authHeaders(
+    { appId: "id", appSecret: "secret" },
+    "/api/v2/comment/1",
+    1_700_000_000_000,
+    "signature",
+  );
+  assert.equal(headers["X-AppId"], "id");
+  assert.equal(headers["X-Timestamp"], "1700000000");
+  assert.equal(
+    headers["X-Signature"],
+    generateSignature("id", 1_700_000_000, "/api/v2/comment/1", "secret"),
+  );
+  assert.equal(headers["X-AppSecret"], undefined, "签名模式不应明文传 Secret");
+});
+
+test("DandanplayError 把 detail 放进 message（否则诊断信息全丢）", () => {
+  // 实测踩过：detail 只存成属性时，上层 e.message 只有一句无信息量的
+  // 「dandanplay 403 on ...」，服务端给出的具体原因（Invalid AppId 等）就丢了，
+  // 日志里无法判断是凭据错还是签名错。
+  const error = new DandanplayError(403, "Invalid AppId", "https://api.dandanplay.net/x");
+  assert.match(error.message, /Invalid AppId/);
+  assert.equal(error.status, 403);
+  assert.equal(error.detail, "Invalid AppId");
+});
+
+test("DandanplayError 无 detail 时不产生多余分隔符", () => {
+  const error = new DandanplayError(500, null, "https://x/y");
+  assert.equal(error.message, "dandanplay 500 (https://x/y)");
 });

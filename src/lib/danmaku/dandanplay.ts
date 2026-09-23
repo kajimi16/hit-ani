@@ -25,6 +25,26 @@ export interface DandanplayCredentials {
   appSecret: string;
 }
 
+/**
+ * 鉴权模式。
+ *
+ * dandanplay 支持两种（官方文档 §2.4），服务器端有更简单的选择：
+ *
+ * | 模式 | 请求头 | 适用 |
+ * | --- | --- | --- |
+ * | `signature` | X-AppId + X-Timestamp + X-Signature | 客户端应用（不暴露 Secret 更安全） |
+ * | `credential` | X-AppId + X-AppSecret | **服务器端**（文档明确推荐） |
+ *
+ * 本项目是服务器端，因此**默认用 credential** —— 少一次哈希计算，
+ * 也少一类「时间戳不同步导致 403」的故障（`Invalid Timestamp`）。
+ * 需要时可显式切回签名模式。
+ */
+export type DandanplayAuthMode = "signature" | "credential";
+
+export function authMode(): DandanplayAuthMode {
+  return process.env.DANDANPLAY_AUTH_MODE === "signature" ? "signature" : "credential";
+}
+
 /** 凭据是否已配置。未配置时调用方应跳过该源。 */
 export function isConfigured(): boolean {
   return Boolean(process.env.DANDANPLAY_APP_ID && process.env.DANDANPLAY_APP_SECRET);
@@ -55,14 +75,28 @@ export function generateSignature(
   return createHash("sha256").update(data, "utf8").digest("base64");
 }
 
-/** 构造鉴权头。`now` 可注入以便测试。 */
+/**
+ * 构造鉴权头。
+ *
+ * `path` 仅签名模式需要（签名要拼进 path）；凭证模式忽略它。
+ * `now` 可注入以便测试。
+ */
 export function authHeaders(
   credentials: DandanplayCredentials,
   path: string,
   now: number = Date.now(),
+  mode: DandanplayAuthMode = authMode(),
 ): Record<string, string> {
+  if (mode === "credential") {
+    const credentialHeaders: Record<string, string> = {
+      "X-AppId": credentials.appId,
+      "X-AppSecret": credentials.appSecret,
+    };
+    return credentialHeaders;
+  }
+
   const timestamp = Math.floor(now / 1000);
-  return {
+  const signatureHeaders: Record<string, string> = {
     "X-AppId": credentials.appId,
     "X-Timestamp": String(timestamp),
     "X-Signature": generateSignature(
@@ -72,6 +106,7 @@ export function authHeaders(
       credentials.appSecret,
     ),
   };
+  return signatureHeaders;
 }
 
 export class DandanplayError extends Error {
@@ -80,7 +115,17 @@ export class DandanplayError extends Error {
     readonly detail: unknown,
     readonly url: string,
   ) {
-    super(`dandanplay ${status} on ${url}`);
+    /*
+     * detail 必须进 message —— 只存成属性时，上层 `e.message` 拿到的是一句
+     * 无信息量的「dandanplay 403 on ...」，服务端诊断出的具体原因
+     * （Invalid AppId / Invalid Signature / Invalid Timestamp）就丢了。
+     * 实测踩过：日志里只有 403，无法判断是凭据错还是签名错。
+     */
+    const detailText =
+      detail === null || detail === undefined
+        ? ""
+        : `：${typeof detail === "string" ? detail : JSON.stringify(detail)}`;
+    super(`dandanplay ${status}${detailText} (${url})`);
     this.name = "DandanplayError";
   }
 }
@@ -116,7 +161,19 @@ async function request<T>(
     } catch {
       detail = await response.text().catch(() => null);
     }
-    throw new DandanplayError(response.status, detail, url.toString());
+
+    /*
+     * 403 会把具体原因放在 `X-Error-Message` 头里（官方文档 §2.6）：
+     * Missing Authentication Headers / Invalid Timestamp / Invalid AppId /
+     * Invalid Signature / Invalid AppSecret。
+     * 不带出来的话，用户只能看到一句 403，无从判断是配置错了还是签名算错了。
+     */
+    const hint = response.headers.get("X-Error-Message");
+    throw new DandanplayError(
+      response.status,
+      hint ? `${hint}${detail ? `：${JSON.stringify(detail)}` : ""}` : detail,
+      url.toString(),
+    );
   }
 
   const text = await response.text();

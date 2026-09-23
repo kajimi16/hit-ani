@@ -19,7 +19,8 @@
     "bgm:bind-check": "tsx --env-file=.env scripts/bgm-bind-check.ts",
     "import-check": "tsx --env-file=.env scripts/import-check.ts",
     "sources:import": "tsx --env-file=.env scripts/import-sources.ts",
-    "sources:probe": "tsx --env-file=.env scripts/probe-chain.ts"
+    "sources:probe": "tsx --env-file=.env scripts/probe-chain.ts",
+    "dandanplay:check": "tsx --env-file=.env scripts/check-dandanplay.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.0",
