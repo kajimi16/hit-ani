@@ -26,7 +26,9 @@
     "docker:build": "docker compose build",
     "docker:up": "docker compose up -d",
     "docker:logs": "docker compose logs -f",
-    "cache:prune": "tsx --env-file=.env scripts/prune-cache.ts"
+    "cache:prune": "tsx --env-file=.env scripts/prune-cache.ts",
+    "media:curation": "tsx --env-file=.env scripts/media-curation.ts",
+    "docker:rebuild": "docker compose build migrate web gateway && docker compose up -d"
   },
   "dependencies": {
     "@prisma/client": "^6.19.0",

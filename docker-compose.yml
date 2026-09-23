@@ -130,6 +130,51 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  # ---------------------------------------------------------------- Jellyfin
+  #
+  # 本地媒体库。学生通过 hit-ani 的「在这里看」面板播放 ——
+  # **视频字节由浏览器直连这里，不经过 hit-ani 的 web/gateway**，
+  # 因此不消耗对外带宽（校园网内走 LAN）。
+  #
+  # ⚠️ 角色变化：这使平台从「索引方」变成「媒体服务器运营方」。
+  # 收录什么内容由部署方决定并承担相应责任，见 docs/MEDIA.md §6.4。
+  jellyfin:
+    image: jellyfin/jellyfin:latest
+    restart: unless-stopped
+    ports:
+      # 学生浏览器直连这个端口取流 —— 必须对外可达
+      - "${JELLYFIN_PORT:-3103}:8096"
+    volumes:
+      # 媒体库：**只读**挂载。Jellyfin 不需要写媒体文件，
+      # 只读能把它被攻破时的损害限制在「读到媒体」。
+      - ${MEDIA_LIBRARY_PATH:-/media/kajimi/kajimi/hit-ani/media}:/media:ro
+      # 配置与缓存放**内部盘**（命名卷）：外挂硬盘是 USB 可拔插的，
+      # 掉线不能让 Jellyfin 的元数据一起丢。
+      - jellyfin-config:/config
+      - jellyfin-cache:/cache
+    environment:
+      # Jellyfin 生成给客户端的 URL —— 不设的话它会用容器内部的地址，
+      # 学生那边会连不上。
+      JELLYFIN_PublishedServerUrl: ${JELLYFIN_PUBLIC_URL:-http://localhost:3103}
+    healthcheck:
+      # 两道检查，因为故障表现完全不同：
+      # 1. 服务本身活着
+      # 2. **媒体库哨兵文件在** —— 外挂硬盘未挂载时，挂载点是个空目录，
+      #    Jellyfin 会看到空库且不报错。哨兵缺失即说明盘没挂上。
+      test:
+        - CMD-SHELL
+        - >-
+          curl -fsS http://localhost:8096/System/Info/Public >/dev/null
+          && test -f /media/.library-root
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
 volumes:
   pgdata:
+    driver: local
+  jellyfin-config:
+    driver: local
+  jellyfin-cache:
     driver: local
