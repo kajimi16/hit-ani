@@ -40,12 +40,13 @@ npm run gateway           # ws://localhost:3102
 
 ```bash
 npm run typecheck   # tsc --noEmit
-npm test            # 纯逻辑单测（236 项：弹幕/限流/收藏/匹配链/SSRF/解析/Jellyfin/过滤/源导入）
+npm test            # 纯逻辑单测（241 项：弹幕/限流/收藏/匹配链/SSRF/解析/Jellyfin/过滤/源导入）
 npm run bgm:check   # Bangumi 客户端联调（16 项，只读，无需授权）
 npm run bgm:bind-check  # Bangumi 绑定落库验证（19 项，上游打桩，需可写 DB）
 npm run smoke       # 端到端冒烟（54 项，需 dev + gateway 已启动）
 npm run sources:import  # 导入 Animeko 源配置并逐个试搜验证
 npm run sources:probe   # 探测完整链路：搜索→剧集→视频直链
+npm run dandanplay:check # 验证 dandanplay 凭据（申请后跑一次）
 ```
 
 `npm run smoke` 覆盖真实链路：Bangumi 直连、注册登录、弹幕 REST 与 WebSocket、
