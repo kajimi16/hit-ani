@@ -47,6 +47,7 @@ npm run smoke       # 端到端冒烟（54 项，需 dev + gateway 已启动）
 npm run sources:import  # 导入 Animeko 源配置并逐个试搜验证（源清单需自备，见下）
 npm run sources:probe   # 探测完整链路：搜索→剧集→视频直链
 npm run dandanplay:check # 验证 dandanplay 凭据（申请后跑一次）
+npm run import-check    # 验证导入策略（统计真实上游请求数）
 ```
 
 `npm run smoke` 覆盖真实链路：Bangumi 直连、注册登录、弹幕 REST 与 WebSocket、
@@ -208,7 +209,8 @@ docker compose ps         # 三个服务都应 healthy / Up
 | 模块 | 状态 |
 | --- | --- |
 | 学校准入注册 / 登录（邮箱 + 学号） | ✅ |
-| Bangumi OAuth 绑定 + 一键导入收藏与进度 | ✅ 代码完成（需自备 BGM 应用凭据联调） |
+| Bangumi OAuth 绑定 + 一键导入收藏 | ✅ 实测 376 个收藏，**只打 4 次上游请求** |
+| 条目详情按需拉取并缓存 | ✅ 首次打开拉取（1.2s），之后走缓存（16ms） |
 | QQ 互联绑定 | ✅ 代码完成（需自备 QQ 应用凭据联调） |
 | 找番：关键词 / 标签 / 排序 | ✅ |
 | 条目详情 + 章节列表 + 弹幕密度 | ✅ |
