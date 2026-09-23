@@ -1,0 +1,286 @@
+// hit-ani 数据模型
+// 设计依据见 docs/PLAN.md 第 4 节。
+// 核心边界：Bangumi API 只提供「条目/章节元数据 + 用户自己的收藏与进度」，
+// 弹幕、评论、影评均为平台自建（BGM v0 无对应接口，旧版接口已 404）。
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// 学校。`schoolId` 是「只看本校」筛选的根基，注册时由邮箱域名/学号白名单决定。
+model School {
+  id        String @id
+  name      String
+  /// 允许注册的邮箱域名，如 ["hit.edu.cn"]
+  domains   String[]
+  createdAt DateTime @default(now())
+
+  users User[]
+}
+
+/// 平台账号。QQ 与 Bangumi 均为「绑定」，不是登录身份本身。
+model User {
+  id           String   @id @default(cuid())
+  email        String?  @unique
+  studentNo    String?  @unique
+  /// scrypt 派生的口令散列，格式 `scrypt$<salt>$<hash>`
+  passwordHash String
+  /// 学校标识：校内弹幕/评论筛选的根基
+  schoolId     String
+  nickname     String
+  avatarUrl    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  school      School            @relation(fields: [schoolId], references: [id])
+  qqBinding   QqBinding?
+  bgmBinding  BgmBinding?
+  collections Collection[]
+  progress    EpisodeProgress[]
+  danmakus    Danmaku[]
+  reviews     Review[]
+  importJob   ImportJob?
+  jellyfinConnections JellyfinConnection[]
+
+  @@index([schoolId])
+}
+
+model QqBinding {
+  userId  String   @id
+  openId  String   @unique
+  unionId String?
+  boundAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// Bangumi 凭据。两条绑定路径共用本表：
+/// - OAuth：`access_token` 7 天有效期，靠 `refreshToken` 续期；
+/// - 个人令牌：`personalToken = true`，无 refresh_token，过期需用户重新粘贴。
+///
+/// `accessToken` 等值为账户级凭据（等同密码），仅服务端读写，**绝不通过 API 回显**。
+model BgmBinding {
+  userId        String   @id
+  bgmUserId     Int      @unique
+  bgmUsername   String
+  accessToken   String
+  refreshToken  String
+  expiresAt     DateTime
+  /// true = 用户自行生成的个人访问令牌，不走 refresh 流程
+  personalToken Boolean  @default(false)
+  syncedAt      DateTime?
+  boundAt       DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// BGM 全量导入任务。
+///
+/// 为什么要落库：导入 377 条收藏需要数分钟、上千次上游请求。若把它压在一次 HTTP 请求里，
+/// 客户端拿不到进度（只能显示「导入中」），链路一断就从头再来，且失败点不可见。
+/// 改为「快照 + 游标」后：每批只处理若干条，进度可查、可续、失败可定位。
+model ImportJob {
+  userId     String    @id
+  /// running | done | failed
+  status     String    @default("running")
+  /// 启动时抓取的上游收藏快照：`[{ subjectId, type, comment, rate }]`。
+  /// 存全量而非仅 ID —— 写收藏关系需要 type/comment/rate，否则每条都要回源多打一次请求。
+  entries    Json      @default("[]")
+  /// 已消费到快照的哪一位
+  cursor     Int       @default(0)
+  stats      Json      @default("{}")
+  failures   Json      @default("[]")
+  lastError  String?
+  startedAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  finishedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// Bangumi 条目本地缓存（读业务走本地，BGM 仅作同步源）
+model Subject {
+  id        Int       @id
+  type      Int
+  name      String
+  nameCn    String?
+  summary   String?
+  coverUrl  String?
+  airDate   DateTime?
+  score     Float?
+  rank      Int?
+  tags      String[]
+  cachedAt  DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  episodes    Episode[]
+  collections Collection[]
+  reviews     Review[]
+
+  @@index([type, airDate])
+}
+
+model Episode {
+  id        Int       @id
+  subjectId Int
+  sort      Float
+  ep        Float?
+  name      String
+  nameCn    String?
+  airdate   DateTime?
+  duration  String?
+
+  subject  Subject           @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  danmakus Danmaku[]
+  progress EpisodeProgress[]
+
+  @@index([subjectId, sort])
+}
+
+/// 用户收藏。
+/// ⚠️ `type` 对齐 BGM `SubjectCollectionType`，**2=看过、3=在看**（顺序反直觉，曾写错）：
+/// 1=想看, 2=看过, 3=在看, 4=搁置, 5=抛弃。权威映射见 `src/lib/collection.ts`。
+model Collection {
+  id        String   @id @default(cuid())
+  userId    String
+  subjectId Int
+  type      Int
+  comment   String?
+  rating    Int?
+  /** 来源：bgm = 从 Bangumi 导入，local = 站内修改 */
+  source    String   @default("bgm")
+  updatedAt DateTime @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, subjectId])
+  @@index([subjectId, type])
+  @@index([userId, type])
+}
+
+/// 单集进度。type: 0未看 1想看 2看过 3抛弃（对齐 BGM EpisodeCollectionType）
+model EpisodeProgress {
+  id        String   @id @default(cuid())
+  userId    String
+  episodeId Int
+  type      Int
+  updatedAt DateTime @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, episodeId])
+  @@index([episodeId])
+}
+
+/// 自建弹幕 —— 平台核心差异化载体。
+/// 字段对齐 Animeko 的 DanmakuInfo / DanmakuContent（playTimeMillis/color/text/location）。
+model Danmaku {
+  id         String   @id @default(cuid())
+  episodeId  Int
+  userId     String
+  /// 冗余存 schoolId，使「只看本校」成为索引命中而非后置过滤
+  schoolId   String
+  playTimeMs Int
+  text       String
+  /// RGB，默认白色 0xFFFFFF
+  color      Int      @default(16777215)
+  /// 0=NORMAL(滚动) 1=TOP 2=BOTTOM，对齐 Animeko DanmakuLocation
+  location   Int      @default(0)
+  /// 0正常 1屏蔽 2已删除
+  status     Int      @default(0)
+  /// 弹幕来源：hit-ani 自建 / 未来接入的 dandanplay 等
+  serviceId  String   @default("HitAni")
+  createdAt  DateTime @default(now())
+
+  episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([episodeId, playTimeMs])
+  @@index([episodeId, schoolId, playTimeMs])
+  @@index([userId, createdAt])
+}
+
+/// 评论 / 影评。kind: 0短评 1长评(影评)
+model Review {
+  id        String   @id @default(cuid())
+  userId    String
+  subjectId Int
+  kind      Int
+  title     String?
+  content   String
+  rating    Int?
+  schoolId  String
+  likes     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@index([subjectId, schoolId, createdAt])
+  @@index([subjectId, createdAt])
+}
+
+/// 媒体源配置。
+///
+/// ⚠️ 法律边界：本表只存**「如何查找资源」的规则**（URL 模板、CSS 选择器、正则），
+/// 不存任何视频文件、种子文件或直链。平台不托管、不分发内容。
+/// 资源由部署方自行选择来源并承担相应责任（见 docs/MEDIA.md §6.4）。
+model MediaSource {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  /// `web-selector` | `rss`
+  factory     String
+  /// 该 factory 对应的配置对象（见 src/lib/media/source-config.ts 的 schema）
+  config      Json
+  enabled     Boolean  @default(true)
+  /// 排序权重，小者优先
+  priority    Int      @default(100)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([enabled, priority])
+}
+
+/// 用户自己的 Jellyfin / Emby 服务器连接。
+///
+/// 为什么是「用户自己的」：视频字节从该服务器直连浏览器，**不经过本平台**。
+/// 平台只保存连接信息用于索引与生成播放地址 —— 因此不承担带宽，也不是内容分发方。
+///
+/// `accessToken` 是用户在该服务器上的凭据，等同密码：仅服务端读写，**绝不回显**。
+model JellyfinConnection {
+  id            String   @id @default(cuid())
+  userId        String
+  /// 展示名，如「宿舍服务器」
+  name          String
+  /// 服务器地址（已归一化，无尾斜杠）
+  baseUrl       String
+  /// Jellyfin 侧的 access token —— 敏感，绝不回显
+  accessToken   String
+  /// 该 token 所属的 Jellyfin 用户 id
+  remoteUserId  String
+  /// Jellyfin 侧用户名，仅用于展示
+  remoteUserName String
+  /// 服务器版本与名称，便于排查
+  serverName    String?
+  serverVersion String?
+  /// 是否允许内网地址（Jellyfin 常在局域网）
+  allowPrivateHost Boolean @default(true)
+  lastCheckedAt DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// 同一用户对同一地址只保留一条
+  @@unique([userId, baseUrl])
+  @@index([userId])
+}
