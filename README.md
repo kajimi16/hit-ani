@@ -40,10 +40,12 @@ npm run gateway           # ws://localhost:3102
 
 ```bash
 npm run typecheck   # tsc --noEmit
-npm test            # 纯逻辑单测（208 项：弹幕/限流/时间表/收藏/超时/匹配链/SSRF/解析/Jellyfin/过滤）
+npm test            # 纯逻辑单测（225 项：弹幕/限流/收藏/匹配链/SSRF/解析/Jellyfin/过滤/源导入）
 npm run bgm:check   # Bangumi 客户端联调（16 项，只读，无需授权）
 npm run bgm:bind-check  # Bangumi 绑定落库验证（19 项，上游打桩，需可写 DB）
 npm run smoke       # 端到端冒烟（54 项，需 dev + gateway 已启动）
+npm run sources:import  # 导入 Animeko 源配置并逐个试搜验证
+npm run sources:probe   # 探测完整链路：搜索→剧集→视频直链
 ```
 
 `npm run smoke` 覆盖真实链路：Bangumi 直连、注册登录、弹幕 REST 与 WebSocket、
@@ -205,6 +207,8 @@ npm run bgm:types   # openapi-typescript .bgm-v0.yaml -o src/lib/bgm/schema.d.ts
 | Jellyfin / Emby 连接与匹配 | ✅ 实测连接真实服务器并匹配成功 |
 | 播放器 + 弹幕叠加（两时钟分离） | ✅ 数据链路已验证，待真实浏览器确认渲染 |
 | 外部资源索引（按集分组 + 可播性筛选） | ✅ 实测抓到真实资源并按集正确分组 |
+| **站内在线播放**（源直链 + 弹幕叠加） | ✅ 实测 3 个源可解析出**已验证可访问**的直链 |
+| Animeko 源配置导入 | ✅ 16 个源，11 个搜索可用、8 个可取剧集 |
 | 正版流媒体源（巴哈姆特动画疯） | ✅ 预设已验证：点开即看，无需下载 |
 | 续播（读取 Jellyfin 播放位置） | ✅ |
 | 单集进度标记（本地 + BGM 回写） | ✅ |
