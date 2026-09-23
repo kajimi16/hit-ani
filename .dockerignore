@@ -1,0 +1,42 @@
+# 构建产物
+.next
+dist
+out
+build
+
+# 依赖（镜像里重新安装）
+node_modules
+
+# 版本控制与编辑器
+.git
+.gitignore
+.github
+.idea
+.vscode
+*.swp
+
+# 环境变量：**绝不进镜像** —— 运行时通过 compose 注入
+.env
+.env.*
+!.env.example
+
+# 部署配置：镜像里用不到
+docker-compose*.yml
+Dockerfile
+.dockerignore
+
+# 文档与开发脚手架
+docs
+README.md
+tests
+# 但放行网关打包脚本 —— 构建阶段需要它（`npm run gateway:build`）
+scripts
+!scripts/build-gateway.mjs
+
+# 抓取源清单：部署方自备，运行时挂载
+data
+
+# 本地数据库与日志
+*.log
+*.sqlite
+*.db

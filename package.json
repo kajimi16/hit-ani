@@ -20,7 +20,12 @@
     "import-check": "tsx --env-file=.env scripts/import-check.ts",
     "sources:import": "tsx --env-file=.env scripts/import-sources.ts",
     "sources:probe": "tsx --env-file=.env scripts/probe-chain.ts",
-    "dandanplay:check": "tsx --env-file=.env scripts/check-dandanplay.ts"
+    "dandanplay:check": "tsx --env-file=.env scripts/check-dandanplay.ts",
+    "gateway:build": "node scripts/build-gateway.mjs",
+    "gateway:prod": "node dist/danmaku-gateway.mjs",
+    "docker:build": "docker compose build",
+    "docker:up": "docker compose up -d",
+    "docker:logs": "docker compose logs -f"
   },
   "dependencies": {
     "@prisma/client": "^6.19.0",
@@ -39,6 +44,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/ws": "^8.18.1",
+    "esbuild": "^0.28.2",
     "eslint": "^9",
     "eslint-config-next": "15.5.26",
     "openapi-typescript": "^7.13.0",

@@ -1,0 +1,118 @@
+# hit-ani 生产部署
+#
+# 三个服务：postgres / web（页面+API） / gateway（弹幕 WebSocket）。
+#
+# 为什么网关是独立服务而不是复用 web 容器：
+# WebSocket 是长连接常驻进程，与 Next.js 的请求-响应模型不同 ——
+# 合在一起会导致重启 web 时所有弹幕连接断开，也无法独立重启。
+#
+# 用法：
+#   cp .env.example .env      # 填 POSTGRES_PASSWORD / SESSION_SECRET 等
+#   npm run docker:up
+#   npm run docker:logs
+
+name: hit-ani
+
+services:
+  # ---------------------------------------------------------------- 数据库
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-hitani}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?必须在 .env 里设置 POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-hitani}
+    volumes:
+      # 命名卷：容器重建不丢数据。备份方式见 docs/DEPLOY.md
+      - pgdata:/var/lib/postgresql/data
+    # 注意：**不映射端口到宿主机**。数据库只需容器网络内可达，
+    # 暴露到宿主机等于把数据库直接放到局域网里。
+    healthcheck:
+      # 用 healthcheck 而非仅 depends_on —— 否则依赖服务会在数据库
+      # 尚未接受连接时就启动，表现为启动即失败
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-hitani} -d ${POSTGRES_DB:-hitani}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  # ---------------------------------------------------------------- 建表
+  #
+  # 一次性任务：同步 schema 后退出。web 与 gateway 都等它成功退出。
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      # 用 migrator 阶段：它保留 devDependencies，因而有 prisma CLI。
+      # 生产镜像（runner）出于体积考虑剔除了 CLI。
+      target: migrator
+    restart: "no"
+    command: ["npx", "prisma", "db", "push", "--skip-generate"]
+    environment: &db-url
+      DATABASE_URL: postgresql://${POSTGRES_USER:-hitani}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-hitani}?schema=public
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------- Web
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    # 对外只暴露这一个端口 —— 页面与 API 同进程
+    ports:
+      - "${WEB_PORT:-3100}:3100"
+    env_file:
+      # 业务配置（BGM / QQ / dandanplay / 屏蔽词 / 管理员 …）从 .env 读。
+      # `required: false` 让缺失时不报错，便于最小化启动。
+      - path: .env
+        required: false
+    environment:
+      <<: *db-url
+      NODE_ENV: production
+      # 浏览器侧连接弹幕网关用的端口。主机名**自动按页面地址推导**，
+      # 因此这里只需给端口 —— 写死完整 URL（含 localhost）会让其他机器
+      # 上的浏览器去连自己的机器，与 Jellyfin 填 localhost 是同一类坑。
+      NEXT_PUBLIC_DANMAKU_WS_PORT: ${DANMAKU_GATEWAY_PORT:-3102}
+      # 仅反向代理等特殊场景需要显式覆盖；留空即走自动推导
+      NEXT_PUBLIC_DANMAKU_WS_URL: ${NEXT_PUBLIC_DANMAKU_WS_URL:-}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3100/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # ---------------------------------------------------------------- 弹幕网关
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    # 跑打包产物而非 tsx —— 生产镜像已剔除 devDependencies
+    command: ["node", "dist/danmaku-gateway.mjs"]
+    ports:
+      - "${DANMAKU_GATEWAY_PORT:-3102}:3102"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      <<: *db-url
+      NODE_ENV: production
+      DANMAKU_GATEWAY_PORT: "3102"
+      # 必须与 web 用同一个 SESSION_SECRET —— 网关靠它校验连接建立时的会话，
+      # 两者不一致会导致学生登录了却连不上弹幕
+      SESSION_SECRET: ${SESSION_SECRET:?必须在 .env 里设置 SESSION_SECRET}
+      # 网关同样要做屏蔽词校验：REST 与 WS 是两条独立的写入通道
+      DANMAKU_BLOCKED_WORDS: ${DANMAKU_BLOCKED_WORDS:-}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  pgdata:
+    driver: local
