@@ -48,7 +48,6 @@ model User {
   danmakus    Danmaku[]
   reviews     Review[]
   danmakuReports DanmakuReport[]
-  importJob   ImportJob?
   jellyfinConnections JellyfinConnection[]
 
   @@index([schoolId])
@@ -83,30 +82,6 @@ model BgmBinding {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
-/// BGM 全量导入任务。
-///
-/// 为什么要落库：导入 377 条收藏需要数分钟、上千次上游请求。若把它压在一次 HTTP 请求里，
-/// 客户端拿不到进度（只能显示「导入中」），链路一断就从头再来，且失败点不可见。
-/// 改为「快照 + 游标」后：每批只处理若干条，进度可查、可续、失败可定位。
-model ImportJob {
-  userId     String    @id
-  /// running | done | failed
-  status     String    @default("running")
-  /// 启动时抓取的上游收藏快照：`[{ subjectId, type, comment, rate }]`。
-  /// 存全量而非仅 ID —— 写收藏关系需要 type/comment/rate，否则每条都要回源多打一次请求。
-  entries    Json      @default("[]")
-  /// 已消费到快照的哪一位
-  cursor     Int       @default(0)
-  stats      Json      @default("{}")
-  failures   Json      @default("[]")
-  lastError  String?
-  startedAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-  finishedAt DateTime?
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
-
 /// Bangumi 条目本地缓存（读业务走本地，BGM 仅作同步源）
 model Subject {
   id        Int       @id
@@ -121,6 +96,15 @@ model Subject {
   tags      String[]
   cachedAt  DateTime  @default(now())
   updatedAt DateTime  @updatedAt
+
+  /// 详情（完整简介 + 章节）的同步时间。
+  ///
+  /// `null` 表示**只有轻量数据** —— 来自收藏列表接口内嵌的 `SlimSubject`
+  /// （含封面/名称/评分，够渲染列表），但还没拉过详情与章节。
+  ///
+  /// 这个字段是「访问时获取并缓存」策略的判据：批量导入只写轻量数据，
+  /// 用户真正打开条目时才补齐详情，避免为 377 个收藏打出上千次请求。
+  detailSyncedAt DateTime?
 
   episodes    Episode[]
   collections Collection[]

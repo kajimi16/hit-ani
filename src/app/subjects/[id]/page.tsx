@@ -1,3 +1,4 @@
+import { headers } from "next/headers";
 import Link from "next/link";
 import Image from "next/image";
 import { notFound } from "next/navigation";
@@ -6,11 +7,12 @@ import CollectionPicker from "@/components/collection-picker";
 import ExternalResources from "@/components/external-resources";
 import JellyfinPanel from "@/components/jellyfin-panel";
 import type { CollectionStatusValue } from "@/lib/collection";
-import { getSessionUser } from "@/lib/auth/session";
+import { getFreshBgmAccessToken } from "@/lib/auth/bgm-oauth";
+import { getSessionUser, type SessionUser } from "@/lib/auth/session";
 import { countByEpisodeIds } from "@/lib/danmaku/repository";
 import { listSources } from "@/lib/media/service";
 import { prisma } from "@/lib/prisma";
-import { importSubject } from "@/lib/bgm/import";
+import { enrichSubject } from "@/lib/bgm/import";
 
 export const dynamic = "force-dynamic";
 
@@ -34,9 +36,17 @@ export default async function SubjectPage({
     include: { episodes: { orderBy: { sort: "asc" } } },
   });
 
-  if (!subject || subject.episodes.length === 0) {
+  // 访问时补齐：本地只有轻量数据（`detailSyncedAt` 为 null）或没有章节时，
+  // 去上游拉详情 + 章节并缓存。已完整的条目直接走本地，不发请求。
+  const needsEnrich =
+    !subject || subject.detailSyncedAt === null || subject.episodes.length === 0;
+
+  if (needsEnrich) {
     try {
-      await importSubject(subjectId);
+      await enrichSubject(subjectId, {
+        userId: user?.id,
+        accessToken: await bgmAccessTokenFor(user),
+      });
       subject = await prisma.subject.findUnique({
         where: { id: subjectId },
         include: { episodes: { orderBy: { sort: "asc" } } },
@@ -158,4 +168,23 @@ export default async function SubjectPage({
       />
     </div>
   );
+}
+
+/**
+ * 取该用户的 BGM access token，用于访问条目时同步其单集进度。
+ *
+ * 失败一律返回 undefined 而**不抛错** —— 令牌过期或上游抖动不该让条目页打不开，
+ * 大不了这次不同步进度，下次访问会再试。
+ */
+async function bgmAccessTokenFor(user: SessionUser | null): Promise<string | undefined> {
+  if (!user?.bgmBound) return undefined;
+  try {
+    const headerList = await headers();
+    const host = headerList.get("host");
+    const origin = host ? `http://${host}` : "http://localhost:3100";
+    const { accessToken } = await getFreshBgmAccessToken(user.id, origin);
+    return accessToken;
+  } catch {
+    return undefined;
+  }
 }
