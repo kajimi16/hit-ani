@@ -223,7 +223,7 @@ export default function SourceManager() {
         <h2 className="text-lg font-medium">已配置的源</h2>
 
         {sources.length === 0 ? (
-          <p className="rounded border border-neutral-800 p-4 text-sm text-neutral-500">
+          <p className="panel text-sm text-ink-faint">
             还没有配置任何源。可以从下方预设开始，或手工填写配置。
           </p>
         ) : (
@@ -231,43 +231,43 @@ export default function SourceManager() {
             {sources.map((source) => (
               <li
                 key={source.id}
-                className="flex flex-wrap items-center gap-3 rounded border border-neutral-800 bg-neutral-900/40 p-3 text-sm"
+                className="flex flex-wrap items-center gap-3 rounded border border-line bg-surface-2 p-3 text-sm"
               >
                 <span
                   className={`rounded px-2 py-0.5 text-xs ${
                     source.enabled
-                      ? "bg-emerald-900/60 text-emerald-300"
-                      : "bg-neutral-800 text-neutral-500"
+                      ? "bg-success/15 text-success"
+                      : "bg-surface-3 text-ink-faint"
                   }`}
                 >
                   {source.enabled ? "启用" : "停用"}
                 </span>
                 <span className="font-medium">{source.name}</span>
-                <span className="rounded bg-neutral-800 px-2 py-0.5 font-mono text-xs text-neutral-400">
+                <span className="rounded bg-surface-3 px-2 py-0.5 font-mono text-xs text-ink-muted">
                   {source.factory}
                 </span>
                 {source.description && (
-                  <span className="text-xs text-neutral-500">{source.description}</span>
+                  <span className="text-xs text-ink-faint">{source.description}</span>
                 )}
                 <div className="ml-auto flex gap-2">
                   <button
                     type="button"
                     onClick={() => startEdit(source)}
-                    className="rounded border border-neutral-700 px-2 py-1 text-xs hover:bg-neutral-800"
+                    className="btn btn-ghost btn-sm"
                   >
                     编辑
                   </button>
                   <button
                     type="button"
                     onClick={() => void toggleEnabled(source)}
-                    className="rounded border border-neutral-700 px-2 py-1 text-xs hover:bg-neutral-800"
+                    className="btn btn-ghost btn-sm"
                   >
                     {source.enabled ? "停用" : "启用"}
                   </button>
                   <button
                     type="button"
                     onClick={() => void remove(source)}
-                    className="rounded border border-red-900 px-2 py-1 text-xs text-red-300 hover:bg-red-950/50"
+                    className="rounded border border-danger/40 px-2 py-1 text-xs text-danger hover:bg-danger/10"
                   >
                     删除
                   </button>
@@ -282,38 +282,38 @@ export default function SourceManager() {
       <section className="space-y-3">
         <h2 className="text-lg font-medium">预设起点</h2>
 
-        <div className="space-y-1 rounded border border-neutral-800 bg-neutral-900/40 p-3 text-xs text-neutral-400">
-          <p className="font-medium text-neutral-300">两类源，用途完全不同</p>
+        <div className="panel space-y-1 bg-surface-2 p-3 text-xs text-ink-muted">
+          <p className="font-medium text-ink">两类源，用途完全不同</p>
           <p>
-            <span className="rounded bg-neutral-800 px-1.5">rss</span> —— BT 站（动漫花园、蜜柑）。
-            给的是<strong className="text-amber-300">磁力链接</strong>，需要 qBittorrent
+            <span className="rounded bg-surface-3 px-1.5">rss</span> —— BT 站（动漫花园、蜜柑）。
+            给的是<strong className="text-warn">磁力链接</strong>，需要 qBittorrent
             这类客户端下载，<strong>不能在线看</strong>。
           </p>
           <p>
-            <span className="rounded bg-neutral-800 px-1.5">web-selector</span> —— 流媒体站。
-            抓的是网页，给出<strong className="text-sky-300">播放页链接</strong>，点开就能看。
+            <span className="rounded bg-surface-3 px-1.5">web-selector</span> —— 流媒体站。
+            抓的是网页，给出<strong className="text-accent">播放页链接</strong>，点开就能看。
             <strong>要「在线看」就必须配这类源。</strong>
           </p>
         </div>
 
-        <p className="text-xs text-neutral-500">
+        <p className="text-xs text-ink-faint">
           预设只是模板。站点结构与可用性会变，保存前请先用下方「试搜」验证是否真的能取到数据。
         </p>
         <ul className="grid gap-3 sm:grid-cols-2">
           {presets.map((preset) => (
-            <li key={preset.id} className="rounded border border-neutral-800 p-3 text-sm">
+            <li key={preset.id} className="panel p-3 text-sm">
               <div className="flex items-center gap-2">
                 <span className="font-medium">{preset.name}</span>
-                <span className="rounded bg-neutral-800 px-2 py-0.5 font-mono text-xs text-neutral-400">
+                <span className="rounded bg-surface-3 px-2 py-0.5 font-mono text-xs text-ink-muted">
                   {preset.factory}
                 </span>
               </div>
-              <p className="mt-1 text-xs text-neutral-400">{preset.description}</p>
-              <p className="mt-1 text-xs text-amber-400/80">{preset.notes}</p>
+              <p className="mt-1 text-xs text-ink-muted">{preset.description}</p>
+              <p className="mt-1 text-xs text-warn">{preset.notes}</p>
               <button
                 type="button"
                 onClick={() => applyPreset(preset)}
-                className="mt-2 rounded border border-neutral-700 px-2 py-1 text-xs hover:bg-neutral-800"
+                className="btn btn-ghost btn-sm mt-2"
               >
                 载入到表单
               </button>
@@ -330,7 +330,7 @@ export default function SourceManager() {
             <button
               type="button"
               onClick={resetForm}
-              className="ml-3 text-xs font-normal text-neutral-400 underline"
+              className="ml-3 text-xs font-normal text-ink-muted underline"
             >
               取消编辑
             </button>
@@ -343,12 +343,12 @@ export default function SourceManager() {
               value={name}
               onChange={(event) => setName(event.target.value)}
               placeholder="源名称"
-              className="min-w-48 flex-1 rounded border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-sky-500"
+              className="input min-w-48 flex-1"
             />
             <select
               value={factory}
               onChange={(event) => setFactory(event.target.value)}
-              className="rounded border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm"
+              className="input w-auto"
             >
               <option value="web-selector">web-selector（CSS 选择器抓 HTML）</option>
               <option value="rss">rss（RSS / Atom 订阅）</option>
@@ -359,7 +359,7 @@ export default function SourceManager() {
             value={description}
             onChange={(event) => setDescription(event.target.value)}
             placeholder="说明（可选）"
-            className="w-full rounded border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-sky-500"
+            className="input"
           />
 
           <textarea
@@ -367,14 +367,14 @@ export default function SourceManager() {
             onChange={(event) => setConfigText(event.target.value)}
             rows={12}
             spellCheck={false}
-            className="w-full rounded border border-neutral-700 bg-neutral-900 px-3 py-2 font-mono text-xs outline-none focus:border-sky-500"
+            className="input font-mono text-xs"
           />
 
           <button
             type="button"
             onClick={() => void save()}
             disabled={busy || name.trim().length === 0}
-            className="rounded bg-sky-600 px-5 py-2 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-40"
+            className="rounded bg-accent-strong px-5 py-2 text-sm font-medium text-white hover:bg-accent disabled:opacity-40"
           >
             {busy ? "保存中…" : editingId ? "保存修改" : "创建源"}
           </button>
@@ -384,7 +384,7 @@ export default function SourceManager() {
       {/* ---------------------------------------------------------- 试搜 */}
       <section className="space-y-3">
         <h2 className="text-lg font-medium">试搜</h2>
-        <p className="text-xs text-neutral-500">
+        <p className="text-xs text-ink-faint">
           用关键词测一遍所有启用的源。配置是否正确看这里最快 —— 不用等到用户搜不到才发现。
         </p>
         <div className="flex flex-wrap gap-3">
@@ -395,55 +395,55 @@ export default function SourceManager() {
               if (event.key === "Enter") void runSearch();
             }}
             placeholder="例如：反叛的鲁路修"
-            className="min-w-64 flex-1 rounded border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-sky-500"
+            className="input min-w-64 flex-1"
           />
           <button
             type="button"
             onClick={() => void runSearch()}
             disabled={searching || keyword.trim().length === 0}
-            className="rounded bg-sky-600 px-5 py-2 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-40"
+            className="rounded bg-accent-strong px-5 py-2 text-sm font-medium text-white hover:bg-accent disabled:opacity-40"
           >
             {searching ? "抓取中…" : "试搜"}
           </button>
         </div>
 
-        {searchSummary && <p className="text-sm text-neutral-400">{searchSummary}</p>}
+        {searchSummary && <p className="text-sm text-ink-muted">{searchSummary}</p>}
 
         {results?.map((result) => (
           <div
             key={result.sourceId}
             className={`space-y-2 rounded border p-4 text-sm ${
-              result.ok ? "border-neutral-800" : "border-red-900 bg-red-950/20"
+              result.ok ? "border-line" : "border-danger/40 bg-danger/10"
             }`}
           >
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-medium">{result.sourceName}</span>
               <span
                 className={`rounded px-2 py-0.5 text-xs ${
-                  result.ok ? "bg-emerald-900/60 text-emerald-300" : "bg-red-900/60 text-red-300"
+                  result.ok ? "bg-success/15 text-success" : "bg-danger/20/60 text-danger"
                 }`}
               >
                 {result.ok ? "成功" : "失败"}
               </span>
               {result.diagnostics && (
-                <span className="text-xs text-neutral-500">
+                <span className="text-xs text-ink-faint">
                   命中元素 {result.diagnostics.matchedElements}
                 </span>
               )}
             </div>
 
-            {result.error && <p className="text-xs text-red-300">{result.error}</p>}
+            {result.error && <p className="text-xs text-danger">{result.error}</p>}
 
             {result.items.length > 0 && (
               <ul className="space-y-1 text-xs">
                 {result.items.map((item) => (
                   <li key={item.url} className="flex gap-2">
-                    <span className="text-neutral-300">{item.name}</span>
+                    <span className="text-ink">{item.name}</span>
                     <a
                       href={item.url}
                       target="_blank"
                       rel="noreferrer"
-                      className="truncate text-sky-400 underline"
+                      className="truncate text-accent underline"
                     >
                       {item.url}
                     </a>
@@ -456,8 +456,8 @@ export default function SourceManager() {
               <ul className="space-y-1 text-xs">
                 {result.feedItems.map((item) => (
                   <li key={item.url}>
-                    <span className="text-neutral-300">{item.title}</span>
-                    <span className="ml-2 font-mono text-neutral-500">
+                    <span className="text-ink">{item.title}</span>
+                    <span className="ml-2 font-mono text-ink-faint">
                       {item.publishedTime
                         ? new Date(item.publishedTime).toISOString().slice(0, 10)
                         : ""}
@@ -468,7 +468,7 @@ export default function SourceManager() {
             )}
 
             {result.ok && result.items.length === 0 && result.feedItems.length === 0 && (
-              <p className="text-xs text-amber-300">
+              <p className="text-xs text-warn">
                 抓取成功但没有解析出条目。
                 {result.diagnostics && result.diagnostics.matchedElements === 0
                   ? "选择器命中 0 个元素 —— 很可能选择器过期了（站点改版）。"
@@ -477,7 +477,7 @@ export default function SourceManager() {
             )}
 
             {result.diagnostics && result.diagnostics.dropped.length > 0 && (
-              <details className="text-xs text-amber-300">
+              <details className="text-xs text-warn">
                 <summary className="cursor-pointer">
                   {result.diagnostics.dropped.length} 个元素被丢弃
                 </summary>
@@ -495,12 +495,12 @@ export default function SourceManager() {
       </section>
 
       {notice && (
-        <p className="rounded border border-sky-900 bg-sky-950/30 px-3 py-2 text-sm text-sky-300">
+        <p className="rounded border border-accent/40 bg-accent-dim px-3 py-2 text-sm text-accent">
           {notice}
         </p>
       )}
       {error && (
-        <p className="rounded border border-red-900 bg-red-950/40 px-3 py-2 text-sm text-red-300">
+        <p className="alert alert-danger">
           {error}
         </p>
       )}

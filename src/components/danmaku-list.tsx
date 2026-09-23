@@ -156,10 +156,10 @@ export default function DanmakuList({
     <section className="space-y-3">
       <div className="flex flex-wrap items-center gap-3">
         <h2 className="text-lg font-semibold">弹幕 · {episodeLabel}</h2>
-        <span className="text-xs text-neutral-500">
+        <span className="text-xs text-ink-faint">
           {visible.length} 条
           {hiddenCount > 0 && (
-            <span className="ml-1 text-neutral-600">（本地过滤隐藏 {hiddenCount} 条）</span>
+            <span className="ml-1 text-ink-faint">（本地过滤隐藏 {hiddenCount} 条）</span>
           )}
         </span>
         <label className="ml-auto flex items-center gap-2 text-sm">
@@ -170,11 +170,11 @@ export default function DanmakuList({
             onChange={(event) => setSchoolOnly(event.target.checked)}
             className="size-4 accent-sky-500"
           />
-          <span className={canInteract ? "" : "text-neutral-600"}>只看本校</span>
+          <span className={canInteract ? "" : "text-ink-faint"}>只看本校</span>
         </label>
       </div>
 
-      <p className="text-xs text-neutral-500">
+      <p className="text-xs text-ink-faint">
         {hasPlayer
           ? "弹幕会叠加在上方播放器上；发送请用播放器的输入框（需要播放位置）。"
           : "这里只是浏览。要发弹幕需要先有可播放的视频 —— 到「设置」连接你的 Jellyfin/Emby 媒体库。"}
@@ -185,7 +185,7 @@ export default function DanmakuList({
         实际是「校内 0 条 + Animeko 17 条」这种组合。
       */}
       {external && (external.externalCount > 0 || external.sources.length > 0) && (
-        <p className="flex flex-wrap items-center gap-2 text-xs text-neutral-500">
+        <p className="flex flex-wrap items-center gap-2 text-xs text-ink-faint">
           <span>
             本校 {external.localCount} 条
             {external.externalCount > 0 && ` · 外部源 ${external.externalCount} 条`}
@@ -194,7 +194,7 @@ export default function DanmakuList({
               不说明的话用户会以为「这集只有这么点弹幕」。
             */}
             {external.externalTotalAvailable > external.externalCount && (
-              <span className="text-neutral-600">
+              <span className="text-ink-faint">
                 （共 {external.externalTotalAvailable} 条，已显示前 {external.externalCount} 条）
               </span>
             )}
@@ -204,8 +204,8 @@ export default function DanmakuList({
               key={source.service}
               className={`rounded px-1.5 py-0.5 ${
                 source.ok
-                  ? "bg-neutral-800 text-neutral-400"
-                  : "bg-amber-950/60 text-amber-300"
+                  ? "bg-surface-3 text-ink-muted"
+                  : "bg-warn/10 text-warn"
               }`}
               title={source.error ?? undefined}
             >
@@ -214,7 +214,7 @@ export default function DanmakuList({
             </span>
           ))}
           {external.externalCount > 0 && (
-            <span className="text-neutral-600">
+            <span className="text-ink-faint">
               （外部弹幕不属于任何学校，开启「只看本校」会隐藏它们）
             </span>
           )}
@@ -222,19 +222,19 @@ export default function DanmakuList({
       )}
 
       {error && (
-        <p className="rounded border border-red-900 bg-red-950/40 px-3 py-2 text-sm text-red-300">
+        <p className="alert alert-danger">
           {error}
         </p>
       )}
 
       {/* 本地屏蔽词：用户自己的偏好，与服务端全局屏蔽词互补 */}
-      <details className="rounded border border-neutral-800 bg-neutral-900/40 p-3 text-xs">
-        <summary className="cursor-pointer text-neutral-400">
+      <details className="panel bg-surface-2 p-3 text-xs">
+        <summary className="cursor-pointer text-ink-muted">
           本地屏蔽词 {filters.state.patterns.length > 0 && `(${filters.state.patterns.length})`}
-          {hiddenCount > 0 && <span className="ml-2 text-neutral-500">正在隐藏 {hiddenCount} 条</span>}
+          {hiddenCount > 0 && <span className="ml-2 text-ink-faint">正在隐藏 {hiddenCount} 条</span>}
         </summary>
         <div className="mt-2 space-y-2">
-          <p className="text-neutral-500">
+          <p className="text-ink-faint">
             支持正则，只影响你自己（存在本机，不上传）。
           </p>
           <div className="flex flex-wrap gap-2">
@@ -248,7 +248,7 @@ export default function DanmakuList({
                 }
               }}
               placeholder="例如：剧透|前|哈哈"
-              className="min-w-40 flex-1 rounded border border-neutral-700 bg-neutral-900 px-2 py-1 outline-none focus:border-sky-500"
+              className="input min-w-40 flex-1 py-1"
             />
             <button
               type="button"
@@ -257,13 +257,13 @@ export default function DanmakuList({
                 setDraftPattern("");
               }}
               disabled={draftPattern.trim().length === 0 || !isValidPattern(draftPattern)}
-              className="rounded border border-neutral-700 px-2 py-1 hover:bg-neutral-800 disabled:opacity-40"
+              className="btn btn-ghost btn-sm"
             >
               添加
             </button>
           </div>
           {draftPattern.trim().length > 0 && !isValidPattern(draftPattern) && (
-            <p className="text-amber-400">正则不合法，暂不生效（继续输入即可）</p>
+            <p className="text-warn">正则不合法，暂不生效（继续输入即可）</p>
           )}
           {filters.state.patterns.length > 0 && (
             <ul className="flex flex-wrap gap-1">
@@ -272,7 +272,7 @@ export default function DanmakuList({
                   <button
                     type="button"
                     onClick={() => filters.removePattern(pattern)}
-                    className="rounded bg-neutral-800 px-2 py-0.5 font-mono hover:bg-neutral-700"
+                    className="rounded bg-surface-3 px-2 py-0.5 font-mono hover:bg-surface-3"
                     title="点击移除"
                   >
                     {pattern} ×
@@ -281,7 +281,7 @@ export default function DanmakuList({
               ))}
             </ul>
           )}
-          <label className="flex items-center gap-2 text-neutral-500">
+          <label className="flex items-center gap-2 text-ink-faint">
             <input
               type="checkbox"
               checked={filters.state.enabled}
@@ -293,36 +293,36 @@ export default function DanmakuList({
         </div>
       </details>
 
-      {loading && <p className="text-sm text-neutral-500">加载中…</p>}
+      {loading && <p className="text-sm text-ink-faint">加载中…</p>}
 
       {!loading && visible.length === 0 && danmakus.length > 0 && (
-        <p className="rounded border border-neutral-800 p-4 text-sm text-neutral-500">
+        <p className="panel text-sm text-ink-faint">
           全部 {danmakus.length} 条弹幕都被你的本地屏蔽词过滤了。
         </p>
       )}
 
       {!loading && danmakus.length === 0 && (
-        <p className="rounded border border-neutral-800 p-4 text-sm text-neutral-500">
+        <p className="panel text-sm text-ink-faint">
           {schoolOnly ? "本校还没有人在这集发弹幕。" : "这集还没有弹幕。"}
         </p>
       )}
 
-      <ul className="max-h-80 space-y-0.5 overflow-y-auto rounded border border-neutral-800 p-3 text-sm">
+      <ul className="max-h-80 space-y-0.5 overflow-y-auto rounded border border-line p-3 text-sm">
         {visible.map((danmaku) => (
           <li key={danmaku.id} className="group flex gap-3">
-            <span className="w-12 shrink-0 font-mono text-xs text-neutral-500">
+            <span className="w-12 shrink-0 font-mono text-xs text-ink-faint">
               {fmtTime(danmaku.playTimeMs)}
             </span>
             <span
               className={`shrink-0 rounded px-1.5 text-xs ${
                 schoolId && danmaku.schoolId === schoolId
-                  ? "bg-sky-900/70 text-sky-300"
-                  : "bg-neutral-800 text-neutral-500"
+                  ? "bg-accent-dim/70 text-accent"
+                  : "bg-surface-3 text-ink-faint"
               }`}
             >
               {danmaku.schoolId === schoolId ? "本校" : danmaku.schoolId || "外部"}
             </span>
-            <span className="shrink-0 text-xs text-neutral-500">{danmaku.senderName}</span>
+            <span className="shrink-0 text-xs text-ink-faint">{danmaku.senderName}</span>
             <span
               className="break-all"
               style={{ color: `#${danmaku.color.toString(16).padStart(6, "0")}` }}
@@ -340,7 +340,7 @@ export default function DanmakuList({
                  * 不用 opacity-0 + group-hover 隐藏 —— 触屏没有 hover，
                  * 手机上按钮会永远看不见。改为低对比度常显、hover 时变亮。
                  */
-                className="ml-auto shrink-0 text-xs text-neutral-700 transition hover:text-red-300 disabled:text-neutral-800"
+                className="ml-auto shrink-0 text-xs text-ink-faint transition hover:text-danger disabled:text-ink-faint"
                 title="举报这条弹幕"
               >
                 {reported.has(danmaku.id) ? "已举报" : "举报"}

@@ -123,16 +123,16 @@ export default function SourcePlayer({
         null);
 
   return (
-    <div className="space-y-4 rounded border border-sky-900 bg-sky-950/20 p-4">
+    <div className="panel accent-bar space-y-4 border-accent/40 bg-accent-dim/20">
       <div className="flex flex-wrap items-center gap-3 text-sm">
-        <span className="font-medium text-sky-200">站内播放 · {sourceName}</span>
-        <span className="text-xs text-neutral-500">
+        <span className="font-medium text-accent">站内播放 · {sourceName}</span>
+        <span className="text-xs text-ink-faint">
           视频由来源站 CDN 直连你的浏览器，不经过本平台
         </span>
         <button
           type="button"
           onClick={onClose}
-          className="ml-auto rounded border border-neutral-700 px-2 py-1 text-xs hover:bg-neutral-800"
+          className="btn btn-ghost btn-sm ml-auto"
         >
           关闭播放器
         </button>
@@ -149,7 +149,7 @@ export default function SourcePlayer({
       )}
 
       <div className="space-y-2">
-        <p className="text-xs text-neutral-400">
+        <p className="text-xs text-ink-muted">
           {episodes === null
             ? "正在读取剧集列表…"
             : episodes.length === 0
@@ -170,8 +170,8 @@ export default function SourcePlayer({
                     disabled={resolving !== null}
                     className={`w-full rounded border px-2 py-1.5 text-left text-xs transition disabled:opacity-50 ${
                       active
-                        ? "border-sky-500 bg-sky-950/60 text-sky-200"
-                        : "border-neutral-800 bg-neutral-900 hover:border-neutral-600"
+                        ? "border-accent bg-accent-dim text-accent"
+                        : "border-line bg-surface hover:border-line-strong"
                     }`}
                   >
                     {busy ? "解析中…" : episode.name}
@@ -184,7 +184,7 @@ export default function SourcePlayer({
       </div>
 
       {error && (
-        <p className="rounded border border-red-900 bg-red-950/40 px-3 py-2 text-xs text-red-300">
+        <p className="alert alert-danger">
           {error}
         </p>
       )}

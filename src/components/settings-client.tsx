@@ -126,18 +126,18 @@ export default function SettingsClient({
 
   return (
     <div className="space-y-6">
-      <section className="space-y-3 rounded border border-neutral-800 p-5">
+      <section className="panel space-y-3 p-5">
         <h2 className="font-medium">Bangumi 账号</h2>
         {bgmBound ? (
           <div className="space-y-3 text-sm">
-            <p className="text-emerald-400">已绑定：{bgmUsername}</p>
+            <p className="text-success">已绑定：{bgmUsername}</p>
             <div className="space-y-3">
               <div className="flex flex-wrap items-center gap-3">
                 <button
                   type="button"
                   onClick={() => void runImport()}
                   disabled={importing || !bgmBound}
-                  className="rounded bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-50"
+                  className="btn btn-primary"
                 >
                   {importing
                     ? "导入中…（几秒内完成）"
@@ -149,26 +149,26 @@ export default function SettingsClient({
                   type="button"
                   onClick={() => void unbind("bgm")}
                   disabled={importing}
-                  className="rounded border border-neutral-700 px-4 py-2 text-sm hover:bg-neutral-800 disabled:opacity-40"
+                  className="btn btn-ghost"
                 >
                   解除绑定
                 </button>
               </div>
 
               {stats && !importing && (
-                <p className="text-xs text-emerald-400">
+                <p className="text-xs text-success">
                   导入完成：{stats.collections} 个收藏
                   （新建 {stats.created} · 更新 {stats.updated}）
                 </p>
               )}
 
               {sync?.syncedAt && !importing && (
-                <p className="text-xs text-neutral-500">
+                <p className="text-xs text-ink-faint">
                   上次同步 {new Date(sync.syncedAt).toLocaleString("zh-CN")} ·
                   已导入 {sync.collectionCount} 个收藏 ·
                   本地缓存 {sync.subjectCount} 个条目
                   <br />
-                  <span className="text-neutral-600">
+                  <span className="text-ink-faint">
                     条目的简介与章节在**首次打开时**才从 Bangumi 拉取并缓存，
                     因此导入很快，也不会为几百个收藏打出上千次请求。
                   </span>
@@ -178,36 +178,36 @@ export default function SettingsClient({
           </div>
         ) : (
           <div className="space-y-4 text-sm">
-            <p className="text-neutral-400">
+            <p className="text-ink-muted">
               绑定后可一键导入你在 Bangumi 的全部收藏、评分与每集观看进度。
             </p>
 
             <div className="space-y-2">
               <a
                 href="/api/auth/bgm/start"
-                className="inline-block rounded bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500"
+                className="inline-block rounded bg-accent-strong px-4 py-2 text-sm font-medium text-white hover:bg-accent"
               >
                 用 Bangumi 账号授权登录（推荐）
               </a>
-              <p className="text-xs text-neutral-500">
+              <p className="text-xs text-ink-faint">
                 跳转到 bgm.tv 完成授权。本平台全程不会接触你的 Bangumi 密码。
                 {!oauthConfigured && " 当前部署未配置 OAuth 应用，请改用下方个人令牌方式。"}
               </p>
             </div>
 
-            <details className="rounded border border-neutral-800 bg-neutral-900/40 p-4">
-              <summary className="cursor-pointer text-neutral-300">
+            <details className="panel bg-surface-2">
+              <summary className="cursor-pointer text-ink">
                 或者：粘贴个人访问令牌
               </summary>
               <div className="mt-3 space-y-3">
-                <ol className="list-decimal space-y-1 pl-5 text-xs text-neutral-400">
+                <ol className="list-decimal space-y-1 pl-5 text-xs text-ink-muted">
                   <li>
                     打开{" "}
                     <a
                       href="https://next.bgm.tv/demo/access-token"
                       target="_blank"
                       rel="noreferrer"
-                      className="text-sky-400 underline"
+                      className="text-accent underline"
                     >
                       next.bgm.tv/demo/access-token
                     </a>{" "}
@@ -224,19 +224,19 @@ export default function SettingsClient({
                     onChange={(event) => setToken(event.target.value)}
                     placeholder="粘贴 Bangumi 个人访问令牌"
                     autoComplete="off"
-                    className="min-w-64 flex-1 rounded border border-neutral-700 bg-neutral-900 px-3 py-2 font-mono text-xs outline-none focus:border-sky-500"
+                    className="input min-w-64 flex-1 font-mono text-xs"
                   />
                   <button
                     type="button"
                     onClick={() => void bindToken()}
                     disabled={binding || token.trim().length < 8}
-                    className="rounded bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-40"
+                    className="rounded bg-accent-strong px-4 py-2 text-sm font-medium text-white hover:bg-accent disabled:opacity-40"
                   >
                     {binding ? "校验中…" : "绑定"}
                   </button>
                 </div>
 
-                <p className="text-xs text-amber-400/90">
+                <p className="text-xs text-warn">
                   该令牌等同于你的 Bangumi 账号密码，仅保存在本站服务端。请勿分享给他人；
                   若怀疑泄露，可在 Bangumi 侧重新生成。
                 </p>
@@ -246,25 +246,25 @@ export default function SettingsClient({
         )}
       </section>
 
-      <section className="space-y-3 rounded border border-neutral-800 p-5">
+      <section className="panel space-y-3 p-5">
         <h2 className="font-medium">QQ 账号</h2>
         {qqBound ? (
           <div className="flex flex-wrap items-center gap-3 text-sm">
-            <p className="text-emerald-400">已绑定</p>
+            <p className="text-success">已绑定</p>
             <button
               type="button"
               onClick={() => void unbind("qq")}
-              className="rounded border border-neutral-700 px-4 py-2 text-sm hover:bg-neutral-800"
+              className="btn btn-ghost"
             >
               解除绑定
             </button>
           </div>
         ) : (
           <div className="space-y-3 text-sm">
-            <p className="text-neutral-400">绑定 QQ 用于站内通知与社群同步。</p>
+            <p className="text-ink-muted">绑定 QQ 用于站内通知与社群同步。</p>
             <a
               href="/api/auth/qq/start"
-              className="inline-block rounded bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500"
+              className="inline-block rounded bg-accent-strong px-4 py-2 text-sm font-medium text-white hover:bg-accent"
             >
               绑定 QQ
             </a>
@@ -273,7 +273,7 @@ export default function SettingsClient({
       </section>
 
       {error && (
-        <p className="rounded border border-red-900 bg-red-950/40 px-3 py-2 text-sm text-red-300">
+        <p className="alert alert-danger">
           {error}
         </p>
       )}

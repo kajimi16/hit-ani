@@ -154,9 +154,9 @@ export default function JellyfinPanel({
     return (
       <section className="space-y-2">
         <h2 className="text-lg font-semibold">在这里看</h2>
-        <p className="rounded border border-neutral-800 p-4 text-sm text-neutral-500">
+        <p className="panel text-sm text-ink-faint">
           还没有连接媒体服务器。到{" "}
-          <a href="/sources" className="text-sky-400 underline">
+          <a href="/sources" className="text-accent underline">
             媒体源
           </a>{" "}
           页面连接你自己的 Jellyfin / Emby，
@@ -170,14 +170,14 @@ export default function JellyfinPanel({
     <section className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
         <h2 className="text-lg font-semibold">在这里看</h2>
-        <span className="text-xs text-neutral-500">
+        <span className="text-xs text-ink-faint">
           视频由你的媒体服务器直连播放，本平台不传输视频
         </span>
         <button
           type="button"
           onClick={() => void loadMatches()}
           disabled={loading}
-          className="ml-auto rounded border border-neutral-700 px-2 py-1 text-xs hover:bg-neutral-800"
+          className="btn btn-ghost btn-sm ml-auto"
         >
           {loading ? "匹配中…" : "重新匹配"}
         </button>
@@ -200,7 +200,7 @@ export default function JellyfinPanel({
       )}
 
       {matches && matches.length === 0 && (
-        <p className="rounded border border-neutral-800 p-4 text-sm text-neutral-500">
+        <p className="panel text-sm text-ink-faint">
           没有已连接的媒体服务器。
         </p>
       )}
@@ -210,22 +210,22 @@ export default function JellyfinPanel({
           {matches.map((match) => (
             <li
               key={match.connectionId}
-              className="flex flex-wrap items-center gap-3 rounded border border-neutral-800 p-3 text-sm"
+              className="flex flex-wrap items-center gap-3 rounded border border-line p-3 text-sm"
             >
-              <span className="text-neutral-400">{match.connectionName}</span>
+              <span className="text-ink-muted">{match.connectionName}</span>
               {match.error ? (
-                <span className="text-xs text-red-300">{match.error}</span>
+                <span className="text-xs text-danger">{match.error}</span>
               ) : match.series ? (
                 <>
                   <span className="font-medium">{match.series.name}</span>
                   {match.series.year && (
-                    <span className="text-xs text-neutral-500">{match.series.year}</span>
+                    <span className="text-xs text-ink-faint">{match.series.year}</span>
                   )}
                   <span
                     className={`rounded px-2 py-0.5 text-xs ${
                       match.matchMethod === "FUZZY"
-                        ? "bg-amber-900/60 text-amber-300"
-                        : "bg-emerald-900/60 text-emerald-300"
+                        ? "bg-warn/15 text-warn"
+                        : "bg-success/15 text-success"
                     }`}
                   >
                     {MATCH_LABEL[match.matchMethod] ?? match.matchMethod}
@@ -234,13 +234,13 @@ export default function JellyfinPanel({
                   <button
                     type="button"
                     onClick={() => void openSeries(match)}
-                    className="ml-auto rounded bg-sky-600 px-3 py-1 text-xs text-white hover:bg-sky-500"
+                    className="ml-auto rounded bg-accent-strong px-3 py-1 text-xs text-white hover:bg-accent"
                   >
                     查看剧集
                   </button>
                 </>
               ) : (
-                <span className="text-xs text-neutral-500">库里没有这部番</span>
+                <span className="text-xs text-ink-faint">库里没有这部番</span>
               )}
             </li>
           ))}
@@ -257,18 +257,18 @@ export default function JellyfinPanel({
                 setEpisodes(null);
                 setPlaying(null);
               }}
-              className="rounded border border-neutral-700 px-2 py-1 text-xs hover:bg-neutral-800"
+              className="btn btn-ghost btn-sm"
             >
               ← 返回
             </button>
             <span className="font-medium">{selected.series?.name}</span>
-            <span className="text-xs text-neutral-500">{selected.connectionName}</span>
+            <span className="text-xs text-ink-faint">{selected.connectionName}</span>
           </div>
 
           {episodes === null ? (
-            <p className="text-sm text-neutral-500">读取剧集中…</p>
+            <p className="text-sm text-ink-faint">读取剧集中…</p>
           ) : episodes.length === 0 ? (
-            <p className="text-sm text-neutral-500">这个系列下没有剧集文件。</p>
+            <p className="text-sm text-ink-faint">这个系列下没有剧集文件。</p>
           ) : (
             <ul className="grid gap-1 sm:grid-cols-2">
               {episodes.map((episode) => {
@@ -280,8 +280,8 @@ export default function JellyfinPanel({
                       onClick={() => setPlaying(episode)}
                       className={`w-full rounded border px-3 py-2 text-left text-sm transition ${
                         active
-                          ? "border-sky-500 bg-sky-950/60 text-sky-200"
-                          : "border-neutral-800 bg-neutral-900 hover:border-neutral-600"
+                          ? "border-accent bg-accent-dim text-accent"
+                          : "border-line bg-surface hover:border-line-strong"
                       }`}
                     >
                       <span className="font-mono text-xs opacity-70">
@@ -290,12 +290,12 @@ export default function JellyfinPanel({
                       </span>
                       <span className="ml-2">{episode.name}</span>
                       {episode.played && (
-                        <span className="ml-2 rounded bg-neutral-800 px-1.5 text-xs text-neutral-400">
+                        <span className="ml-2 rounded bg-surface-3 px-1.5 text-xs text-ink-muted">
                           已看
                         </span>
                       )}
                       {!episode.played && episode.positionMs > 0 && (
-                        <span className="ml-2 text-xs text-amber-400">
+                        <span className="ml-2 text-xs text-warn">
                           续播 {Math.floor(episode.positionMs / 60000)} 分
                         </span>
                       )}
@@ -309,7 +309,7 @@ export default function JellyfinPanel({
       )}
 
       {error && (
-        <p className="rounded border border-red-900 bg-red-950/40 px-3 py-2 text-sm text-red-300">
+        <p className="alert alert-danger">
           {error}
         </p>
       )}

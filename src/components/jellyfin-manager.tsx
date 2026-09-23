@@ -141,7 +141,7 @@ export default function JellyfinManager() {
       <section className="space-y-3">
         <h2 className="text-lg font-medium">已连接的媒体服务器</h2>
         {connections.length === 0 ? (
-          <p className="rounded border border-neutral-800 p-4 text-sm text-neutral-500">
+          <p className="panel text-sm text-ink-faint">
             还没有连接。下面填你自己的 Jellyfin / Emby 地址即可。
           </p>
         ) : (
@@ -151,21 +151,21 @@ export default function JellyfinManager() {
                 key={connection.id}
                 className={`space-y-2 rounded border p-3 text-sm ${
                   connection.warning
-                    ? "border-amber-900 bg-amber-950/20"
-                    : "border-neutral-800 bg-neutral-900/40"
+                    ? "border-warn/40 bg-warn/10"
+                    : "border-line bg-surface-2"
                 }`}
               >
                 <div className="flex flex-wrap items-center gap-3">
                 <span className="font-medium">{connection.name}</span>
-                <span className="font-mono text-xs text-neutral-500">{connection.baseUrl}</span>
+                <span className="font-mono text-xs text-ink-faint">{connection.baseUrl}</span>
                 {connection.publicBaseUrl && (
-                  <span className="font-mono text-xs text-sky-400">
+                  <span className="font-mono text-xs text-accent">
                     → {connection.publicBaseUrl}
                   </span>
                 )}
-                <span className="text-xs text-neutral-400">账号 {connection.remoteUserName}</span>
+                <span className="text-xs text-ink-muted">账号 {connection.remoteUserName}</span>
                 {connection.serverVersion && (
-                  <span className="rounded bg-neutral-800 px-2 py-0.5 text-xs text-neutral-400">
+                  <span className="badge">
                     v{connection.serverVersion}
                   </span>
                 )}
@@ -173,21 +173,21 @@ export default function JellyfinManager() {
                   <button
                     type="button"
                     onClick={() => void recheck(connection.id)}
-                    className="rounded border border-neutral-700 px-2 py-1 text-xs hover:bg-neutral-800"
+                    className="btn btn-ghost btn-sm"
                   >
                     测试
                   </button>
                   <button
                     type="button"
                     onClick={() => void disconnect(connection.id)}
-                    className="rounded border border-red-900 px-2 py-1 text-xs text-red-300 hover:bg-red-950/50"
+                    className="rounded border border-danger/40 px-2 py-1 text-xs text-danger hover:bg-danger/10"
                   >
                     断开
                   </button>
                 </div>
                 </div>
                 {connection.warning && (
-                  <p className="text-xs text-amber-300">⚠️ {connection.warning}</p>
+                  <p className="text-xs text-warn">⚠️ {connection.warning}</p>
                 )}
               </li>
             ))}
@@ -203,13 +203,13 @@ export default function JellyfinManager() {
               value={baseUrl}
               onChange={(event) => setBaseUrl(event.target.value)}
               placeholder="服务器地址，例如 http://192.168.1.10:8096"
-              className="min-w-72 flex-1 rounded border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-sky-500"
+              className="input min-w-72 flex-1"
             />
             <button
               type="button"
               onClick={() => void probe()}
               disabled={busy || baseUrl.trim().length === 0}
-              className="rounded border border-neutral-700 px-4 py-2 text-sm hover:bg-neutral-800 disabled:opacity-40"
+              className="btn btn-ghost"
             >
               仅测试连通
             </button>
@@ -219,11 +219,11 @@ export default function JellyfinManager() {
             value={publicBaseUrl}
             onChange={(event) => setPublicBaseUrl(event.target.value)}
             placeholder="浏览器侧地址（容器部署时必填），例如 http://10.0.0.5:3103"
-            className="w-full rounded border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-sky-500"
+            className="input"
           />
-          <p className="text-xs text-neutral-500">
+          <p className="text-xs text-ink-faint">
             若服务器地址填的是 Docker 内部服务名（如 <code>jellyfin</code>），
-            <strong className="text-amber-300">这里必须填学生能访问到的地址</strong> ——
+            <strong className="text-warn">这里必须填学生能访问到的地址</strong> ——
             否则播放链接会指向容器内部、学生点开是黑屏。
           </p>
 
@@ -231,7 +231,7 @@ export default function JellyfinManager() {
             value={name}
             onChange={(event) => setName(event.target.value)}
             placeholder="名称（可选），例如「宿舍服务器」"
-            className="w-full rounded border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-sky-500"
+            className="input"
           />
 
           <div className="flex flex-wrap gap-3">
@@ -240,7 +240,7 @@ export default function JellyfinManager() {
               onChange={(event) => setUsername(event.target.value)}
               placeholder="Jellyfin 用户名"
               autoComplete="off"
-              className="min-w-48 flex-1 rounded border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-sky-500"
+              className="input min-w-48 flex-1"
             />
             <input
               type="password"
@@ -248,11 +248,11 @@ export default function JellyfinManager() {
               onChange={(event) => setPassword(event.target.value)}
               placeholder="Jellyfin 密码"
               autoComplete="off"
-              className="min-w-48 flex-1 rounded border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-sky-500"
+              className="input min-w-48 flex-1"
             />
           </div>
 
-          <label className="flex items-center gap-2 text-xs text-neutral-400">
+          <label className="flex items-center gap-2 text-xs text-ink-muted">
             <input
               type="checkbox"
               checked={allowPrivate}
@@ -263,7 +263,7 @@ export default function JellyfinManager() {
           </label>
 
           {/^https?:\/\/(localhost|127\.0\.0\.1)/i.test(baseUrl.trim()) && (
-            <p className="rounded border border-amber-900 bg-amber-950/30 px-3 py-2 text-xs text-amber-300">
+            <p className="alert alert-warn">
               这个地址只有服务器本机能访问。学生从自己电脑打开页面时浏览器会去找
               <strong>他自己的机器</strong>，必然播不了。请填写服务器在局域网里的地址
               （用 <code>ip addr</code> 查，类似 <code>http://10.x.x.x:8096</code>）。
@@ -279,24 +279,24 @@ export default function JellyfinManager() {
               username.trim().length === 0 ||
               password.length === 0
             }
-            className="rounded bg-sky-600 px-5 py-2 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-40"
+            className="rounded bg-accent-strong px-5 py-2 text-sm font-medium text-white hover:bg-accent disabled:opacity-40"
           >
             {busy ? "连接中…" : "连接"}
           </button>
 
-          <p className="text-xs text-neutral-500">
+          <p className="text-xs text-ink-faint">
             密码仅用于换取访问令牌，**不会保存**；保存的是令牌本身，且只存在服务端。
           </p>
         </div>
       </section>
 
       {notice && (
-        <p className="rounded border border-sky-900 bg-sky-950/30 px-3 py-2 text-sm text-sky-300">
+        <p className="rounded border border-accent/40 bg-accent-dim px-3 py-2 text-sm text-accent">
           {notice}
         </p>
       )}
       {error && (
-        <p className="rounded border border-red-900 bg-red-950/40 px-3 py-2 text-sm text-red-300">
+        <p className="alert alert-danger">
           {error}
         </p>
       )}

@@ -95,7 +95,7 @@ export default function ReviewPanel({ subjectId, canInteract, schoolId }: Props)
     <section className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
         <h2 className="text-lg font-semibold">评论 / 影评</h2>
-        <span className="text-xs text-neutral-500">
+        <span className="text-xs text-ink-faint">
           全体 {total} · 本校 {schoolTotal}
         </span>
         <label className="ml-auto flex items-center gap-2 text-sm">
@@ -106,17 +106,17 @@ export default function ReviewPanel({ subjectId, canInteract, schoolId }: Props)
             onChange={(event) => setSchoolOnly(event.target.checked)}
             className="size-4 accent-sky-500"
           />
-          <span className={canInteract ? "" : "text-neutral-600"}>只看本校评论</span>
+          <span className={canInteract ? "" : "text-ink-faint"}>只看本校评论</span>
         </label>
       </div>
 
       {canInteract && (
-        <div className="space-y-3 rounded border border-neutral-800 bg-neutral-900/40 p-4">
+        <div className="panel space-y-3 bg-surface-2">
           <div className="flex gap-3">
             <select
               value={kind}
               onChange={(event) => setKind(Number(event.target.value) as 0 | 1)}
-              className="rounded border border-neutral-700 bg-neutral-900 px-2 py-1.5 text-sm"
+              className="input w-auto py-1.5"
             >
               <option value={0}>短评</option>
               <option value={1}>长评（影评）</option>
@@ -126,7 +126,7 @@ export default function ReviewPanel({ subjectId, canInteract, schoolId }: Props)
               onChange={(event) =>
                 setRating(event.target.value === "" ? "" : Number(event.target.value))
               }
-              className="rounded border border-neutral-700 bg-neutral-900 px-2 py-1.5 text-sm"
+              className="input w-auto py-1.5"
             >
               <option value="">不打分</option>
               {Array.from({ length: 10 }, (_, i) => i + 1).map((score) => (
@@ -142,7 +142,7 @@ export default function ReviewPanel({ subjectId, canInteract, schoolId }: Props)
               value={title}
               onChange={(event) => setTitle(event.target.value)}
               placeholder="影评标题"
-              className="w-full rounded border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-sky-500"
+              className="input"
             />
           )}
 
@@ -151,14 +151,14 @@ export default function ReviewPanel({ subjectId, canInteract, schoolId }: Props)
             onChange={(event) => setContent(event.target.value)}
             rows={4}
             placeholder={kind === 1 ? "写一篇影评…" : "写一条短评…"}
-            className="w-full rounded border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-sky-500"
+            className="input"
           />
 
           <button
             type="button"
             onClick={() => void submit()}
             disabled={content.trim().length === 0}
-            className="rounded bg-sky-600 px-5 py-2 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-40"
+            className="rounded bg-accent-strong px-5 py-2 text-sm font-medium text-white hover:bg-accent disabled:opacity-40"
           >
             发布
           </button>
@@ -166,45 +166,45 @@ export default function ReviewPanel({ subjectId, canInteract, schoolId }: Props)
       )}
 
       {error && (
-        <p className="rounded border border-red-900 bg-red-950/40 px-3 py-2 text-sm text-red-300">
+        <p className="alert alert-danger">
           {error}
         </p>
       )}
 
       <ul className="space-y-3">
-        {loading && <li className="text-sm text-neutral-500">加载中…</li>}
+        {loading && <li className="text-sm text-ink-faint">加载中…</li>}
         {!loading && reviews.length === 0 && (
-          <li className="text-sm text-neutral-500">
+          <li className="text-sm text-ink-faint">
             {schoolOnly ? "本校还没有人评论这部番。" : "还没有评论。"}
           </li>
         )}
         {reviews.map((review) => (
-          <li key={review.id} className="rounded border border-neutral-800 p-4">
+          <li key={review.id} className="panel">
             <div className="flex flex-wrap items-center gap-2 text-xs">
               <span
                 className={`rounded px-1.5 py-0.5 ${
                   schoolId && review.schoolId === schoolId
-                    ? "bg-sky-900/70 text-sky-300"
-                    : "bg-neutral-800 text-neutral-400"
+                    ? "bg-accent-dim/70 text-accent"
+                    : "bg-surface-3 text-ink-muted"
                 }`}
               >
                 {review.schoolId === schoolId ? "本校" : review.schoolId}
               </span>
-              <span className="text-neutral-400">{review.authorName}</span>
-              <span className="text-neutral-600">
+              <span className="text-ink-muted">{review.authorName}</span>
+              <span className="text-ink-faint">
                 {review.kind === 1 ? "影评" : "短评"}
               </span>
               {review.rating !== null && (
-                <span className="text-amber-400">{review.rating} 分</span>
+                <span className="text-warn">{review.rating} 分</span>
               )}
-              <span className="ml-auto text-neutral-600">
+              <span className="ml-auto text-ink-faint">
                 {new Date(review.createdAt).toLocaleString("zh-CN")}
               </span>
             </div>
             {review.title && (
-              <p className="mt-2 font-medium text-neutral-100">{review.title}</p>
+              <p className="mt-2 font-medium text-ink">{review.title}</p>
             )}
-            <p className="mt-1 whitespace-pre-wrap text-sm text-neutral-300">
+            <p className="mt-1 whitespace-pre-wrap text-sm text-ink">
               {review.content}
             </p>
           </li>

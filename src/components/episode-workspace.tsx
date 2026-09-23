@@ -100,7 +100,7 @@ export default function EpisodeWorkspace({
 
   if (!selected) {
     return (
-      <p className="rounded border border-neutral-800 p-4 text-sm text-neutral-500">
+      <p className="panel text-sm text-ink-faint">
         该条目暂无章节数据。
       </p>
     );
@@ -113,7 +113,7 @@ export default function EpisodeWorkspace({
       <section className="space-y-3">
         <div className="flex flex-wrap items-baseline gap-3">
           <h2 className="text-lg font-semibold">章节</h2>
-          <span className="text-xs text-neutral-500">
+          <span className="text-xs text-ink-faint">
             {canInteract
               ? bgmBound
                 ? "标记后同步写入 Bangumi"
@@ -123,7 +123,7 @@ export default function EpisodeWorkspace({
         </div>
 
         {saveError && (
-          <p className="rounded border border-amber-900 bg-amber-950/40 px-3 py-2 text-sm text-amber-300">
+          <p className="alert alert-warn">
             {saveError}
           </p>
         )}
@@ -137,8 +137,8 @@ export default function EpisodeWorkspace({
                 <div
                   className={`flex items-center gap-2 rounded border px-3 py-1.5 text-sm transition ${
                     active
-                      ? "border-sky-500 bg-sky-950/60 text-sky-200"
-                      : "border-neutral-800 bg-neutral-900 hover:border-neutral-600"
+                      ? "border-accent bg-accent-dim text-accent"
+                      : "border-line bg-surface hover:border-line-strong"
                   }`}
                 >
                   <button
@@ -151,7 +151,7 @@ export default function EpisodeWorkspace({
                       EP{episode.ep ?? episode.sort}
                     </span>
                     <span className="ml-2">{episode.nameCn || episode.name}</span>
-                    <span className="ml-2 text-xs text-neutral-500">
+                    <span className="ml-2 text-xs text-ink-faint">
                       弹幕 {episode.danmakuCount}
                       {schoolId ? ` / 本校 ${episode.schoolDanmakuCount}` : ""}
                     </span>
@@ -162,7 +162,7 @@ export default function EpisodeWorkspace({
                     disabled={!canInteract || pending === episode.id}
                     onChange={(event) => void markEpisode(episode.id, Number(event.target.value))}
                     title="观看状态"
-                    className="rounded border border-neutral-700 bg-neutral-900 px-1 py-0.5 text-xs disabled:opacity-40"
+                    className="input w-auto py-0.5 text-xs"
                   >
                     {Object.entries(PROGRESS_LABELS).map(([value, text]) => (
                       <option key={value} value={value}>

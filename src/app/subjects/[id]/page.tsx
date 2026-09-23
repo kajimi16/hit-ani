@@ -60,10 +60,10 @@ export default async function SubjectPage({
     return (
       <div className="space-y-4">
         <h1 className="text-xl font-semibold">条目 {subjectId}</h1>
-        <p className="rounded border border-amber-900 bg-amber-950/40 p-4 text-sm text-amber-300">
+        <p className="alert alert-warn">
           无法从 Bangumi 获取该条目。可能是网络问题或条目 ID 不存在。
         </p>
-        <Link href="/" className="text-sm text-sky-400 underline">
+        <Link href="/" className="text-sm text-accent underline">
           返回找番
         </Link>
       </div>
@@ -106,13 +106,13 @@ export default async function SubjectPage({
             width={160}
             height={213}
             priority
-            className="h-auto w-40 shrink-0 rounded border border-neutral-800 object-cover"
+            className="h-auto w-40 shrink-0 rounded border border-line object-cover"
           />
         )}
         <div className="space-y-3">
           <h1 className="text-2xl font-semibold">{subject.nameCn || subject.name}</h1>
-          <p className="text-sm text-neutral-500">{subject.name}</p>
-          <div className="flex flex-wrap gap-3 text-sm text-neutral-400">
+          <p className="text-sm text-ink-faint">{subject.name}</p>
+          <div className="flex flex-wrap gap-3 text-sm text-ink-muted">
             <span>Bangumi 评分 {subject.score?.toFixed(1) ?? "暂无"}</span>
             <span>排名 {subject.rank ? `#${subject.rank}` : "暂无"}</span>
             <span>首播 {subject.airDate?.toISOString().slice(0, 10) ?? "未定档"}</span>
@@ -124,12 +124,12 @@ export default async function SubjectPage({
             bgmBound={user?.bgmBound ?? false}
           />
           {collection?.rating != null && (
-            <p className="text-sm text-sky-300">你的评分：{collection.rating} 分</p>
+            <p className="text-sm text-accent">你的评分：{collection.rating} 分</p>
           )}
-          <p className="max-w-2xl whitespace-pre-wrap text-sm text-neutral-400">
+          <p className="max-w-2xl whitespace-pre-wrap text-sm text-ink-muted">
             {subject.summary}
           </p>
-          <p className="text-xs text-neutral-600">
+          <p className="text-xs text-ink-faint">
             条目与章节元数据来自 Bangumi；弹幕与评论为本站自建内容，可按本校筛选。
           </p>
         </div>

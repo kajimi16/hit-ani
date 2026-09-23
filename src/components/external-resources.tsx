@@ -115,9 +115,9 @@ export default function ExternalResources({
     return (
       <section className="space-y-2">
         <h2 className="text-lg font-semibold">外部资源</h2>
-        <p className="rounded border border-neutral-800 p-4 text-sm text-neutral-500">
+        <p className="panel text-sm text-ink-faint">
           还没有配置抓取源。到{" "}
-          <a href="/sources" className="text-sky-400 underline">
+          <a href="/sources" className="text-accent underline">
             媒体源
           </a>{" "}
           页面添加，就能在这里按集看到各站找到的资源。
@@ -154,19 +154,19 @@ export default function ExternalResources({
       <div className="flex flex-wrap items-center gap-3">
         <h2 className="text-lg font-semibold">外部资源</h2>
         {groups !== null && (
-          <span className="text-xs text-neutral-500">
+          <span className="text-xs text-ink-faint">
             {totalResources} 条 · 来自 {sources.length} 个源
             {cached && "（缓存）"}
           </span>
         )}
-        <span className="text-xs text-neutral-600">
+        <span className="text-xs text-ink-faint">
           点击在新标签页打开来源站点，本平台不提供也不传输视频
         </span>
         <button
           type="button"
           onClick={() => void load(true)}
           disabled={loading}
-          className="ml-auto rounded border border-neutral-700 px-2 py-1 text-xs hover:bg-neutral-800"
+          className="btn btn-ghost btn-sm ml-auto"
         >
           {loading ? "检索中…" : "重新检索"}
         </button>
@@ -196,8 +196,8 @@ export default function ExternalResources({
               onClick={() => setFilter("all")}
               className={`rounded border px-2 py-1 ${
                 filter === "all"
-                  ? "border-sky-500 bg-sky-950/60 text-sky-200"
-                  : "border-neutral-700 hover:bg-neutral-800"
+                  ? "border-accent bg-accent-dim text-accent"
+                  : "border-line-strong hover:bg-surface-3"
               }`}
             >
               全部 {totalResources}
@@ -207,27 +207,27 @@ export default function ExternalResources({
               onClick={() => setFilter("playable")}
               className={`rounded border px-2 py-1 ${
                 filter === "playable"
-                  ? "border-sky-500 bg-sky-950/60 text-sky-200"
-                  : "border-neutral-700 hover:bg-neutral-800"
+                  ? "border-accent bg-accent-dim text-accent"
+                  : "border-line-strong hover:bg-surface-3"
               }`}
             >
-              <span className="text-sky-300">可在线看</span> {playableCount}
+              <span className="text-accent">可在线看</span> {playableCount}
             </button>
             <button
               type="button"
               onClick={() => setFilter("download")}
               className={`rounded border px-2 py-1 ${
                 filter === "download"
-                  ? "border-sky-500 bg-sky-950/60 text-sky-200"
-                  : "border-neutral-700 hover:bg-neutral-800"
+                  ? "border-accent bg-accent-dim text-accent"
+                  : "border-line-strong hover:bg-surface-3"
               }`}
             >
-              <span className="text-amber-300">需下载</span> {downloadCount}
+              <span className="text-warn">需下载</span> {downloadCount}
             </button>
           </div>
 
           {playableCount === 0 && (
-            <div className="space-y-1 rounded border border-amber-900 bg-amber-950/30 px-3 py-2 text-xs text-amber-200">
+            <div className="space-y-1 alert alert-warn">
               <p className="font-medium">
                 当前没有「点击就能看」的资源 —— 找到的 {downloadCount} 条都是磁力/种子。
               </p>
@@ -252,19 +252,19 @@ export default function ExternalResources({
       )}
 
       {loading && groups === null && (
-        <p className="text-sm text-neutral-500">
+        <p className="text-sm text-ink-faint">
           正在向各源检索…（首次检索较慢，结果会缓存 10 分钟）
         </p>
       )}
 
       {groups !== null && totalResources > 0 && visibleGroups.length === 0 && (
-        <p className="rounded border border-neutral-800 p-4 text-sm text-neutral-500">
+        <p className="panel text-sm text-ink-faint">
           当前筛选下没有资源。
         </p>
       )}
 
       {groups !== null && totalResources === 0 && (
-        <p className="rounded border border-neutral-800 p-4 text-sm text-neutral-500">
+        <p className="panel text-sm text-ink-faint">
           各源都没有找到「本条目」的资源。可能是译名差异导致搜不到，
           可以试着调整源的关键词处理方式（媒体源页面里能改）。
         </p>
@@ -279,7 +279,7 @@ export default function ExternalResources({
             : `第 ${group.episodeNumber} 集（${group.items.length}）`;
 
         return (
-          <div key={String(key)} className="rounded border border-neutral-800">
+          <div key={String(key)} className="rounded border border-line">
             <button
               type="button"
               onClick={() => {
@@ -290,19 +290,19 @@ export default function ExternalResources({
                   return next;
                 });
               }}
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-neutral-900"
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-surface"
             >
-              <span className="text-neutral-400">{isOpen ? "▾" : "▸"}</span>
+              <span className="text-ink-muted">{isOpen ? "▾" : "▸"}</span>
               <span className="font-medium">{label}</span>
             </button>
 
             {isOpen && (
-              <ul className="divide-y divide-neutral-800 border-t border-neutral-800">
+              <ul className="divide-y divide-line border-t border-line">
                 {group.items.map((item) => (
                   <li key={`${item.sourceId}:${item.url}`} className="space-y-1 px-3 py-2 text-sm">
-                    <p className="break-all text-neutral-200">{item.title}</p>
-                    <div className="flex flex-wrap items-center gap-3 text-xs text-neutral-500">
-                      <span className="rounded bg-neutral-800 px-1.5">{item.sourceName}</span>
+                    <p className="break-all text-ink">{item.title}</p>
+                    <div className="flex flex-wrap items-center gap-3 text-xs text-ink-faint">
+                      <span className="rounded bg-surface-3 px-1.5">{item.sourceName}</span>
                       {formatSize(item.sizeBytes) !== null && (
                         <span>{formatSize(item.sizeBytes)}</span>
                       )}
@@ -320,7 +320,7 @@ export default function ExternalResources({
                               detailUrl: item.url,
                             })
                           }
-                          className="rounded border border-sky-700 bg-sky-950/40 px-1.5 text-sky-300 hover:bg-sky-900/40"
+                          className="rounded border border-accent bg-accent-dim px-1.5 text-accent hover:bg-accent-dim"
                         >
                           站内播放
                         </button>
@@ -332,7 +332,7 @@ export default function ExternalResources({
                             磁力/种子不能「在线看」——浏览器点它只会唤起 BT 客户端。
                             因此不做成链接，改为复制，并在下方说明如何用。
                           */}
-                          <span className="rounded bg-amber-950/60 px-1.5 text-amber-300">
+                          <span className="rounded bg-warn/10 px-1.5 text-warn">
                             需 BT 客户端
                           </span>
                           <button
@@ -340,7 +340,7 @@ export default function ExternalResources({
                             onClick={() => {
                               void navigator.clipboard?.writeText(item.url);
                             }}
-                            className="rounded border border-neutral-700 px-1.5 hover:bg-neutral-800"
+                            className="btn btn-ghost btn-sm"
                           >
                             复制磁力链接
                           </button>
@@ -350,7 +350,7 @@ export default function ExternalResources({
                           href={item.url}
                           target="_blank"
                           rel="noreferrer noopener"
-                          className="rounded border border-sky-800 px-1.5 text-sky-300 hover:bg-sky-950/40"
+                          className="rounded border border-accent px-1.5 text-accent hover:bg-accent-dim"
                         >
                           打开来源页 ↗
                         </a>
@@ -365,11 +365,11 @@ export default function ExternalResources({
       })}
 
       {failedSources.length > 0 && (
-        <details className="rounded border border-amber-900 bg-amber-950/20 p-3 text-xs">
-          <summary className="cursor-pointer text-amber-300">
+        <details className="alert alert-warn text-xs">
+          <summary className="cursor-pointer text-warn">
             {failedSources.length} 个源检索失败（不影响其它源）
           </summary>
-          <ul className="mt-2 space-y-1 font-mono text-amber-200/80">
+          <ul className="mt-2 space-y-1 font-mono text-warn">
             {failedSources.map((source) => (
               <li key={source.sourceId}>
                 {source.sourceName}: {source.error}
@@ -380,7 +380,7 @@ export default function ExternalResources({
       )}
 
       {error && (
-        <p className="rounded border border-red-900 bg-red-950/40 px-3 py-2 text-sm text-red-300">
+        <p className="alert alert-danger">
           {error}
         </p>
       )}

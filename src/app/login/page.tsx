@@ -36,15 +36,15 @@ export default function LoginPage() {
 
       <div className="space-y-3">
         <label className="block space-y-1 text-sm">
-          <span className="text-neutral-400">邮箱或学号</span>
+          <span className="text-ink-muted">邮箱或学号</span>
           <input
             value={identifier}
             onChange={(event) => setIdentifier(event.target.value)}
-            className="w-full rounded border border-neutral-700 bg-neutral-900 px-3 py-2 outline-none focus:border-sky-500"
+            className="input"
           />
         </label>
         <label className="block space-y-1 text-sm">
-          <span className="text-neutral-400">密码</span>
+          <span className="text-ink-muted">密码</span>
           <input
             type="password"
             value={password}
@@ -52,13 +52,13 @@ export default function LoginPage() {
             onKeyDown={(event) => {
               if (event.key === "Enter") void submit();
             }}
-            className="w-full rounded border border-neutral-700 bg-neutral-900 px-3 py-2 outline-none focus:border-sky-500"
+            className="input"
           />
         </label>
       </div>
 
       {error && (
-        <p className="rounded border border-red-900 bg-red-950/40 px-3 py-2 text-sm text-red-300">
+        <p className="alert alert-danger">
           {error}
         </p>
       )}
@@ -67,14 +67,14 @@ export default function LoginPage() {
         type="button"
         onClick={() => void submit()}
         disabled={busy}
-        className="w-full rounded bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-50"
+        className="btn btn-primary w-full"
       >
         {busy ? "登录中…" : "登录"}
       </button>
 
-      <p className="text-center text-sm text-neutral-500">
+      <p className="text-center text-sm text-ink-faint">
         没有账号？
-        <a href="/register" className="ml-1 text-sky-400 underline">
+        <a href="/register" className="ml-1 text-accent underline">
           注册
         </a>
       </p>

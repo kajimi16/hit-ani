@@ -16,11 +16,11 @@ export default async function SourcesPage() {
     <div className="space-y-8">
       <section className="space-y-3">
         <h1 className="text-2xl font-semibold">抓取源（管理员）</h1>
-        <p className="text-sm text-neutral-400">
+        <p className="text-sm text-ink-muted">
           全站共享的「去哪里找资源」规则。只保存查找规则（URL 模板、CSS 选择器、正则），
-          <strong className="text-neutral-300">不含视频文件、种子或直链</strong>。
+          <strong className="text-ink">不含视频文件、种子或直链</strong>。
         </p>
-        <div className="rounded border border-amber-900/70 bg-amber-950/30 p-4 text-xs text-amber-200/90">
+        <div className="alert alert-warn">
           <p className="font-medium">使用前请确认</p>
           <ul className="mt-2 list-disc space-y-1 pl-5">
             <li>资源的合法性由<b>部署方</b>负责，与平台代码无关。</li>

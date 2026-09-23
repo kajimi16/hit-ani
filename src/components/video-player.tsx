@@ -443,10 +443,10 @@ export default function VideoPlayer({
         <span
           className={`rounded px-2 py-0.5 text-xs ${
             connection === "open"
-              ? "bg-emerald-900/60 text-emerald-300"
+              ? "bg-success/15 text-success"
               : connection === "fallback"
-                ? "bg-amber-900/60 text-amber-300"
-                : "bg-neutral-800 text-neutral-400"
+                ? "bg-warn/15 text-warn"
+                : "bg-surface-3 text-ink-muted"
           }`}
         >
           {connection === "open" ? "弹幕实时" : connection === "fallback" ? "弹幕 REST" : "连接中…"}
@@ -459,12 +459,12 @@ export default function VideoPlayer({
             onChange={(event) => setSchoolOnly(event.target.checked)}
             className="size-4 accent-sky-500"
           />
-          <span className={canInteract ? "" : "text-neutral-600"}>只看本校弹幕</span>
+          <span className={canInteract ? "" : "text-ink-faint"}>只看本校弹幕</span>
         </label>
       </div>
 
       {/* 播放器：video 与弹幕 canvas 叠放 */}
-      <div className="relative overflow-hidden rounded border border-neutral-800 bg-black">
+      <div className="relative overflow-hidden rounded border border-line bg-black">
         <video
           ref={videoRef}
           controls
@@ -480,18 +480,18 @@ export default function VideoPlayer({
       </div>
 
       {episodeId === null && (
-        <p className="rounded border border-amber-900 bg-amber-950/30 px-3 py-2 text-xs text-amber-300">
+        <p className="alert alert-warn">
           这一集在 Bangumi 里找不到对应集数，已禁用弹幕 ——
           避免把弹幕挂到错误的集上。
         </p>
       )}
 
-      <div className="flex flex-wrap items-center gap-3 text-xs text-neutral-500">
+      <div className="flex flex-wrap items-center gap-3 text-xs text-ink-faint">
         <span className="font-mono">
           {fmt(mediaTimeMs)} / {durationMs > 0 ? fmt(durationMs) : "--:--"}
         </span>
         <span>已加载弹幕 {danmakus.length} 条</span>
-        <span className="text-neutral-600">
+        <span className="text-ink-faint">
           视频由你的 Jellyfin 服务器直连播放，不经过本平台
         </span>
       </div>
@@ -511,12 +511,12 @@ export default function VideoPlayer({
                 ? "发一条弹幕（回车发送）"
                 : "登录后可发送弹幕"
           }
-          className="flex-1 rounded border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-sky-500 disabled:opacity-50"
+          className="input flex-1 disabled:opacity-50"
         />
         <select
           value={position}
           onChange={(event) => setPosition(Number(event.target.value) as DanmakuLocationValue)}
-          className="rounded border border-neutral-700 bg-neutral-900 px-2 py-1.5 text-sm"
+          className="input w-auto py-1.5"
         >
           <option value={DanmakuLocation.Normal}>滚动</option>
           <option value={DanmakuLocation.Top}>顶部</option>
@@ -526,14 +526,14 @@ export default function VideoPlayer({
           type="button"
           onClick={() => void send()}
           disabled={!canInteract || episodeId === null || draft.trim().length === 0}
-          className="rounded bg-sky-600 px-5 py-2 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-40"
+          className="rounded bg-accent-strong px-5 py-2 text-sm font-medium text-white hover:bg-accent disabled:opacity-40"
         >
           发送
         </button>
       </div>
 
       {error && (
-        <p className="rounded border border-red-900 bg-red-950/40 px-3 py-2 text-sm text-red-300">
+        <p className="alert alert-danger">
           {error}
         </p>
       )}

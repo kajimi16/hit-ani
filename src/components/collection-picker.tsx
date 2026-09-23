@@ -66,7 +66,7 @@ export default function CollectionPicker({
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-sm text-neutral-400">收藏状态</span>
+        <span className="text-sm text-ink-muted">收藏状态</span>
         {COLLECTION_STATUSES.map((meta) => {
           const active = status === meta.value;
           return (
@@ -77,8 +77,8 @@ export default function CollectionPicker({
               disabled={!canInteract || pending !== null}
               className={`rounded border px-3 py-1 text-sm transition disabled:opacity-50 ${
                 active
-                  ? "border-sky-500 bg-sky-950/60 text-sky-200"
-                  : "border-neutral-700 bg-neutral-900 hover:border-neutral-500"
+                  ? "border-accent bg-accent-dim text-accent"
+                  : "border-line-strong bg-surface hover:border-line-strong"
               }`}
             >
               {meta.label}
@@ -87,11 +87,11 @@ export default function CollectionPicker({
           );
         })}
         {status === null && (
-          <span className="text-xs text-neutral-500">未收藏</span>
+          <span className="text-xs text-ink-faint">未收藏</span>
         )}
       </div>
 
-      <p className="text-xs text-neutral-500">
+      <p className="text-xs text-ink-faint">
         {canInteract
           ? bgmBound
             ? "标记会同时同步到你的 Bangumi 账号"
@@ -100,12 +100,12 @@ export default function CollectionPicker({
       </p>
 
       {notice && (
-        <p className="rounded border border-amber-900 bg-amber-950/40 px-3 py-2 text-xs text-amber-300">
+        <p className="alert alert-warn">
           {notice}
         </p>
       )}
       {error && (
-        <p className="rounded border border-red-900 bg-red-950/40 px-3 py-2 text-xs text-red-300">
+        <p className="alert alert-danger">
           {error}
         </p>
       )}

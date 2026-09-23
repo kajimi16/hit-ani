@@ -62,25 +62,25 @@ export default async function SchedulePage({
     <div className="space-y-8">
       <section className="space-y-3">
         <h1 className="text-2xl font-semibold">新番时间表</h1>
-        <p className="text-sm text-neutral-400">
+        <p className="text-sm text-ink-muted">
           {isoDate(start)} ~ {isoDate(end)} · 共 {page?.total ?? 0} 部
         </p>
         <div className="flex gap-2 text-sm">
           <Link
             href={`/schedule?weekOffset=${weekOffset - 1}`}
-            className="rounded border border-neutral-700 px-3 py-1.5 hover:bg-neutral-800"
+            className="btn btn-ghost"
           >
             上一周
           </Link>
           <Link
             href="/schedule"
-            className="rounded border border-neutral-700 px-3 py-1.5 hover:bg-neutral-800"
+            className="btn btn-ghost"
           >
             本周
           </Link>
           <Link
             href={`/schedule?weekOffset=${weekOffset + 1}`}
-            className="rounded border border-neutral-700 px-3 py-1.5 hover:bg-neutral-800"
+            className="btn btn-ghost"
           >
             下一周
           </Link>
@@ -88,7 +88,7 @@ export default async function SchedulePage({
       </section>
 
       {page === null && (
-        <p className="rounded border border-red-900 bg-red-950/40 p-4 text-sm text-red-300">
+        <p className="alert alert-danger">
           获取时间表失败，请稍后重试。
         </p>
       )}
@@ -98,19 +98,19 @@ export default async function SchedulePage({
           <section key={day.key} className="space-y-3">
             <h2 className="flex items-center gap-3 text-base font-medium">
               <span>{day.label}</span>
-              <span className="font-mono text-xs text-neutral-500">{day.key}</span>
-              <span className="text-xs text-neutral-600">{day.items.length} 部</span>
+              <span className="font-mono text-xs text-ink-faint">{day.key}</span>
+              <span className="text-xs text-ink-faint">{day.items.length} 部</span>
             </h2>
 
             {day.items.length === 0 ? (
-              <p className="text-sm text-neutral-600">这天没有新番开播。</p>
+              <p className="text-sm text-ink-faint">这天没有新番开播。</p>
             ) : (
               <ul className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-6">
                 {day.items.map((item) => (
                   <li key={item.id}>
                     <Link
                       href={`/subjects/${item.id}`}
-                      className="block overflow-hidden rounded border border-neutral-800 bg-neutral-900 transition hover:border-sky-600"
+                      className="block overflow-hidden rounded border border-line bg-surface transition hover:border-accent"
                     >
                       {item.images?.common && (
                         <Image
@@ -126,7 +126,7 @@ export default async function SchedulePage({
                         <p className="line-clamp-2 text-xs">
                           {item.name_cn || item.name}
                         </p>
-                        <p className="text-[11px] text-neutral-500">
+                        <p className="text-[11px] text-ink-faint">
                           {item.rating?.score ? item.rating.score.toFixed(1) : "暂无评分"}
                         </p>
                       </div>

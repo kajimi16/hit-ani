@@ -55,59 +55,59 @@ export default function RegisterPage() {
     <div className="mx-auto max-w-sm space-y-6">
       <h1 className="text-2xl font-semibold">注册</h1>
 
-      <div className="rounded border border-neutral-800 bg-neutral-900/40 p-4 text-xs text-neutral-400">
-        <p className="font-medium text-neutral-300">校内准入</p>
+      <div className="panel bg-surface-2 text-xs text-ink-muted">
+        <p className="font-medium text-ink">校内准入</p>
         <p className="mt-1">只有下列学校邮箱域名的账号可以注册，学校归属由此确定：</p>
         <ul className="mt-2 space-y-1">
           {schools.map((school) => (
             <li key={school.id}>
-              <span className="text-neutral-300">{school.name}</span>
+              <span className="text-ink">{school.name}</span>
               <span className="ml-2 font-mono">{school.domains.join("、")}</span>
             </li>
           ))}
-          {schools.length === 0 && <li className="text-neutral-600">正在读取学校列表…</li>}
+          {schools.length === 0 && <li className="text-ink-faint">正在读取学校列表…</li>}
         </ul>
       </div>
 
       <div className="space-y-3">
         <label className="block space-y-1 text-sm">
-          <span className="text-neutral-400">学校邮箱</span>
+          <span className="text-ink-muted">学校邮箱</span>
           <input
             value={email}
             onChange={(event) => setEmail(event.target.value)}
             placeholder="you@hit.edu.cn"
-            className="w-full rounded border border-neutral-700 bg-neutral-900 px-3 py-2 outline-none focus:border-sky-500"
+            className="input"
           />
         </label>
         <label className="block space-y-1 text-sm">
-          <span className="text-neutral-400">昵称</span>
+          <span className="text-ink-muted">昵称</span>
           <input
             value={nickname}
             onChange={(event) => setNickname(event.target.value)}
-            className="w-full rounded border border-neutral-700 bg-neutral-900 px-3 py-2 outline-none focus:border-sky-500"
+            className="input"
           />
         </label>
         <label className="block space-y-1 text-sm">
-          <span className="text-neutral-400">学号（可选）</span>
+          <span className="text-ink-muted">学号（可选）</span>
           <input
             value={studentNo}
             onChange={(event) => setStudentNo(event.target.value)}
-            className="w-full rounded border border-neutral-700 bg-neutral-900 px-3 py-2 outline-none focus:border-sky-500"
+            className="input"
           />
         </label>
         <label className="block space-y-1 text-sm">
-          <span className="text-neutral-400">密码（至少 8 位）</span>
+          <span className="text-ink-muted">密码（至少 8 位）</span>
           <input
             type="password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            className="w-full rounded border border-neutral-700 bg-neutral-900 px-3 py-2 outline-none focus:border-sky-500"
+            className="input"
           />
         </label>
       </div>
 
       {error && (
-        <p className="rounded border border-red-900 bg-red-950/40 px-3 py-2 text-sm text-red-300">
+        <p className="alert alert-danger">
           {error}
         </p>
       )}
@@ -116,14 +116,14 @@ export default function RegisterPage() {
         type="button"
         onClick={() => void submit()}
         disabled={busy}
-        className="w-full rounded bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-50"
+        className="btn btn-primary w-full"
       >
         {busy ? "注册中…" : "注册"}
       </button>
 
-      <p className="text-center text-sm text-neutral-500">
+      <p className="text-center text-sm text-ink-faint">
         已有账号？
-        <a href="/login" className="ml-1 text-sky-400 underline">
+        <a href="/login" className="ml-1 text-accent underline">
           登录
         </a>
       </p>
