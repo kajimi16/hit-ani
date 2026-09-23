@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireSessionUser } from "@/lib/auth/session";
 import { COLLECTION_STATUSES, statusLabel } from "@/lib/collection";
 import { countByStatus, getCollectionStatus, setCollectionStatus } from "@/lib/collection-actions";
+import { isBlocked } from "@/lib/danmaku/filter";
 import type { CollectionStatusValue } from "@/lib/collection";
 
 export const runtime = "nodejs";
@@ -85,6 +86,12 @@ export async function PUT(request: Request) {
       },
       { status: 400 },
     );
+  }
+
+  // 收藏短评会显示在追番看板与条目页上（`{comment.slice(0, 12)}`），
+  // 与其他 UGC 一样需要过滤。
+  if (body.comment && isBlocked(body.comment)) {
+    return NextResponse.json({ error: "短评包含被屏蔽的词，请修改后重试" }, { status: 400 });
   }
 
   try {

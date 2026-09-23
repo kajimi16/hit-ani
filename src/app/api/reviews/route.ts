@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionUser, requireSessionUser } from "@/lib/auth/session";
+import { isBlocked } from "@/lib/danmaku/filter";
 import {
   ReviewKind,
   countReviews,
@@ -104,6 +105,16 @@ export async function POST(request: Request) {
 
   if (body.kind === ReviewKind.Long && !body.title) {
     return NextResponse.json({ error: "长评必须填写标题" }, { status: 400 });
+  }
+
+  // 评论/影评与弹幕同为校内 UGC，且**曝光面更大** —— 影评是长文，
+  // 直接渲染在条目页上，比弹幕更容易被认真阅读和截图传播。
+  // 标题也要查：只查正文会留下「标题里写违规内容」的口子。
+  if (isBlocked(body.content) || (body.title && isBlocked(body.title))) {
+    return NextResponse.json(
+      { error: "内容包含被屏蔽的词，请修改后重试" },
+      { status: 400 },
+    );
   }
 
   const review = await createReview(user.id, {

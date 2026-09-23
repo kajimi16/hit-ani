@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { hashPassword } from "@/lib/auth/password";
 import { SchoolAdmissionError, normalizeStudentNo, resolveSchoolByEmail } from "@/lib/auth/school";
+import { isBlocked } from "@/lib/danmaku/filter";
 import { getSessionUser, setSessionCookie } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 
@@ -39,6 +40,11 @@ export async function POST(request: Request) {
       },
       { status: 400 },
     );
+  }
+
+  // 昵称在导航、弹幕、评论里全站可见，属于公开 UGC，同样要过滤。
+  if (isBlocked(body.nickname)) {
+    return NextResponse.json({ error: "昵称包含被屏蔽的词，请更换" }, { status: 400 });
   }
 
   const email = body.email.trim().toLowerCase();
