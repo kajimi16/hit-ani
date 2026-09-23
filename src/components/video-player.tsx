@@ -2,7 +2,7 @@
 
 import Hls from "hls.js";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { allocateTracks, sortByPlayTime } from "@/lib/danmaku/engine";
+import { allocateTracks, mergeById, shouldRefill, sortByPlayTime } from "@/lib/danmaku/engine";
 import { ensureReadableColor, toCssColor } from "@/lib/danmaku/readable-color";
 import { danmakuRoomUrl } from "@/lib/danmaku/ws-url";
 import {
@@ -88,6 +88,18 @@ export default function VideoPlayer({
   /* -------------------------------------------------------------- *
    * 弹幕拉取（WebSocket，失败降级 REST）
    * -------------------------------------------------------------- */
+  /**
+   * 合并弹幕并去重。
+   *
+   * 补充批次与 WS 推送可能带来已存在的条目，按 `id` 去重后按时间排序 ——
+   * 直接覆盖会丢掉先前批次里已渲染的部分。
+   * `replace` 用于 WS 首屏回填（那是一次完整的全量快照）。
+   */
+  const mergeDanmaku = useCallback((incoming: DanmakuDto[], replace = false) => {
+    // 合并/去重逻辑抽成纯函数（见 engine.mergeById），此处只管状态更新
+    setDanmakus((prev) => (replace ? sortByPlayTime(incoming) : mergeById(prev, incoming)));
+  }, []);
+
   const fetchRest = useCallback(
     async (onlySchool: boolean) => {
       const url = new URL("/api/danmaku", window.location.origin);
@@ -100,10 +112,87 @@ export default function VideoPlayer({
         throw new Error(body?.error ?? `拉取失败（${response.status}）`);
       }
       const body = (await response.json()) as { data: DanmakuDto[] };
-      setDanmakus(sortByPlayTime(body.data));
+      mergeDanmaku(body.data, true);
     },
-    [episodeId],
+    [episodeId, mergeDanmaku],
   );
+
+
+  /** 补充状态，防止并发重复请求。 */
+  const refillingRef = useRef(false);
+  /**
+   * 已经请求过的窗口起点。
+   *
+   * 仅靠 `refillingRef` 不够 —— 实测同一窗口会被请求 3 次
+   * （effect 依赖含 `danmakus`，多次状态更新都会重新评估）。
+   * 按窗口起点去重后，同一段只请求一次；若该段确实没有更多数据，
+   * 也不会反复重试（要等有弹幕新增、末尾前移后才会再请求）。
+   */
+  const requestedFromRef = useRef<number | null>(null);
+
+  /**
+   * 单集弹幕超过服务端单次上限时，播到接近已加载末尾就补充后续。
+   *
+   * 服务端按时间轴返回前 `defaultLimit` 条 —— 实测 2000 条约覆盖 17 分钟。
+   * 超长或弹幕极密的集会落在上限之外；不补充的话，播到后段就没有弹幕
+   * （这正是「库里有几千条、播放时只看到一部分」的成因之一）。
+   */
+  const refillIfNeeded = useCallback(async () => {
+    const loaded = danmakusRef.current;
+    if (loaded.length === 0 || episodeId === null) return;
+
+    const maxLoadedMs = loaded[loaded.length - 1].playTimeMs;
+    // 距已加载末尾不足 60 秒时补充（判定逻辑抽成纯函数以便测试）
+    if (!shouldRefill(maxLoadedMs, mediaTimeMs) || refillingRef.current) return;
+
+    // 同一窗口只请求一次
+    const fromMs = maxLoadedMs + 1;
+    if (requestedFromRef.current === fromMs) return;
+    requestedFromRef.current = fromMs;
+
+    refillingRef.current = true;
+    try {
+      const url = new URL("/api/danmaku", window.location.origin);
+      url.searchParams.set("episodeId", String(episodeId));
+      url.searchParams.set("fromMs", String(fromMs));
+      url.searchParams.set("limit", "2000");
+      if (schoolOnly) url.searchParams.set("schoolOnly", "true");
+
+      const response = await fetch(url, { cache: "no-store" });
+      if (!response.ok) return;
+      const body = (await response.json()) as { data: DanmakuDto[] };
+      mergeDanmaku(body.data);
+    } catch {
+      /* 补充失败不影响已加载的弹幕 */
+    } finally {
+      refillingRef.current = false;
+    }
+  }, [episodeId, mediaTimeMs, schoolOnly, mergeDanmaku]);
+
+  /*
+   * 弹幕列表变化时**先**同步到 ref。
+   *
+   * ⚠️ 这个 effect 必须排在 refill 之前 —— React 按声明顺序执行 effect，
+   * 若 refill 先跑，它读到的 `danmakusRef.current` 还是上一轮的值（首轮是空数组），
+   * 于是「距末尾不足 60 秒」的判定永远基于旧数据、补充不触发。
+   * 实测症状：把首屏截断到 3 条后，播放器不发起任何补充请求。
+   */
+  useEffect(() => {
+    danmakusRef.current = danmakus;
+  }, [danmakus]);
+
+  /*
+   * 弹幕数据变化后重新评估是否需要补充。
+   *
+   * 依赖里**必须**有 `danmakus` —— 只依赖 `refillIfNeeded` 是不够的：
+   * 那个回调的 deps 是 [episodeId, mediaTimeMs, schoolOnly, mergeDanmaku]，
+   * 数据到达不会改变它的 identity，于是 effect 不重跑。
+   * 视频暂停时 mediaTimeMs 也不变，补充就永远不会触发。
+   * （实测症状：首屏被截断到 3 条后，播放器始终不发起补充请求。）
+   */
+  useEffect(() => {
+    void refillIfNeeded();
+  }, [refillIfNeeded, danmakus]);
 
   useEffect(() => {
     // 没有对应的 BGM 集时（例如 Jellyfin 里多出来的 SP），不加载也不发送弹幕。
@@ -115,6 +204,8 @@ export default function VideoPlayer({
 
     let cancelled = false;
     setDanmakus([]);
+    // 换了集，之前的窗口记录失效
+    requestedFromRef.current = null;
     setError(null);
     setConnection("connecting");
 
@@ -142,13 +233,9 @@ export default function VideoPlayer({
         message?: string;
       };
       if (payload.type === "repopulate" && payload.list) {
-        setDanmakus(sortByPlayTime(payload.list));
+        mergeDanmaku(payload.list, true);
       } else if (payload.type === "add" && payload.danmaku) {
-        setDanmakus((prev) =>
-          prev.some((d) => d.id === payload.danmaku!.id)
-            ? prev
-            : sortByPlayTime([...prev, payload.danmaku!]),
-        );
+        mergeDanmaku([payload.danmaku]);
       } else if (payload.type === "error" && payload.message) {
         setError(payload.message);
       }
@@ -164,12 +251,7 @@ export default function VideoPlayer({
       socketRef.current = null;
       socket.close();
     };
-  }, [episodeId, schoolOnly, fetchRest]);
-
-  /** 弹幕列表变化时同步到 ref（rAF 循环读它）。 */
-  useEffect(() => {
-    danmakusRef.current = danmakus;
-  }, [danmakus]);
+  }, [episodeId, schoolOnly, fetchRest, mergeDanmaku]);
 
   useEffect(() => {
     pausedRef.current = paused;

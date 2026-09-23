@@ -211,6 +211,58 @@ export function allocateTracks(
   return result;
 }
 
+/**
+ * 判断是否需要向服务端补充后续弹幕。
+ *
+ * ## 为什么需要
+ *
+ * 服务端按时间轴返回前 `defaultLimit` 条（实测 2000 条约覆盖 17 分钟）。
+ * 超长或弹幕极密的集会被上限截断 —— 若不补充，播到后段就没有弹幕。
+ *
+ * 抽成纯函数而非内联在组件里，是为了**能被直接测试**：
+ * 触发条件写错（阈值单位、方向、边界）不会报错，只会表现为「后段没弹幕」，
+ * 而这种症状极难在开发时发现 —— 谁会为了验证去看 17 分钟后的画面。
+ *
+ * @param loadedMaxMs 已加载弹幕的最后一个时间点
+ * @param playheadMs  当前播放位置
+ * @param thresholdMs 距末尾多远时开始补充
+ */
+export function shouldRefill(
+  loadedMaxMs: number,
+  playheadMs: number,
+  thresholdMs = 60_000,
+): boolean {
+  // 尚未加载任何弹幕时由首屏请求负责，不需要补充
+  if (!Number.isFinite(loadedMaxMs) || loadedMaxMs <= 0) return false;
+  const remaining = loadedMaxMs - playheadMs;
+  // 播过末尾（remaining < 0）也要补 —— 那说明确实还没加载完
+  return remaining <= thresholdMs;
+}
+
+/**
+ * 按 `id` 合并弹幕并去重，返回时间轴有序的新数组。
+ *
+ * ## 为什么需要
+ *
+ * 播放器的弹幕来自**多个来源**：WS 首屏快照、WS 实时增量、
+ * 以及服务端上限截断后的按需补充（refill）。三者可能重叠 ——
+ * 例如补充请求的窗口与已有数据部分交叉。
+ *
+ * 直接覆盖会丢掉先前批次；直接 concat 会产生重复渲染（同一条弹幕
+ * 在同一秒被画两次）。因此按 `id` 去重。
+ *
+ * 抽成纯函数是为了能测：去重写错的症状是「弹幕重影」或「补充后旧弹幕消失」，
+ * 都很难在开发时察觉。
+ */
+export function mergeById(
+  existing: readonly DanmakuDto[],
+  incoming: readonly DanmakuDto[],
+): DanmakuDto[] {
+  const seen = new Set(existing.map((d) => d.id));
+  const added = incoming.filter((d) => !seen.has(d.id));
+  return added.length === 0 ? [...existing] : sortByPlayTime([...existing, ...added]);
+}
+
 /** 供渲染层使用的派生统计。 */
 export function summarize(danmakus: readonly DanmakuDto[]) {
   let normal = 0;

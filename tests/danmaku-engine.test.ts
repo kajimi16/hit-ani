@@ -15,6 +15,8 @@ import {
   normalizeQuery,
   sanitizeDanmakuText,
   sliceByTimeWindow,
+  mergeById,
+  shouldRefill,
   sortByPlayTime,
   summarize,
   validateSendInput,
@@ -257,4 +259,91 @@ test("TokenBucketLimiter.prune 回收不活跃的桶", () => {
   now = 10 * 60 * 1000 + 1;
   limiter.prune();
   assert.equal(limiter.size, 0);
+});
+
+/* ---------------------------------------------------------------- *
+ * shouldRefill —— 服务端上限截断时的补充判定
+ * ---------------------------------------------------------------- */
+
+test("shouldRefill 距末尾远时不补充", () => {
+  // 播放在开头，已加载到 17 分钟 —— 还有大把没播，不需要补
+  assert.equal(shouldRefill(1_033_000, 0), false);
+  assert.equal(shouldRefill(1_033_000, 500_000), false);
+  assert.equal(shouldRefill(1_033_000, 972_999), false, "差 60001ms 不该触发");
+});
+
+test("shouldRefill 距末尾 60 秒内时补充", () => {
+  assert.equal(shouldRefill(1_033_000, 973_000), true, "恰好差 60000ms 应触发");
+  assert.equal(shouldRefill(1_033_000, 1_000_000), true);
+  assert.equal(shouldRefill(1_033_000, 1_033_000), true, "恰好到末尾应触发");
+});
+
+test("shouldRefill 在播过末尾时也补充", () => {
+  // remaining 为负说明还没加载完就该补 —— 不能因为「超了」就不管
+  assert.equal(shouldRefill(1_033_000, 1_100_000), true);
+  assert.equal(shouldRefill(1000, 999_999), true);
+});
+
+test("shouldRefill 未加载任何弹幕时不补充（首屏请求负责）", () => {
+  assert.equal(shouldRefill(0, 0), false);
+  assert.equal(shouldRefill(-1, 0), false);
+  assert.equal(shouldRefill(Number.NaN, 0), false);
+});
+
+test("shouldRefill 支持自定义阈值", () => {
+  assert.equal(shouldRefill(10_000, 0, 5_000), false);
+  assert.equal(shouldRefill(10_000, 6_000, 5_000), true);
+});
+
+test("shouldRefill 与切片配合能覆盖被截断的部分", () => {
+  // 场景：服务端返回前 2000 条（末尾 1033 秒），实际还有 563 条到 1913 秒。
+  // 播到 1033 秒时应触发补充 —— 这正是「库里有几千条、播放时只看到一部分」的修复点。
+  const loadedMaxMs = 1_033_000;
+  assert.equal(shouldRefill(loadedMaxMs, 900_000), false, "还有 133 秒，先不补");
+  assert.equal(shouldRefill(loadedMaxMs, 990_000), true, "只剩 43 秒，该补了");
+});
+
+/* ---------------------------------------------------------------- *
+ * mergeById —— 多来源合并去重（首屏 / 实时增量 / 按需补充）
+ * ---------------------------------------------------------------- */
+
+test("mergeById 合并两个不重叠的批次并按时间排序", () => {
+  const existing = [dto({ id: "a", playTimeMs: 100 }), dto({ id: "b", playTimeMs: 200 })];
+  const incoming = [dto({ id: "c", playTimeMs: 50 })];
+  assert.deepEqual(
+    mergeById(existing, incoming).map((d) => d.id),
+    ["c", "a", "b"],
+  );
+});
+
+test("mergeById 去除重复 id（补充窗口与已有数据交叉时）", () => {
+  // 这是真实场景：refill 的窗口可能与已加载数据部分重叠
+  const existing = [dto({ id: "a", playTimeMs: 100 }), dto({ id: "b", playTimeMs: 200 })];
+  const incoming = [dto({ id: "b", playTimeMs: 200 }), dto({ id: "c", playTimeMs: 300 })];
+  const merged = mergeById(existing, incoming);
+  assert.deepEqual(merged.map((d) => d.id), ["a", "b", "c"]);
+  assert.equal(merged.filter((d) => d.id === "b").length, 1, "重复 id 只应保留一条");
+});
+
+test("mergeById 全部重复时返回等价内容", () => {
+  const existing = [dto({ id: "a" }), dto({ id: "b" })];
+  const merged = mergeById(existing, [dto({ id: "a" }), dto({ id: "b" })]);
+  assert.equal(merged.length, 2);
+});
+
+test("mergeById 空增量不改变内容", () => {
+  const existing = [dto({ id: "a" })];
+  assert.deepEqual(mergeById(existing, []).map((d) => d.id), ["a"]);
+});
+
+test("mergeById 对空初始集可用（首个增量到达前）", () => {
+  assert.deepEqual(mergeById([], [dto({ id: "a" })]).map((d) => d.id), ["a"]);
+});
+
+test("mergeById 不修改入参数组", () => {
+  const existing = [dto({ id: "a" })];
+  const incoming = [dto({ id: "b" })];
+  mergeById(existing, incoming);
+  assert.equal(existing.length, 1);
+  assert.equal(incoming.length, 1);
 });
