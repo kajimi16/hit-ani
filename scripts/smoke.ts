@@ -8,12 +8,27 @@
  *   4. 弹幕 WebSocket：两条连接实时收到广播；`schoolOnly` 连接不得收到外校弹幕
  *   5. 评论：发布 → 发布 → 全体/本校筛选
  *
- * 前置：`npm run db:seed` 已执行（提供 hit / demo-other 两所学校与 episode 8 的测试弹幕）。
- * 运行：先启动 `npm run dev` 与 `npm run gateway`，再执行 `npm run smoke`
- *      可用 BASE_URL / WS_URL 覆盖地址。
+ * ## ⚠️ 它会**写入**数据
+ *
+ * 冒烟必须验证写入路径（发弹幕 / 发影评 / 举报），因此必然产生数据。
+ * 两条防线让这些数据不污染真实库：
+ *
+ * 1. **所有写入都用本脚本自己注册的账号**（`smoke-*@hit.edu.cn` 与
+ *    `smoke-*@example.edu`），不碰任何真实账号；
+ * 2. **结束时按账号级联删除** —— 删掉这两个用户，其弹幕 / 影评 / 进度 /
+ *    举报记录会一并消失。
+ *
+ * 之前用的是种子账号 alice/bob 做写入，于是每跑一次就往库里灌一批
+ * `冒烟-*` 弹幕和影评。而这些数据在学生面前是可见的 —— 清理能治一次，
+ * 自清理才能防住每次。
+ *
+ * 前置：`npm run db:seed`（提供两所学校与 episode 522）。
+ * 运行：先启动 `npm run dev` 与 `npm run gateway`，再执行 `npm run smoke`。
+ *      可用 BASE_URL / WS_URL 覆盖地址；对非本机目标需显式 `--allow-remote`。
  */
 
 import { WebSocket } from "ws";
+import { PrismaClient } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 const BASE_URL = process.env.BASE_URL ?? "http://localhost:3100";
@@ -25,6 +40,65 @@ const PASSWORD = "hitani-dev-2026";
 
 let failures = 0;
 let checks = 0;
+
+/**
+ * 本次运行创建的账号邮箱。
+ *
+ * 清理靠它，而不是靠「删掉所有 smoke-% 用户」——
+ * 按邮箱精确匹配，避免误删别人（或另一次并发运行）的数据。
+ */
+const CREATED_USER_EMAILS: string[] = [];
+
+/**
+ * 清理本次运行产生的全部数据。
+ *
+ * 删除账号即可**级联**清掉其弹幕 / 影评 / 进度 / 举报记录 ——
+ * 这正是「让所有写入都经过自建账号」的原因：
+ * 若写入用的是共享账号，就没有这么干净的清除边界。
+ *
+ * ## 数据库地址必须与目标一致
+ *
+ * 冒烟通过 HTTP 写入目标实例，但清理要直连数据库。两者的库可能不同：
+ * 开发时目标是本机 dev server（`DATABASE_URL` 指向的库），
+ * 而目标是 Docker 容器时，那个库在容器网络里、宿主机连不到。
+ *
+ * 因此清理用 `SMOKE_DATABASE_URL ?? DATABASE_URL`；不一致时会失败，
+ * 并打印可直接粘贴的恢复命令（见下）—— 宁可显式失败，也不要静默漏掉污染。
+ */
+async function cleanup(): Promise<void> {
+  if (CREATED_USER_EMAILS.length === 0) return;
+
+  const cleanupUrl = process.env.SMOKE_DATABASE_URL ?? process.env.DATABASE_URL;
+  const client = cleanupUrl
+    ? new PrismaClient({ datasources: { db: { url: cleanupUrl } } })
+    : prisma;
+
+  try {
+    const removed = await client.user.deleteMany({
+      where: { email: { in: CREATED_USER_EMAILS } },
+    });
+    if (removed.count > 0) {
+      console.log(`\n  （已清理本次运行创建的 ${removed.count} 个测试账号及其数据）`);
+    }
+
+    // 兜底：清掉历史遗留的 smoke-* 账号（早期版本不会自清理，可能已堆积）
+    const stale = await client.user.deleteMany({
+      where: { email: { startsWith: "smoke-" } },
+    });
+    if (stale.count > 0) console.log(`  （另清理了 ${stale.count} 个历史遗留的测试账号）`);
+  } catch (error) {
+    console.error(
+      `\n⚠️ 测试数据清理失败 —— 目标实例的库与 DATABASE_URL 可能不是同一个。\n` +
+        `   ${error instanceof Error ? error.message : String(error)}\n\n` +
+        "   手工清理（选与你的部署方式相符的一条）：\n" +
+        '     psql "$DATABASE_URL" -c \'DELETE FROM "User" WHERE email LIKE \'smoke-%\';\'\n' +
+        '     docker compose exec -T postgres psql -U hitani -d hitani \\\n' +
+        '       -c \'DELETE FROM "User" WHERE email LIKE \'smoke-%\';\'\n',
+    );
+  } finally {
+    if (client !== prisma) await client.$disconnect().catch(() => undefined);
+  }
+}
 
 function check(label: string, condition: boolean, detail?: unknown): void {
   checks += 1;
@@ -142,6 +216,47 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * 目标守卫：对非本机地址运行冒烟需要显式确认。
+ *
+ * 冒烟会注册账号、发弹幕、发影评 —— 这些都是**真实写入**。
+ * 对一台正在服务的机器跑它，产生的测试数据会立刻出现在用户面前。
+ * 默认只允许本机，避免手滑。
+ */
+function assertSafeTarget(): void {
+  let hostname: string;
+  try {
+    hostname = new URL(BASE_URL).hostname;
+  } catch {
+    console.error(`BASE_URL 不合法：${BASE_URL}`);
+    process.exit(1);
+  }
+
+  const isLocal = ["localhost", "127.0.0.1", "::1", "[::1]"].includes(hostname);
+  const forced =
+    process.argv.includes("--allow-remote") || process.env.SMOKE_ALLOW_REMOTE === "1";
+
+  if (isLocal || forced) {
+    if (!isLocal) {
+      console.warn(
+        `⚠️ 正在对**非本机**目标 ${BASE_URL} 运行冒烟 —— 会产生真实数据。\n` +
+          "   脚本结束时会自行清理，但若中途崩溃，残留数据需要手工删除。\n",
+      );
+    }
+    return;
+  }
+
+  console.error(
+    `拒绝对非本机目标运行冒烟：${BASE_URL}\n\n` +
+      "本脚本会注册账号、发弹幕、发影评 —— 都是真实写入，\n" +
+      "对正在服务的机器跑它，测试数据会立刻出现在用户面前。\n\n" +
+      "若这确实是你想要的，显式确认：\n" +
+      "  npm run smoke -- --allow-remote\n" +
+      "或设置 SMOKE_ALLOW_REMOTE=1",
+  );
+  process.exit(1);
+}
+
 
 /**
  * 依赖上游 Bangumi 的请求重试一次。
@@ -164,6 +279,8 @@ async function fetchWithUpstreamRetry(
 }
 
 async function main(): Promise<void> {
+  assertSafeTarget();
+
   section("0. 前置检查");
   const health = await fetch(`${BASE_URL}/api/search?keyword=魔法`, { cache: "no-store" });
   check("Next.js 服务可达", health.ok, health.status);
@@ -250,16 +367,66 @@ async function main(): Promise<void> {
   });
   check("非白名单域名注册被拒绝（403）", outsiderResponse.status === 403, outsiderResponse.status);
 
-  const alice = await login("alice@hit.edu.cn");
-  const bob = await login("bob@example.edu");
-  check("本校种子账号登录成功", alice.schoolId === "hit", alice);
-  check("外校种子账号登录成功", bob.schoolId === "demo-other", bob);
+  // 外校视角的冒烟账号。必须有**另一所学校**的账号才能验证跨校隔离 ——
+  // 单校数据无法证明筛选生效。
+  const otherEmail = `smoke-other-${Date.now()}@example.edu`;
+  const otherRegister = await fetch(`${BASE_URL}/api/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      email: otherEmail,
+      password: PASSWORD,
+      nickname: "冒烟测试员（外校）",
+    }),
+  });
+  check("外校域名注册成功", otherRegister.status === 201);
+  await otherRegister.body?.cancel();
+  const smokeOther = await login(otherEmail);
+  check("外校账号学校正确", smokeOther.schoolId === "demo-other", smokeOther);
+
+  // 所有写入都用这两个**本脚本自己创建的**账号（见文件头说明），
+  // 因此结束时删掉它们即可级联清除全部测试数据。
+  const smokeHit = unbound;
+  const alice = smokeHit;
+  const bob = smokeOther;
+  CREATED_USER_EMAILS.push(teacherEmail, otherEmail);
 
   // ---------------------------------------------------------------- 弹幕 REST
   section("3. 弹幕 REST：拉取 / 本校筛选 / 发送");
+
+  // 先各自发一条，让「跨校筛选」有可比对的基线。
+  // 不依赖任何预置数据 —— 冒烟应当自给自足，否则种子数据被清后就会失败。
+  const hitBaseline = await postDanmaku(alice, `冒烟基线-本校-${Date.now()}`, 1000);
+  check("本校账号发送基线弹幕", hitBaseline.status === 201, hitBaseline.body);
+  const otherBaseline = await postDanmaku(bob, `冒烟基线-外校-${Date.now()}`, 2000);
+  check("外校账号发送基线弹幕", otherBaseline.status === 201, otherBaseline.body);
+
   const allBefore = await getDanmaku(alice, false);
   check("全体拉取成功", allBefore.status === 200, allBefore.body.error);
   check("全体弹幕非空", (allBefore.body.data?.length ?? 0) > 0);
+
+  // limit 必须真的生效 —— 含外部源时最容易破防。
+  //
+  // 实测踩过：dandanplay 单集返回 4920 条，而代码只对本地弹幕应用了 limit，
+  // 外部弹幕全量展开 —— 于是 `?limit=100` 返回 4920 条（1 MB），
+  // 浏览器要渲染几千个 DOM 节点。功能测试完全看不出这种问题。
+  const limitUrl = new URL("/api/danmaku", BASE_URL);
+  limitUrl.searchParams.set("episodeId", String(SEED_EPISODE_ID));
+  limitUrl.searchParams.set("limit", "20");
+  const limitResponse = await fetch(limitUrl, {
+    headers: { Cookie: alice.cookie },
+    cache: "no-store",
+  });
+  const limitBody = (await limitResponse.json()) as {
+    returned: number;
+    data: unknown[];
+    external?: { externalTotalAvailable: number };
+  };
+  check(
+    "limit 参数真的生效（含外部源）",
+    limitBody.returned <= 20 && limitBody.data.length <= 20,
+    { returned: limitBody.returned, dataLen: limitBody.data.length },
+  );
 
   const schoolBefore = await getDanmaku(alice, true);
   check("本校拉取成功", schoolBefore.status === 200, schoolBefore.body.error);
@@ -374,6 +541,22 @@ async function main(): Promise<void> {
   });
   check("发布影评成功（201）", reviewResponse.status === 201, reviewResponse.status);
   await reviewResponse.body?.cancel();
+
+  // 必须由**外校**账号也发一条 —— 否则「本校 < 全体」这个断言依赖库里
+  // 恰好已有外校评论。干净的库里两条数相等，断言会误报失败（实测踩过）。
+  // 冒烟应当自给自足，不依赖预置数据。
+  const otherReviewText = `冒烟影评-外校-${Date.now()}`;
+  const otherReview = await fetch(`${BASE_URL}/api/reviews`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: bob.cookie },
+    body: JSON.stringify({
+      subjectId: SEED_SUBJECT_ID,
+      kind: 0,
+      content: otherReviewText,
+    }),
+  });
+  check("外校账号发布评论成功（201）", otherReview.status === 201, otherReview.status);
+  await otherReview.body?.cancel();
 
   const longWithoutTitle = await fetch(`${BASE_URL}/api/reviews`, {
     method: "POST",
@@ -609,4 +792,9 @@ main()
     console.error("\n冒烟测试异常终止：", error);
     process.exitCode = 1;
   })
-  .finally(() => prisma.$disconnect());
+  // 清理必须在这里执行 —— 放在 main() 的 finally 里会拿不到「异常终止」时的
+  // 已创建账号清单（main 抛错时局部变量已失效）。
+  .finally(async () => {
+    await cleanup();
+    await prisma.$disconnect();
+  });
