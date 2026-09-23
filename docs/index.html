@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>hit-ani · 校内动漫平台</title>
+<meta name="description" content="基于 Bangumi 数据的校内动漫平台：找番、追番、看番一站式，含校内弹幕与评论影评。" />
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --panel: #141414;
+    --border: #262626;
+    --fg: #e5e5e5;
+    --muted: #a3a3a3;
+    --dim: #737373;
+    --accent: #0ea5e9;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.7 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+          "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 64px 20px 96px; }
+  header { margin-bottom: 48px; }
+  h1 { font-size: 32px; margin: 0 0 8px; letter-spacing: -0.02em; }
+  .tagline { color: var(--muted); margin: 0 0 20px; }
+  .badges { display: flex; flex-wrap: wrap; gap: 8px; }
+  .badge {
+    font-size: 12px; padding: 3px 10px; border-radius: 999px;
+    background: var(--panel); border: 1px solid var(--border); color: var(--muted);
+  }
+  h2 {
+    font-size: 17px; margin: 40px 0 14px;
+    padding-bottom: 8px; border-bottom: 1px solid var(--border);
+  }
+  ul { padding-left: 20px; margin: 0; }
+  li { margin: 7px 0; color: var(--muted); }
+  li strong { color: var(--fg); font-weight: 600; }
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 13px; background: var(--panel);
+    padding: 1px 5px; border-radius: 4px; color: #d4d4d4;
+  }
+  pre {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; padding: 14px 16px; overflow-x: auto; margin: 12px 0;
+  }
+  pre code { background: none; padding: 0; font-size: 13px; line-height: 1.6; }
+  .note {
+    background: var(--panel); border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 6px; padding: 14px 16px; margin: 20px 0;
+    font-size: 14px; color: var(--muted);
+  }
+  a { color: var(--accent); }
+  footer {
+    margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--border);
+    font-size: 13px; color: var(--dim);
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>hit-ani</h1>
+  <p class="tagline">
+    基于 Bangumi 数据的校内动漫平台 ——
+    找番、追番、看番一站式，并带校内弹幕与评论影评。
+  </p>
+  <div class="badges">
+    <span class="badge">Next.js 15</span>
+    <span class="badge">TypeScript</span>
+    <span class="badge">PostgreSQL + Prisma</span>
+    <span class="badge">自建弹幕服务</span>
+    <span class="badge">校内自部署</span>
+  </div>
+</header>
+
+<h2>它解决什么问题</h2>
+<div class="note">
+  Bangumi 提供条目、章节、评分与检索，是很好的「动漫维基」——
+  但它只允许你写入自己收藏下的那一条短评，读不到别人的评论，
+  更没有任何弹幕接口（旧版评论接口已下线）。<br><br>
+  也就是说，公共平台上「一起看、一起聊」这件事是没有的。
+  本项目补的正是这一层：<strong>校内可见的弹幕、评论与影评</strong>。
+</div>
+
+<h2>核心功能</h2>
+<ul>
+  <li><strong>找番</strong> —— 关键词 / 标签 / 评分 / 播出日期检索，新番时间表</li>
+  <li><strong>追番</strong> —— 五种收藏状态（想看 / 在看 / 看过 / 搁置 / 抛弃），单集进度标记</li>
+  <li><strong>Bangumi 账号绑定</strong> —— 一键导入全部收藏、评分与观看进度，并支持回写</li>
+  <li><strong>校内弹幕</strong> —— 自建弹幕服务：按集分房间、WebSocket 实时广播、时间轴与轨道渲染</li>
+  <li><strong>只看本校</strong> —— 按学校维度筛选弹幕 / 评论 / 影评（索引命中，非事后过滤）</li>
+  <li><strong>评论与影评</strong> —— 短评 / 长评 + 评分，同样支持校内筛选</li>
+  <li><strong>外部弹幕源</strong> —— 可接入公共弹幕网络，让新平台冷启动时不至于空屏</li>
+  <li><strong>媒体服务器播放</strong> —— 连接你自己的 Jellyfin / Emby，
+      视频由你的服务器直连播放器、叠加校内弹幕，<strong>不经过本平台</strong></li>
+</ul>
+
+<h2>架构上的两个刻意取舍</h2>
+<ul>
+  <li>
+    <strong>弹幕网关必须独立部署。</strong>
+    WebSocket 是长连接常驻进程，Serverless 函数有时限且无持久连接 ——
+    因此它是整个项目里唯一无法与 Next.js 合并的部分。
+  </li>
+  <li>
+    <strong>播放不做服务端代理。</strong>
+    视频字节由用户浏览器直连媒体服务器或来源站 CDN，平台只做索引与元数据。
+    这既避免了带宽成本，也让平台停留在「播放器」而非「内容分发方」的位置。
+  </li>
+</ul>
+
+<h2>合规边界</h2>
+<ul>
+  <li>本项目<strong>不托管任何视频内容</strong>，也不提供种子、不做种。</li>
+  <li>条目与章节元数据来自 <a href="https://bangumi.tv" rel="noreferrer">Bangumi</a>，
+      遵循其 User-Agent 要求与使用条款。</li>
+  <li>弹幕与评论属于用户生成内容，部署方需自行配置内容过滤与举报处理。</li>
+  <li>资源源由部署方自行选择并承担相应责任，代码库不收录任何站点清单。</li>
+</ul>
+
+<h2>本地运行</h2>
+<pre><code># 1. 依赖与环境
+npm install
+cp .env.example .env      # 填 DATABASE_URL、SESSION_SECRET
+
+# 2. 数据库
+npm run db:push &amp;&amp; npm run db:seed
+
+# 3. 两个进程（弹幕网关必须独立常驻）
+npm run dev        # http://localhost:3100
+npm run gateway    # ws://localhost:3102</code></pre>
+<p style="color:var(--muted);font-size:14px">
+  种子账号 <code>alice@hit.edu.cn</code> / <code>hitani-dev-2026</code>（本校），
+  <code>bob@example.edu</code>（外校，用于验证筛选隔离）。
+</p>
+
+<h2>验证</h2>
+<pre><code>npm run typecheck       # 类型检查
+npm test                # 纯逻辑单测
+npm run smoke           # 端到端冒烟（需 dev + gateway 已启动）
+npm run bgm:check       # Bangumi 客户端联调（只读）</code></pre>
+
+<footer>
+  hit-ani · 校内自部署项目 ·
+  <a href="https://github.com/kajimi16/hit-ani" rel="noreferrer">GitHub</a>
+</footer>
+
+</div>
+</body>
+</html>

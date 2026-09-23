@@ -1,0 +1,46 @@
+{
+  "_说明": [
+    "Animeko web-selector 导出的源配置样例（字段名与真实导出一致，域名为示例）。",
+    "实际使用时用你自己的导出文件：npm run sources:import -- --file=你的导出.json",
+    "本仓库不收录具体站点清单 —— 那是部署方的选择，不是代码的一部分。"
+  ],
+  "sources": [
+    {
+      "name": "示例源（web-selector / indexed 形态）",
+      "searchUrl": "https://anime.example.com/search?wd={keyword}",
+      "searchUseOnlyFirstWord": true,
+      "subjectFormatId": "indexed",
+      "selectorSubjectFormatIndexed": {
+        "selectNames": ".search-box .thumb-content > .thumb-txt",
+        "selectLinks": ".search-box .thumb-menu > a"
+      },
+      "channelFormatId": "index-grouped",
+      "selectorChannelFormatFlattened": {
+        "selectEpisodeLists": ".anthology-list-box",
+        "selectEpisodesFromList": "a"
+      },
+      "matchVideo": {
+        "enableNestedUrl": true,
+        "matchNestedUrl": "^.+(m3u8|vip).+\\?",
+        "matchVideoUrl": "(?<v>https?://cdn\\.example\\.com/.+\\.m3u8)(\\?.+)?",
+        "cookies": "quality=1080"
+      }
+    },
+    {
+      "name": "示例源（web-selector / a 形态）",
+      "searchUrl": "https://vod.example.com/search/-------------.html?wd={keyword}",
+      "subjectFormatId": "a",
+      "selectorSubjectFormatA": { "selectLists": ".myui-vodlist__media h4 > a" },
+      "channelFormatId": "index-grouped",
+      "selectorChannelFormatFlattened": {
+        "selectEpisodeLists": ".myui-content__list",
+        "selectEpisodesFromList": "a"
+      },
+      "matchVideo": {
+        "enableNestedUrl": true,
+        "matchNestedUrl": "$^",
+        "matchVideoUrl": "(^http(s)?:\\/\\/(?!.*http).+\\.(mp4|m3u8))"
+      }
+    }
+  ]
+}

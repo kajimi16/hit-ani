@@ -31,3 +31,6 @@ yarn-error.log*
 
 # prisma
 /prisma/*.db
+
+# 抓取源清单：部署方自备，不入库（性质同 .env —— 是配置而非代码）
+/data/animeko-sources.json
