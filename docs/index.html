@@ -138,8 +138,10 @@ npm run db:push &amp;&amp; npm run db:seed
 npm run dev        # http://localhost:3100
 npm run gateway    # ws://localhost:3102</code></pre>
 <p style="color:var(--muted);font-size:14px">
-  种子账号 <code>alice@hit.edu.cn</code> / <code>hitani-dev-2026</code>（本校），
-  <code>bob@example.edu</code>（外校，用于验证筛选隔离）。
+  <code>db:seed</code> 会写入演示数据（两所学校、一个测试条目与几条弹幕），
+  用于本地验证「只看本校」的筛选隔离。演示账号密码见
+  <a href="https://github.com/kajimi16/hit-ani/blob/master/prisma/seed.ts" rel="noreferrer">prisma/seed.ts</a>
+  —— <strong>仅供本地开发</strong>，部署时请勿使用。
 </p>
 
 <h2>验证</h2>

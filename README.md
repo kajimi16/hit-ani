@@ -27,12 +27,16 @@ npm run dev               # http://localhost:3100
 npm run gateway           # ws://localhost:3102
 ```
 
-种子账号（密码均为 `hitani-dev-2026`）：
+种子账号（**仅供本地开发**，密码见 `prisma/seed.ts`）：
 
 | 账号 | 学校 | 用途 |
 | --- | --- | --- |
 | `alice@hit.edu.cn` | `hit` | 本校视角 |
 | `bob@example.edu` | `demo-other` | 外校视角，用于验证「只看本校」隔离 |
+
+> ⚠️ **部署时绝不要用这些账号。** 它们的密码写在公开仓库里 —— 谁都能登录。
+> 生产环境请注册你自己的学校邮箱账号，并用 `ADMIN_EMAILS` 指定管理员。
+> `db:seed` 在 `NODE_ENV=production` 下会拒绝运行。
 
 打开 <http://localhost:3100/subjects/8> 即可看到弹幕面板与校内筛选开关。
 
