@@ -31,26 +31,28 @@ export default function UserMenu({ nickname, schoolId, isAdmin }: Props) {
   };
 
   return (
-    <div className="flex items-center gap-3">
-      <span className="text-neutral-500">
-        {nickname}
-        <span className="ml-2 rounded bg-neutral-800 px-2 py-0.5 text-xs">{schoolId}</span>
-        {isAdmin && (
-          <span className="ml-1 rounded bg-amber-900/60 px-2 py-0.5 text-xs text-amber-300">
-            管理员
-          </span>
-        )}
-      </span>
+    <div className="flex items-center gap-2">
+      {/*
+        用户信息做成一个整块：昵称 + 学校 + 管理员标识。
+        原先散着排，视觉上是三个无关的碎片。
+      */}
+      <div className="flex items-center gap-2 rounded-md bg-surface-2 px-2.5 py-1.5">
+        <span className="text-sm text-ink">{nickname}</span>
+        <span className="badge">{schoolId}</span>
+        {isAdmin && <span className="badge badge-accent">管理员</span>}
+      </div>
+
       <button
         type="button"
         onClick={() => void logout()}
         disabled={busy}
         title={error ?? undefined}
-        className="rounded border border-neutral-700 px-2 py-1 text-xs hover:bg-neutral-800 disabled:opacity-40"
+        className="btn btn-ghost btn-sm"
       >
         {busy ? "登出中…" : "登出"}
       </button>
-      {error && <span className="text-xs text-red-300">{error}</span>}
+
+      {error && <span className="text-xs text-danger">{error}</span>}
     </div>
   );
 }
