@@ -32,8 +32,6 @@ import { DANMAKU_LIMITS, type DanmakuDto } from "@/lib/danmaku/types";
 import { prisma } from "@/lib/prisma";
 
 const PORT = Number(process.env.DANMAKU_GATEWAY_PORT ?? 3002);
-/** 房间首屏回填的时间窗，避免一次性把整集拖回来。 */
-const REPOPULATE_WINDOW_MS = 3 * 60 * 1000;
 const MAX_TEXT_LENGTH = DANMAKU_LIMITS.maxTextLength;
 const PRUNE_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -77,6 +75,19 @@ async function resolveSession(cookieHeader: string | undefined): Promise<Resolve
     select: { id: true, schoolId: true },
   });
   return user ? { userId: user.id, schoolId: user.schoolId } : null;
+}
+
+/**
+ * 从 episodeId 反查所属条目 —— dandanplay 的匹配需要条目名。
+ *
+ * 缺了它的后果见 `onConnection` 里的说明：该源会被整源跳过。
+ */
+async function subjectIdOf(episodeId: number): Promise<number | undefined> {
+  const episode = await prisma.episode.findUnique({
+    where: { id: episodeId },
+    select: { subjectId: true },
+  });
+  return episode?.subjectId;
 }
 
 const httpServer = createServer((_request, response) => {
@@ -137,35 +148,46 @@ async function onConnection(
   };
   roomOf(episodeId).add(client);
 
-  // 首屏回填：优先附近时间窗；该集弹幕少时直接给全量
-  const nearby = await listDanmaku({
+  /*
+   * 首屏回填。
+   *
+   * ⚠️ 这里曾有两个 bug，症状是「库里有几千条弹幕，播放时只出现十几条」：
+   *
+   * 1. **没传 `subjectId`** —— dandanplay 的查询依赖它做条目匹配，
+   *    缺了就直接跳过该源，只剩稀疏的 Animeko。
+   *    而 REST 端点传了，所以「弹幕列表」能看到几千条、播放器只有几条。
+   * 2. **硬编码 0–3 分钟窗口** —— 长番从第 3 分钟起就再也没有弹幕。
+   *
+   * 现在：传 subjectId，并取该集**全部**弹幕（受 `defaultLimit` 上限约束，
+   * 按时间轴从小到大）。客户端只渲染播放位置附近的那些，因此多发不会影响观感，
+   * 反而省掉了「播到一半还要再拉一次」的复杂度。
+   */
+  const local = await listDanmaku({
     episodeId,
-    fromMs: 0,
-    toMs: REPOPULATE_WINDOW_MS,
     schoolOnly,
     schoolId: client.schoolId,
     limit: DANMAKU_LIMITS.defaultLimit,
   });
 
   /*
-   * 外部弹幕（Animeko / dandanplay）合并进首屏。
+   * 外部弹幕（Animeko / dandanplay）。
    *
    * 「只看本校」时跳过 —— 外部弹幕无学校归属，拉回来也会被全部过滤。
    */
-  // 外部弹幕同样限量 —— 实测单集可达 4900+ 条，全量推给每个新连接
-  // 会让网关内存与网络流量都无谓增长。
   const external = schoolOnly
     ? []
     : await fetchExternalDanmaku({
         episodeId,
+        // 必须传：缺了 dandanplay 会被整源跳过（见上方说明）
+        subjectId: await subjectIdOf(episodeId),
         maxItems: DANMAKU_LIMITS.defaultLimit,
       })
         .then((r) => r.items)
         .catch(() => []);
 
-  const merged = [...nearby, ...external.filter((d) => d.playTimeMs <= REPOPULATE_WINDOW_MS)].sort(
-    (a, b) => a.playTimeMs - b.playTimeMs || (a.id < b.id ? -1 : 1),
-  );
+  const merged = [...local, ...external]
+    .sort((a, b) => a.playTimeMs - b.playTimeMs || (a.id < b.id ? -1 : 1))
+    .slice(0, DANMAKU_LIMITS.defaultLimit);
 
   send(socket, {
     type: "repopulate",
