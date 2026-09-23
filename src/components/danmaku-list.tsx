@@ -46,6 +46,12 @@ export default function DanmakuList({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [draftPattern, setDraftPattern] = useState("");
+  /** 外部源状态 —— 让用户知道弹幕从哪来、为什么某源没数据 */
+  const [external, setExternal] = useState<{
+    localCount: number;
+    externalCount: number;
+    sources: { service: string; ok: boolean; count: number; error: string | null }[];
+  } | null>(null);
   /** 每条弹幕的举报状态，避免重复提交。 */
   const [reported, setReported] = useState<Set<string>>(new Set());
 
@@ -67,9 +73,15 @@ export default function DanmakuList({
           schoolTotal?: number;
           total?: number;
           error?: string;
+          external?: {
+            localCount: number;
+            externalCount: number;
+            sources: { service: string; ok: boolean; count: number; error: string | null }[];
+          };
         };
         if (!response.ok) throw new Error(body.error ?? `拉取失败（${response.status}）`);
         setDanmakus(sortByPlayTime(body.data ?? []));
+        setExternal(body.external ?? null);
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
       } finally {
@@ -167,6 +179,38 @@ export default function DanmakuList({
           ? "弹幕会叠加在上方播放器上；发送请用播放器的输入框（需要播放位置）。"
           : "这里只是浏览。要发弹幕需要先有可播放的视频 —— 到「设置」连接你的 Jellyfin/Emby 媒体库。"}
       </p>
+
+      {/*
+        外部源状态。没有这一块的话，用户看到弹幕数量对不上会以为是 bug ——
+        实际是「校内 0 条 + Animeko 17 条」这种组合。
+      */}
+      {external && (external.externalCount > 0 || external.sources.length > 0) && (
+        <p className="flex flex-wrap items-center gap-2 text-xs text-neutral-500">
+          <span>
+            本校 {external.localCount} 条
+            {external.externalCount > 0 && ` · 外部源 ${external.externalCount} 条`}
+          </span>
+          {external.sources.map((source) => (
+            <span
+              key={source.service}
+              className={`rounded px-1.5 py-0.5 ${
+                source.ok
+                  ? "bg-neutral-800 text-neutral-400"
+                  : "bg-amber-950/60 text-amber-300"
+              }`}
+              title={source.error ?? undefined}
+            >
+              {source.service}
+              {source.ok ? ` ${source.count}` : " 失败"}
+            </span>
+          ))}
+          {external.externalCount > 0 && (
+            <span className="text-neutral-600">
+              （外部弹幕不属于任何学校，开启「只看本校」会隐藏它们）
+            </span>
+          )}
+        </p>
+      )}
 
       {error && (
         <p className="rounded border border-red-900 bg-red-950/40 px-3 py-2 text-sm text-red-300">

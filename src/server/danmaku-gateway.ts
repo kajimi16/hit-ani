@@ -26,6 +26,7 @@ import { verifySessionToken, SESSION_COOKIE } from "@/lib/auth/session";
 import { validateSendInput } from "@/lib/danmaku/engine";
 import { isBlocked } from "@/lib/danmaku/filter";
 import { danmakuRateLimiter } from "@/lib/danmaku/rate-limit";
+import { fetchExternalDanmaku } from "@/lib/danmaku/external";
 import { createDanmaku, listDanmaku } from "@/lib/danmaku/repository";
 import { DANMAKU_LIMITS, type DanmakuDto } from "@/lib/danmaku/types";
 import { prisma } from "@/lib/prisma";
@@ -158,9 +159,22 @@ async function onConnection(
     limit: DANMAKU_LIMITS.defaultLimit,
   });
 
+  /*
+   * 外部弹幕（Animeko / dandanplay）合并进首屏。
+   *
+   * 「只看本校」时跳过 —— 外部弹幕无学校归属，拉回来也会被全部过滤。
+   */
+  const external = schoolOnly
+    ? []
+    : await fetchExternalDanmaku({ episodeId }).then((r) => r.items).catch(() => []);
+
+  const merged = [...nearby, ...external.filter((d) => d.playTimeMs <= REPOPULATE_WINDOW_MS)].sort(
+    (a, b) => a.playTimeMs - b.playTimeMs || (a.id < b.id ? -1 : 1),
+  );
+
   send(socket, {
     type: "repopulate",
-    list: nearby,
+    list: merged,
     playTimeMs: 0,
     schoolOnly,
   } satisfies RoomPayload);

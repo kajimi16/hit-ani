@@ -4,8 +4,10 @@ import { UnauthorizedError, getSessionUser, requireSessionUser } from "@/lib/aut
 import { validateSendInput } from "@/lib/danmaku/engine";
 import { isBlocked } from "@/lib/danmaku/filter";
 import { danmakuRateLimiter } from "@/lib/danmaku/rate-limit";
+import { fetchExternalDanmaku } from "@/lib/danmaku/external";
 import { countDanmaku, createDanmaku, listDanmaku } from "@/lib/danmaku/repository";
 import { danmakuQuerySchema, danmakuSendSchema } from "@/lib/danmaku/schema";
+import { prisma } from "@/lib/prisma";
 import type { DanmakuQuery } from "@/lib/danmaku/types";
 
 export const runtime = "nodejs";
@@ -53,7 +55,7 @@ export async function GET(request: Request) {
     schoolId: sessionUser?.schoolId,
   };
 
-  const [danmakus, total, schoolTotal] = await Promise.all([
+  const [local, total, schoolTotal] = await Promise.all([
     listDanmaku(effectiveQuery),
     countDanmaku(query.episodeId),
     sessionUser
@@ -61,13 +63,39 @@ export async function GET(request: Request) {
       : Promise.resolve(0),
   ]);
 
+  /*
+   * 外部弹幕（Animeko / dandanplay）。
+   *
+   * 「只看本校」时**不拉取** —— 外部弹幕不属于任何学校，拉回来也全会被过滤掉，
+   * 白白消耗上游配额与响应时间。
+   */
+  const external = schoolOnly
+    ? { items: [], sources: [] }
+    : await fetchExternalDanmaku({
+        episodeId: query.episodeId,
+        // dandanplay 需要条目信息做匹配；查得到才传
+        subjectId: await subjectIdOf(query.episodeId),
+      }).catch(() => ({ items: [], sources: [] }));
+
+  // 合并后按时间排序，让本地与外部弹幕交织在同一条时间轴上
+  const merged = [...local, ...external.items].sort(
+    (a, b) => a.playTimeMs - b.playTimeMs || (a.id < b.id ? -1 : 1),
+  );
+
   return NextResponse.json({
     episodeId: query.episodeId,
+    /** 本地条数（本校维度只看本地） */
     total,
     schoolTotal,
-    returned: danmakus.length,
+    returned: merged.length,
     schoolOnly,
-    data: danmakus,
+    /** 外部源的拉取状态 —— 界面据此说明「为什么没有外部弹幕」 */
+    external: {
+      localCount: local.length,
+      externalCount: external.items.length,
+      sources: external.sources,
+    },
+    data: merged,
   });
 }
 
@@ -125,6 +153,15 @@ export async function POST(request: Request) {
 
   const { danmaku } = await createDanmaku(user.id, body);
   return NextResponse.json({ data: danmaku }, { status: 201 });
+}
+
+/** 从 episodeId 反查所属条目 —— dandanplay 匹配需要条目名。 */
+async function subjectIdOf(episodeId: number): Promise<number | undefined> {
+  const episode = await prisma.episode.findUnique({
+    where: { id: episodeId },
+    select: { subjectId: true },
+  });
+  return episode?.subjectId;
 }
 
 function formatZodError(error: unknown): unknown {
