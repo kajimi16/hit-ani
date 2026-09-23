@@ -3,6 +3,7 @@
 import Hls from "hls.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { allocateTracks, sortByPlayTime } from "@/lib/danmaku/engine";
+import { ensureReadableColor, toCssColor } from "@/lib/danmaku/readable-color";
 import { danmakuRoomUrl } from "@/lib/danmaku/ws-url";
 import {
   DanmakuLocation,
@@ -221,7 +222,9 @@ export default function VideoPlayer({
         if (elapsed < 0) continue;
 
         const textWidth = Array.from(danmaku.text).length * CHAR_WIDTH;
-        ctx.fillStyle = `#${danmaku.color.toString(16).padStart(6, "0")}`;
+        // 与列表同一套可读性处理 —— canvas 没有 CSS 层可兜底，
+        // 深色弹幕在这里会直接看不见（比列表更严重）。
+        ctx.fillStyle = toCssColor(ensureReadableColor(danmaku.color));
 
         if (danmaku.location === DanmakuLocation.Normal) {
           const x = width - elapsed * SPEED_PX_PER_MS;

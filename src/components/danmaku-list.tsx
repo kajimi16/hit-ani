@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { sortByPlayTime } from "@/lib/danmaku/engine";
+import { ensureReadableColor, toCssColor } from "@/lib/danmaku/readable-color";
 import { danmakuRoomUrl } from "@/lib/danmaku/ws-url";
 import {
   applyLocalFilters,
@@ -189,16 +190,21 @@ export default function DanmakuList({
           <span>
             本校 {external.localCount} 条
             {external.externalCount > 0 && ` · 外部源 ${external.externalCount} 条`}
-            {/*
-              如实告知被截断 —— 普通番剧单集几千条弹幕，全量渲染既没必要也很卡。
-              不说明的话用户会以为「这集只有这么点弹幕」。
-            */}
-            {external.externalTotalAvailable > external.externalCount && (
-              <span className="text-ink-faint">
-                （共 {external.externalTotalAvailable} 条，已显示前 {external.externalCount} 条）
-              </span>
-            )}
           </span>
+
+          {/*
+            截断提示刻意比同行的其他统计**更亮**（ink-muted vs ink-faint）。
+
+            理由：这条信息的作用是消除误解 ——「不说明的话用户会以为这集
+            只有这么点弹幕」。既然它的职责是「必须被读到」，就不能跟旁边的
+            装饰性计数同色，否则等于没写。原先内外都是 ink-faint，
+            层级重复且埋没了重点。
+          */}
+          {external.externalTotalAvailable > external.externalCount && (
+            <span className="text-ink-muted">
+              共 {external.externalTotalAvailable} 条，已显示前 {external.externalCount} 条
+            </span>
+          )}
           {external.sources.map((source) => (
             <span
               key={source.service}
@@ -325,7 +331,12 @@ export default function DanmakuList({
             <span className="shrink-0 text-xs text-ink-faint">{danmaku.senderName}</span>
             <span
               className="break-all"
-              style={{ color: `#${danmaku.color.toString(16).padStart(6, "0")}` }}
+              /*
+               * 颜色由发送者指定，而我们是深色界面 —— 实测 17% 的弹幕
+               * 在深色背景上不可读（深蓝 1.63:1、深灰 1.32:1）。
+               * `ensureReadableColor` 保留色相、只提亮度。
+               */
+              style={{ color: toCssColor(ensureReadableColor(danmaku.color)) }}
             >
               {danmaku.text}
             </span>
@@ -337,10 +348,14 @@ export default function DanmakuList({
                 onClick={() => void report(danmaku.id)}
                 disabled={reported.has(danmaku.id)}
                 /*
-                 * 不用 opacity-0 + group-hover 隐藏 —— 触屏没有 hover，
-                 * 手机上按钮会永远看不见。改为低对比度常显、hover 时变亮。
+                 * 两处对比度上的取舍：
+                 *
+                 * 1. 不用 opacity-0 + group-hover 隐藏 —— 触屏没有 hover，
+                 *    手机上按钮会永远看不见，必须常显。
+                 * 2. 用 ink-muted 而非 ink-faint：举报是**操作**，不是元信息。
+                 *    与时间戳同色会让它被视觉归类为「可忽略的辅助文字」。
                  */
-                className="ml-auto shrink-0 text-xs text-ink-faint transition hover:text-danger disabled:text-ink-faint"
+                className="ml-auto shrink-0 rounded px-1.5 text-xs text-ink-muted transition hover:bg-danger/10 hover:text-danger disabled:text-ink-faint"
                 title="举报这条弹幕"
               >
                 {reported.has(danmaku.id) ? "已举报" : "举报"}
