@@ -46,3 +46,4 @@ yarn-error.log*
 
 # 开发库口令（不入库）
 .dev-db-password
+.container-db-password
