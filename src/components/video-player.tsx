@@ -358,7 +358,16 @@ export default function VideoPlayer({
       }
     };
 
-    // 轨道一：requestAnimationFrame —— 正常情况下的平滑绘制（~60fps）
+    /*
+     * 轨道一：requestAnimationFrame —— 正常情况下的平滑绘制（~60fps）
+     *
+     * ⚠️ 这里**不**受 `prefers-reduced-motion` 影响，是有意的：
+     * 弹幕横向滚动**就是内容本身**，不滚动等于没有弹幕。该偏好针对的是
+     * 装饰性动画（位移、缩放、视差），而不是「视频在播放、弹幕在飘」这类
+     * 用户自己主动发起的媒体播放。
+     *
+     * 同类豁免还有 `<video>` 的播放本身。别把它「修」成静态。
+     */
     let raf = 0;
     let last = performance.now();
     const tick = (now: number) => {

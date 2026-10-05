@@ -1,7 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { IconChevron } from "@/components/icons";
+import {
+  readReducedMotion,
+  scrollBehavior,
+  subscribeReducedMotion,
+} from "@/lib/reduced-motion";
 
 interface Props {
   /** 内层滚动容器的类名（`card-row` / `hero-carousel`），由调用方决定卡片尺寸与间距。 */
@@ -39,8 +44,28 @@ interface Props {
  *   （Safari 支持晚），改为在点击后也调一次更新。
  * - 箭头是 `aria-hidden` 的装饰按钮 + 真正的 `aria-label`？这里反过来：
  *   它们是**有功能的按钮**，因此必须可聚焦、有标签，不能当装饰。
+ * - **尊重 `prefers-reduced-motion`**：自动轮播在开启该偏好时完全不启动，
+ *   箭头的滚动改为瞬时跳转。见 `@/lib/reduced-motion` 的说明。
  */
 export default function ScrollRow({ className, label, autoAdvanceMs, children }: Props) {
+  /*
+   * 「减少动态效果」偏好。
+   *
+   * CSS 里已经关掉了装饰性动效，但 JS 驱动的位移绕开媒体查询 ——
+   * 而这个组件恰好是页面上最显著的一处：每 6 秒整体把内容推一屏。
+   * 前庭敏感的用户打开这个偏好后，理应不再看到它。
+   *
+   * 用 `useSyncExternalStore` 而不是 `useEffect` + `useState`：
+   * 后者在首帧会先用 `false` 渲染，之后才纠正 —— 而那一次纠正就可能
+   * 让自动轮播抢在偏好生效前滑一次。
+   */
+  const reduceMotion = useSyncExternalStore(
+    subscribeReducedMotion,
+    readReducedMotion,
+    // 服务端无从得知，用 `false`（与既有默认行为一致，避免水合差异）
+    () => false,
+  );
+
   const scrollerRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
@@ -95,17 +120,21 @@ export default function ScrollRow({ className, label, autoAdvanceMs, children }:
   }, [update]);
 
   /** 翻一屏的 80% —— 留一点重叠，读者能接上上一屏的最后一张。 */
-  const scrollByPage = useCallback((direction: -1 | 1, smooth = true) => {
-    const el = scrollerRef.current;
-    if (!el) return;
-    el.scrollBy({
-      left: direction * el.clientWidth * 0.8,
-      behavior: smooth ? "smooth" : "auto",
-    });
-    // 平滑滚动是异步的，`scroll` 事件还没到 —— 先按目标位置更新一次，
-    // 避免「点了箭头但箭头还在」的一瞬。
-    window.setTimeout(update, 350);
-  }, [update]);
+  const scrollByPage = useCallback(
+    (direction: -1 | 1) => {
+      const el = scrollerRef.current;
+      if (!el) return;
+      el.scrollBy({
+        left: direction * el.clientWidth * 0.8,
+        // 减少动效时瞬时跳转。箭头仍然可用 —— 用户要的是「别动」，不是「别滚」。
+        behavior: scrollBehavior(reduceMotion),
+      });
+      // 平滑滚动是异步的，`scroll` 事件还没到 —— 先按目标位置更新一次，
+      // 避免「点了箭头但箭头还在」的一瞬。瞬时跳转则无需等，但多等一下无害。
+      window.setTimeout(update, 350);
+    },
+    [update, reduceMotion],
+  );
 
   /**
    * 自动推进：每次向左滚一屏，到底后回到开头。
@@ -115,6 +144,14 @@ export default function ScrollRow({ className, label, autoAdvanceMs, children }:
    */
   useEffect(() => {
     if (!autoAdvanceMs || paused) return;
+    /*
+     * 减少动效时**完全不启动**自动轮播。
+     *
+     * 不是把它改成瞬移 —— 「内容自己在动」这件事本身就是问题，与动画是否
+     * 平滑无关。用户仍可用箭头手动翻。
+     */
+    if (reduceMotion) return;
+
     const timer = window.setInterval(() => {
       if (userTookOver.current) return;
       const el = scrollerRef.current;
@@ -128,7 +165,7 @@ export default function ScrollRow({ className, label, autoAdvanceMs, children }:
       }
     }, autoAdvanceMs);
     return () => window.clearInterval(timer);
-  }, [autoAdvanceMs, paused]);
+  }, [autoAdvanceMs, paused, reduceMotion]);
 
   return (
     <div
