@@ -990,3 +990,86 @@
     color: color-mix(in oklab, var(--color-on-primary-container) 80%, transparent);
   }
 }
+
+/* ================================================================== *
+ * 时间表：按「天」分列
+ * (`ScheduleScreen` / `ScheduleDayColumn`)
+ * ================================================================== */
+@layer components {
+  /* 宽屏：横向排列的日列（`LazyRow`，列宽 360px、间距 16px）。
+     窄屏：纵向堆叠 —— 横向滚动在手机上很难同时看到两天。 */
+  .schedule-board {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+  @media (min-width: 840px) {
+    .schedule-board {
+      flex-direction: row;
+      gap: 1rem;
+      overflow-x: auto;
+      padding-bottom: 0.5rem;
+      scroll-snap-type: x proximity;
+    }
+  }
+  .schedule-day {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  @media (min-width: 840px) {
+    .schedule-day {
+      flex: 0 0 22.5rem;
+      scroll-snap-align: start;
+    }
+  }
+
+  /* 日标题：headlineSmall；今天用 primary 高亮 + 圆头分隔线
+     （`DayOfWeekHeadline`）。 */
+  .schedule-day__headline {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    padding-bottom: 0.375rem;
+    border-bottom: 2px solid var(--color-outline-variant);
+    font-size: 1.25rem;
+    line-height: 1.75rem;
+  }
+  .schedule-day--today .schedule-day__headline {
+    border-bottom-color: var(--color-primary);
+    color: var(--color-primary);
+  }
+
+  /* 条目行（M3 `ListItem` 形态）：小封面 + 标题 + 副文字。
+     用行而不是大卡片 —— 时间表一天要列十几部，大卡片会让一屏只放得下两三天。 */
+  .schedule-item {
+    display: flex;
+    gap: 0.75rem;
+    border-radius: var(--radius-md);
+    padding: 0.5rem;
+    transition: background-color var(--duration-accelerate) var(--ease-standard);
+  }
+  .schedule-item:hover {
+    background-color: var(--color-surface-container);
+  }
+  .schedule-item__cover {
+    flex: 0 0 auto;
+    width: 2.75rem;
+    aspect-ratio: 9 / 16;
+    border-radius: var(--radius-sm);
+    object-fit: cover;
+    background-color: var(--color-surface-container-high);
+  }
+  .schedule-item__title {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+    font-size: 0.875rem;
+    line-height: 1.4;
+  }
+  .schedule-item__meta {
+    font-size: 0.75rem;
+    color: var(--color-on-surface-variant);
+  }
+}
