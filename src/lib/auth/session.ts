@@ -9,8 +9,9 @@
  * 一律从会话 → 数据库读取。
  */
 
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
+import { resolveSecureCookie } from "./cookie-policy";
 import {
   SESSION_COOKIE,
   SESSION_MAX_AGE_SECONDS,
@@ -108,10 +109,19 @@ export class UnauthorizedError extends Error {
 
 export async function setSessionCookie(userId: string): Promise<void> {
   const store = await cookies();
+  /*
+   * `secure` 必须按**真实连接协议**判定，不能用 NODE_ENV 推断。
+   *
+   * 原先写死 `NODE_ENV === "production"` —— 容器里它是 production，
+   * 于是 Cookie 带 `Secure`，而浏览器拒绝在明文 HTTP 的非 localhost 源上
+   * 存储它 → 从局域网 IP 访问时登录静默失效。
+   * 详见 `cookie-policy.ts`。
+   */
+  const secure = resolveSecureCookie(await headers());
   store.set(SESSION_COOKIE, createSessionToken(userId), {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure,
     path: "/",
     maxAge: SESSION_MAX_AGE_SECONDS,
   });

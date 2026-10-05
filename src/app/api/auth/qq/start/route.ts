@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { randomBytes } from "node:crypto";
 import { readQqOAuthConfig, qqAuthorizeUrl } from "@/lib/auth/qq-oauth";
+import { resolveSecureCookie } from "@/lib/auth/cookie-policy";
 import { OAUTH_STATE_COOKIE, requireSessionUser } from "@/lib/auth/session";
 
 export const runtime = "nodejs";
@@ -31,7 +32,8 @@ export async function GET(request: Request) {
   store.set(OAUTH_STATE_COOKIE, `qq:${state}`, {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    // 与会话 Cookie 同一套判定（详见 cookie-policy.ts）
+    secure: resolveSecureCookie(await headers()),
     path: "/",
     maxAge: 600,
   });
