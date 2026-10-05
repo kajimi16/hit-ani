@@ -14,6 +14,24 @@
 name: hit-ani
 
 services:
+  # ---------------------------------------------------------------- 代理转发
+  #
+  # Clash 只监听宿主机回环（127.0.0.1:7897），容器到不了 —— 没有它，
+  # 容器内所有外部请求（BGM / Animeko / dandanplay）都 `fetch failed`。
+  # 用 host 网络让本服务能访问宿主回环，并只绑 docker 桥接地址（不暴露到局域网）。
+  #
+  # 环境可直连外网时可整段删除。
+  proxy:
+    image: alpine/socat:latest
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./scripts/proxy-forward.sh:/proxy-forward.sh:ro
+    entrypoint: ["/bin/sh", "/proxy-forward.sh"]
+    environment:
+      UPSTREAM: ${PROXY_UPSTREAM:-127.0.0.1:7897}
+      LISTEN_PORT: ${PROXY_LISTEN_PORT:-7897}
+
   # ---------------------------------------------------------------- 数据库
   postgres:
     image: postgres:16-alpine
@@ -51,6 +69,13 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      # 构建期也需要出网（npm ci / prisma generate 要下载引擎）。
+      # `network: host` 让构建容器共享宿主机网络 —— 代理监听在 127.0.0.1
+      # 时这是唯一能让构建走通的方式（容器网络到不了宿主回环）。
+      network: host
+      args:
+        HTTP_PROXY: ${HTTP_PROXY_URL:-http://127.0.0.1:7897}
+        HTTPS_PROXY: ${HTTP_PROXY_URL:-http://127.0.0.1:7897}
       # 用 migrator 阶段：它保留 devDependencies，因而有 prisma CLI。
       # 生产镜像（runner）出于体积考虑剔除了 CLI。
       target: migrator
@@ -67,6 +92,13 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      # 构建期也需要出网（npm ci / prisma generate 要下载引擎）。
+      # `network: host` 让构建容器共享宿主机网络 —— 代理监听在 127.0.0.1
+      # 时这是唯一能让构建走通的方式（容器网络到不了宿主回环）。
+      network: host
+      args:
+        HTTP_PROXY: ${HTTP_PROXY_URL:-http://127.0.0.1:7897}
+        HTTPS_PROXY: ${HTTP_PROXY_URL:-http://127.0.0.1:7897}
     # 容器内访问 127.0.0.1 是容器自己 —— 用 host-gateway 指向宿主机
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -114,18 +146,19 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      # 构建期也需要出网（npm ci / prisma generate 要下载引擎）。
+      # `network: host` 让构建容器共享宿主机网络 —— 代理监听在 127.0.0.1
+      # 时这是唯一能让构建走通的方式（容器网络到不了宿主回环）。
+      network: host
+      args:
+        HTTP_PROXY: ${HTTP_PROXY_URL:-http://127.0.0.1:7897}
+        HTTPS_PROXY: ${HTTP_PROXY_URL:-http://127.0.0.1:7897}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
     # 跑打包产物而非 tsx —— 生产镜像已剔除 devDependencies
+    # 网关产物已烘进镜像（见 Dockerfile 的 gateway:build 步骤）
     command: ["node", "dist/danmaku-gateway.mjs"]
-    volumes:
-      # 挂载本地构建的网关产物。
-      #
-      # 为什么：网关的改动（如节流、窗口）纯粹是后端逻辑，
-      # 而重建镜像需要联网下载 Prisma 引擎 —— 在无代理的构建环境里会失败。
-      # 挂载 dist 后，只需 `npm run gateway:build` 并重启容器即可生效。
-      - ./dist:/app/dist:ro
     ports:
       - "${DANMAKU_GATEWAY_PORT:-3102}:3102"
     env_file:
