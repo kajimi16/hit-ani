@@ -59,11 +59,18 @@ export function bgmAuthorizeUrl(config: BgmOAuthConfig, state: string): string {
 export interface BgmIdentity {
   userId: number;
   username: string;
+  /** BGM 昵称（可能与 username 不同），缺失时为 null。 */
+  nickname: string | null;
+  /** BGM 头像三档地址，缺失时为 null。 */
+  avatar: { large: string; medium: string; small: string } | null;
 }
 
 /**
- * 用 token 换身份。`GET /v0/me` 返回 `{ id, username, nickname, email, ... }`。
+ * 用 token 换身份。`GET /v0/me` 返回 `{ id, username, nickname, avatar, ... }`。
  * 这是**唯一**能确认 token 有效性的方式，两条绑定路径都先走它。
+ *
+ * 顺带把 `nickname` 与 `avatar` 也解析出来 —— 它们正是「导入头像」要用到的
+ * 数据，且已在同一个响应里，没必要为此再打一次请求。
  */
 export async function fetchBgmIdentity(accessToken: string): Promise<BgmIdentity> {
   const response = await fetch("https://api.bgm.tv/v0/me", {
@@ -82,11 +89,28 @@ export async function fetchBgmIdentity(accessToken: string): Promise<BgmIdentity
     throw new Error(`获取 Bangumi 用户信息失败: ${response.status}`);
   }
 
-  const data = (await response.json()) as { username?: string; id?: number };
+  const data = (await response.json()) as {
+    username?: string;
+    id?: number;
+    nickname?: string;
+    avatar?: { large?: string; medium?: string; small?: string };
+  };
   if (!data.username || typeof data.id !== "number") {
     throw new Error("Bangumi 返回的用户信息缺少 username 或 id");
   }
-  return { userId: data.id, username: data.username };
+
+  // 三档都要有才认 —— 缺档的地址会让 `next/image` 在渲染时抛错
+  const avatar =
+    data.avatar?.large && data.avatar.medium && data.avatar.small
+      ? { large: data.avatar.large, medium: data.avatar.medium, small: data.avatar.small }
+      : null;
+
+  return {
+    userId: data.id,
+    username: data.username,
+    nickname: data.nickname?.trim() || null,
+    avatar,
+  };
 }
 
 /**

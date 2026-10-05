@@ -38,7 +38,12 @@ export default async function RootLayout({
             isAdmin={user?.isAdmin ?? false}
             user={
               user
-                ? { nickname: user.nickname, schoolId: user.schoolId, isAdmin: user.isAdmin }
+                ? {
+                    nickname: user.nickname,
+                    schoolId: user.schoolId,
+                    isAdmin: user.isAdmin,
+                    avatarUrl: user.avatarUrl,
+                  }
                 : null
             }
           />

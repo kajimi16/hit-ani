@@ -586,12 +586,22 @@
 @layer components {
   /* ---------------------------------------------------------------- 页面容器
    * `ExplorationScreen` 用 `widthIn(max = 1300.dp)` 居中，水平内边距
-   * 紧凑 16px / 否则 24px（`paneHorizontalPadding`）。 */
+   * 紧凑 16px / 否则 24px（`paneHorizontalPadding`）。
+   *
+   * 但**条目详情页要更宽**：它内部还有自己的限宽，两层 1300px 叠加后，
+   * 宽屏（1920）下两侧各空出 300+ 像素，而三栏本身被挤得放不下 ——
+   * 这正是用户报的「两边空白太多导致有效内容过于拥挤」。
+   * 用 `:has()` 只放宽含详情页的那次渲染，其它页面维持 Animeko 的 1300。
+   * 不支持 `:has()` 的浏览器会忽略这条，退回现在的宽度（不会更糟）。
+   */
   .page-shell {
     width: 100%;
     max-width: 1300px;
     margin-inline: auto;
     padding-inline: 1rem;
+  }
+  .page-shell:has(.detail-layout) {
+    max-width: 1700px;
   }
   @media (min-width: 600px) {
     .page-shell {
@@ -751,8 +761,17 @@
  * (`AniNavigationSuiteLayout.calculateLayoutType`)
  * ================================================================== */
 @layer components {
+  /*
+   * 外壳。
+   *
+   * 侧栏曾经是 flex 行里的一个普通子项（`flex: 0 0 auto`）—— 于是页面一长，
+   * 整条侧栏就被拉到几千像素高，账号区（`mt-auto`）跟着沉到文档最底部，
+   * 必须滚到页面底才看得见。用户要的是「随时能看到账号和设置」。
+   *
+   * 现在侧栏**脱离文档流**（`position: fixed` + `height: 100vh`），
+   * 内容区靠左内边距让位。这样账号区永远钉在视口底部。
+   */
   .app-shell {
-    display: flex;
     min-height: 100vh;
     width: 100%;
   }
@@ -761,16 +780,30 @@
   .nav-rail {
     display: none;
     flex-direction: column;
-    flex: 0 0 auto;
+    /* 固定于视口左侧，不随文档高度拉伸 */
+    position: fixed;
+    inset-block: 0;
+    inset-inline-start: 0;
+    z-index: 40;
     width: 5rem;
     gap: 0.75rem;
     border-right: 1px solid var(--color-outline-variant);
     background-color: var(--color-surface-container);
     padding: 0.75rem 0;
   }
+  /* 侧栏内部可滚动：导航项多到超出视口高度时（管理员会多一项）
+     仍能滚到账号区，而不是把它挤出屏幕外。 */
+  .nav-rail > nav {
+    overflow-y: auto;
+    scrollbar-width: thin;
+  }
   @media (min-width: 840px) {
     .nav-rail {
       display: flex;
+    }
+    /* 内容区让开侧栏宽度 */
+    .app-main {
+      padding-inline-start: 5rem;
     }
   }
   /* 展开态：给标签留位置 */
@@ -779,6 +812,9 @@
       width: 13rem;
       align-items: stretch;
       padding-inline: 0.75rem;
+    }
+    .app-main {
+      padding-inline-start: 13rem;
     }
   }
 
@@ -868,8 +904,8 @@
   }
 
   /* ---- 内容区 ---- */
+  /* 内容区。左内边距由上面两个断点按侧栏宽度设置（侧栏是 fixed，不占流）。 */
   .app-main {
-    flex: 1;
     min-width: 0;
   }
   /* 底部栏是 fixed，给内容留出高度，否则最后一行永远被遮住 */
@@ -1096,21 +1132,25 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     gap: 1.5rem;
-    /* 详情页整页限宽，与 `maximumContentWidth` = 1300dp 一致 */
-    max-width: 1300px;
-    margin-inline: auto;
+    /*
+     * 这里**不再设 max-width** —— 限宽交给外层 `page-shell`。
+     *
+     * 此前两层各自限宽 1300px，结果宽屏下页面只用到一部分宽度、
+     * 两侧留出大片空白，而三栏本身还被挤得很窄。外层已按「含详情页时放宽」
+     * 处理（见 `.page-shell:has(.detail-layout)`），这里跟着父容器即可。
+     */
   }
   @media (min-width: 640px) {
     .detail-layout {
-      grid-template-columns: 17.5rem minmax(0, 1fr);
+      /* 左栏收窄：封面 260px 足够，原来 280 偏宽（用户反馈） */
+      grid-template-columns: 16.25rem minmax(0, 1fr);
     }
   }
   /*
    * **两栏时**右栏的内容（评分 / 热门评价 / 制作人员）跨满整行。
    *
    * 不这么做的话，作为第三个子元素它会被自动排到**第二行第一列** ——
-   * 也就是侧栏那一列（280px），而旁边几百像素的列空着。评分直方图与
-   * 制作人员列表挤在 280px 里很难看（实测确认）。
+   * 也就是侧栏那一列，而旁边几百像素的列空着。
    *
    * 上界必须写到三栏断点前一位：只写 `min-width` 的话三栏模式下也会跨满，
    * 右栏就被挤到整页底部去了（这个错误犯过一次）。
@@ -1121,27 +1161,32 @@
     }
   }
   /*
-   * 三栏的起点定在 **1400px**，不是 Animeko 的 1000px。
+   * 三栏布局。
    *
-   * 原因是可用的横向空间被**侧栏导航**吃掉了一大块：≥1200px 时导航栏占 208px，
-   * 加上页面内边距 48px，1300px 的视口实际只剩 1044px 给这三栏。
-   * 若照搬 1000dp 断点，中栏会被压到 **184px** —— 章节列表和简介在那里根本
-   * 没法读（实测确认）。
+   * ## 为什么起点是 1400 而不是 Animeko 的 1000
    *
-   * 按「中栏至少 380px」反推：
-   *   208(导航) + 48(内边距) + 260(侧栏) + 304(右栏) + 48(列距) + 380(中栏) ≈ 1248
-   * 取 1400 留出余量，同时把这一档的侧栏/右栏收窄，到 1600 再放宽。
+   * 可用宽度被**侧栏导航**吃掉 208px，再加页面内边距 48px。照搬 1000dp
+   * 会让中栏被压到 **184px**（实测），章节列表在那里没法读。
+   *
+   * ## 比例（按用户反馈调过一轮）
+   *
+   * 用户指出「左列太宽、中间太窄」。第一版是 260/372/304，中栏在三栏模式下
+   * 只有 ~570px，而左栏放个封面用不到 260。现在收窄左右、把省下的都给中栏：
+   *
+   *   1400px 档： 左 232 / 中 弹性 / 右 272
+   *   1600px 档： 左 248 / 中 弹性 / 右 300，列距 2.5rem
+   *
+   * 中栏是章节格 + 评论，最需要宽度；左右两栏是封面与元信息，窄一点无妨。
    */
   @media (min-width: 1400px) {
     .detail-layout {
-      grid-template-columns: 16.25rem minmax(0, 1fr) 19rem;
+      grid-template-columns: 14.5rem minmax(0, 1fr) 17rem;
     }
   }
-  /* 更宽时才有本钱用 Animeko 的原始宽度（侧栏 340 / 右栏 372）与更大的列距 */
   @media (min-width: 1600px) {
     .detail-layout {
-      grid-template-columns: 21.25rem minmax(0, 1fr) 23.25rem;
-      gap: 3rem;
+      grid-template-columns: 15.5rem minmax(0, 1fr) 18.75rem;
+      gap: 2.5rem;
     }
   }
 

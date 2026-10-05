@@ -68,7 +68,6 @@ export default function ExternalResources({
 
   const [groups, setGroups] = useState<ResourceGroup[] | null>(null);
   const [sources, setSources] = useState<SourceSummary[]>([]);
-  const [cached, setCached] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<number | null>>(new Set());
@@ -88,13 +87,11 @@ export default function ExternalResources({
         const body = (await response.json()) as {
           groups?: ResourceGroup[];
           sources?: SourceSummary[];
-          cached?: boolean;
           error?: string;
         };
         if (!response.ok) throw new Error(body.error ?? "检索失败");
         setGroups(body.groups ?? []);
         setSources(body.sources ?? []);
-        setCached(body.cached === true);
         // 默认展开第一组，避免用户还要多一次点击
         const first = body.groups?.[0]?.episodeNumber ?? null;
         setExpanded(new Set([first]));
@@ -152,16 +149,13 @@ export default function ExternalResources({
   return (
     <section className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
+        {/*
+          只留标题与操作按钮。按用户要求去掉了「N 条 · 来自 M 个源（缓存）」
+          与「点击在新标签页打开来源站点，本平台不提供也不传输视频」——
+          「N 条来自 M 个源」是实现细节（用户关心的是能不能看），
+          而免责声明已经写在 README / docs/MEDIA.md 与介绍页，不必占用正文。
+        */}
         <h2 className="text-lg font-semibold">外部资源</h2>
-        {groups !== null && (
-          <span className="text-xs text-on-surface-variant/70">
-            {totalResources} 条 · 来自 {sources.length} 个源
-            {cached && "（缓存）"}
-          </span>
-        )}
-        <span className="text-xs text-on-surface-variant/70">
-          点击在新标签页打开来源站点，本平台不提供也不传输视频
-        </span>
         <button
           type="button"
           onClick={() => void load(true)}

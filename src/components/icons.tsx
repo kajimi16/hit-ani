@@ -43,6 +43,17 @@ export function IconExplore({ size = 24, className }: IconProps) {
   );
 }
 
+/** 时光机 —— 带指针的表盘（Material 的 `history`）。 */
+export function IconHistory({ size = 24, className }: IconProps) {
+  return (
+    <svg {...base(size, className)}>
+      <path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1" />
+      <path d="M3.5 4.5V10h5.5" />
+      <path d="M12 7.5V12l3 2" />
+    </svg>
+  );
+}
+
 /** 时间表 —— 日历。 */
 export function IconCalendar({ size = 24, className }: IconProps) {
   return (

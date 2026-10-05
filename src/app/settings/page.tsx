@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import AvatarSetting from "@/components/avatar-setting";
 import JellyfinManager from "@/components/jellyfin-manager";
 import OAuthNoticeBanner from "@/components/oauth-notice-banner";
 import SettingsClient from "@/components/settings-client";
@@ -33,6 +34,12 @@ export default async function SettingsPage({
         后看不到任何反馈 —— 详见 `@/lib/auth/oauth-result`。
       */}
       {oauthNotice && <OAuthNoticeBanner notice={oauthNotice} />}
+
+      <AvatarSetting
+        currentUrl={user.avatarUrl}
+        nickname={user.nickname}
+        bgmBound={user.bgmBound}
+      />
 
       <section className="space-y-2">
         <h1 className="text-2xl font-semibold">账号设置</h1>

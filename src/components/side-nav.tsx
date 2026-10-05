@@ -7,6 +7,7 @@ import {
   IconCalendar,
   IconDatabase,
   IconExplore,
+  IconHistory,
   IconSettings,
 } from "@/components/icons";
 import UserMenu from "@/components/user-menu";
@@ -22,7 +23,13 @@ interface NavItem {
 interface Props {
   isAdmin: boolean;
   /** 已登录时把「设置」指向账号页；未登录指向登录页 */
-  user: { nickname: string; schoolId: string; isAdmin: boolean } | null;
+  user: {
+    nickname: string;
+    schoolId: string;
+    isAdmin: boolean;
+    /** 头像地址；null 时显示昵称首字占位。 */
+    avatarUrl: string | null;
+  } | null;
 }
 
 /**
@@ -51,6 +58,7 @@ export default function SideNav({ isAdmin, user }: Props) {
     },
     { href: "/library", label: "追番", icon: IconBookmark, match: (p) => p.startsWith("/library") },
     { href: "/schedule", label: "时间表", icon: IconCalendar, match: (p) => p.startsWith("/schedule") },
+    { href: "/timeline", label: "时光机", icon: IconHistory, match: (p) => p.startsWith("/timeline") },
   ];
 
   if (isAdmin) {
@@ -123,6 +131,7 @@ export default function SideNav({ isAdmin, user }: Props) {
                   nickname={user.nickname}
                   schoolId={user.schoolId}
                   isAdmin={user.isAdmin}
+                  avatarUrl={user.avatarUrl}
                 />
               </div>
               <div className="xl:hidden">
@@ -130,6 +139,7 @@ export default function SideNav({ isAdmin, user }: Props) {
                   nickname={user.nickname}
                   schoolId={user.schoolId}
                   isAdmin={user.isAdmin}
+                  avatarUrl={user.avatarUrl}
                   compact
                 />
               </div>

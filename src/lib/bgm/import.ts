@@ -198,6 +198,9 @@ async function upsertCollection(
     type: item.type,
     comment: item.comment ?? null,
     rating: item.rate || null,
+    // 私密标记必须一起取回来：时光机要按它过滤，漏了就等于替用户
+    // 公开了他特意设为私密的内容。
+    isPrivate: item.private === true,
     ...(collectedAt ? { collectedAt } : {}),
   };
 
