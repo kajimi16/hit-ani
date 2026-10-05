@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import CollapsibleSummary from "@/components/collapsible-summary";
 import EpisodeWorkspace, { type EpisodeItem } from "@/components/episode-workspace";
 import ExternalResources from "@/components/external-resources";
 import SubjectAside from "@/components/subject-aside";
@@ -14,9 +15,13 @@ import { listSources } from "@/lib/media/service";
 import { listReviews } from "@/lib/review/repository";
 import { histogramBars } from "@/lib/subject/rating";
 import { prisma } from "@/lib/prisma";
+import { getBgmComments } from "@/lib/bgm/comments-service";
 import { enrichSubject } from "@/lib/bgm/import";
 
 export const dynamic = "force-dynamic";
+
+/** 右栏展示几条 BGM 评论。太多会把制作人员挤到很下面。 */
+const BGM_COMMENT_PREVIEW = 4;
 
 /**
  * 条目详情：本地缓存优先，未缓存时回源 BGM 并落库。
@@ -82,7 +87,7 @@ export default async function SubjectPage({
   }
 
   const episodeIds = subject.episodes.map((episode) => episode.id);
-  const [counts, schoolCounts, collection, enabledSources, collectionStats, hotReviews] =
+  const [counts, schoolCounts, collection, enabledSources, collectionStats, hotReviews, bgmComments] =
     await Promise.all([
       countByEpisodeIds(episodeIds),
       user
@@ -113,7 +118,22 @@ export default async function SubjectPage({
         .catch(() => ({ wish: 0, doing: 0, done: 0 })),
       // 右栏「热门评价」按点赞排序
       listReviews({ subjectId, sort: "hot", limit: 3 }).catch(() => []),
+      /*
+       * BGM 站内评论。抓 HTML 得到（v0 无评论端点），结果落库缓存 6 小时。
+       *
+       * 只在**打开详情页时**才拉 —— 与「访问时获取并缓存」的既有策略一致：
+       * 不预热、不为没人看的条目发请求。失败时返回带 error 的结果而不是
+       * 抛错，页面照常渲染，只是那一个板块显示失败原因。
+       */
+      getBgmComments(subjectId).catch((error: unknown) => ({
+        comments: [],
+        totalPages: 1,
+        cached: false,
+        error: error instanceof Error ? error.message : "读取 Bangumi 评论失败",
+      })),
     ]);
+    /** BGM 评论只取前若干条展示，右栏不需要整页。 */
+    const bgmCommentPreview = bgmComments.comments.slice(0, BGM_COMMENT_PREVIEW);
 
   const episodes: EpisodeItem[] = subject.episodes.map((episode) => ({
     id: episode.id,
@@ -191,15 +211,11 @@ export default async function SubjectPage({
                 默认折叠 —— Animeko 的 `SubjectSummarySection` 只显示 5 行。
                 简介常有几百字，全展开会把章节列表推到屏幕外。
               */}
-              <details className="group">
-                <summary className="cursor-pointer text-sm text-on-surface-variant marker:text-outline">
-                  <span className="group-open:hidden">展开简介</span>
-                  <span className="hidden group-open:inline">收起简介</span>
-                </summary>
-                <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-on-surface-variant">
-                  {subject.summary}
-                </p>
-              </details>
+                            {/*
+                默认展示一部分，可展开全部。截断与按钮**只在真的溢出时**才
+                生效 —— 见 `CollapsibleSummary` 的说明。
+              */}
+              <CollapsibleSummary text={subject.summary} />
             </section>
           )}
 
@@ -231,18 +247,23 @@ export default async function SubjectPage({
             episodes={episodes}
             canInteract={user !== null}
             schoolId={user?.schoolId}
-            bgmBound={user?.bgmBound ?? false}
-            hasPlayer={user?.jellyfinConnected ?? false}
-          />
+            />
         </div>
 
         <SubjectAside
+          subjectIdForBgm={subject.id}
+          myRating={collection?.rating ?? null}
+          myStatus={collection?.type ?? null}
+          canInteract={user !== null}
           ratingScore={subject.score}
           rank={subject.rank}
           ratingTotal={subject.ratingTotal}
           bars={bars}
           reviews={hotReviews}
           persons={subject.persons}
+          bgmComments={bgmCommentPreview}
+          bgmCommentPages={bgmComments.totalPages}
+          bgmCommentError={bgmComments.error}
           schoolId={user?.schoolId}
           allReviewsHref={`#reviews`}
         />

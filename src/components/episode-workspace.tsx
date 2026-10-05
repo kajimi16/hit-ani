@@ -29,9 +29,6 @@ interface Props {
   episodes: EpisodeItem[];
   canInteract: boolean;
   schoolId?: string;
-  bgmBound: boolean;
-  /** 是否已连接媒体库 —— 决定弹幕列表的提示文案。 */
-  hasPlayer: boolean;
 }
 
 /** 章节选择 + 进度标记 + 弹幕 / 评论面板的组合容器。 */
@@ -40,8 +37,6 @@ export default function EpisodeWorkspace({
   episodes,
   canInteract,
   schoolId,
-  bgmBound,
-  hasPlayer,
 }: Props) {
   const [selectedId, setSelectedId] = useState<number | null>(episodes[0]?.id ?? null);
   const [progress, setProgress] = useState<Record<number, number>>({});
@@ -113,13 +108,14 @@ export default function EpisodeWorkspace({
       <section className="space-y-3">
         <div className="flex flex-wrap items-baseline gap-3">
           <h2 className="text-lg font-semibold">章节</h2>
-          <span className="text-xs text-on-surface-variant/70">
-            {canInteract
-              ? bgmBound
-                ? "标记后同步写入 Bangumi"
-                : "标记后仅保存在本站（绑定 Bangumi 后可同步）"
-              : "登录后可标记观看进度"}
-          </span>
+          {/*
+            只保留「登录后可标记」这一句：未登录时进度控件是禁用的，
+            没有这句用户不知道原因。另外两句（「同步写入 Bangumi」/「仅保存在本站」）
+            按用户要求去掉。
+          */}
+          {!canInteract && (
+            <span className="text-xs text-on-surface-variant/70">登录后可标记观看进度</span>
+          )}
         </div>
 
         {saveError && (
@@ -198,7 +194,6 @@ export default function EpisodeWorkspace({
         episodeLabel={label}
         canInteract={canInteract}
         schoolId={schoolId}
-        hasPlayer={hasPlayer}
       />
 
       <ReviewPanel subjectId={subjectId} canInteract={canInteract} schoolId={schoolId} />

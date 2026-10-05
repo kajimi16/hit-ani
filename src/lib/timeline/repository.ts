@@ -107,7 +107,14 @@ export async function queryTimeline(options: TimelineOptions): Promise<TimelineE
       include: TIMELINE_INCLUDES.danmaku,
     }),
     skip ? Promise.resolve([]) : prisma.episodeProgress.findMany({
-      where: userFilter,
+      /*
+       * 排除 `type: 0`（「取消观看」）。
+       *
+       * 那是一条**负面操作**而不是观看行为 —— 用户把某集从「看过」改回「未看」
+       * 时产生。把它当活动流出来，等于把「我撤销了一次标记」广播给同校的人，
+       * 既没有信息量，也不是用户想公开的动作。用户明确要求不要记它。
+       */
+      where: { ...userFilter, type: { not: 0 } },
       orderBy: [{ updatedAt: "desc" }],
       take: PER_SOURCE_LIMIT,
       include: TIMELINE_INCLUDES.progress,

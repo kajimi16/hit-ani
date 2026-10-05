@@ -210,11 +210,6 @@ export default async function SchedulePage({
               </li>
             ))}
           </ol>
-
-          <p className="text-xs text-on-surface-variant">
-            「—」表示该数据尚不可用（BGM 人数需先打开过该条目才会缓存）。
-            括号内是参与评分的本校人数 —— 样本很小时平均分的参考价值有限。
-          </p>
         </section>
       )}
 

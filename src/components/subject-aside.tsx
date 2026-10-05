@@ -1,6 +1,8 @@
 import Image from "next/image";
 import Link from "next/link";
 import { IconStar } from "@/components/icons";
+import RatingPicker from "@/components/rating-picker";
+import UserAvatar from "@/components/user-avatar";
 
 interface PersonRow {
   personId: number;
@@ -10,6 +12,14 @@ interface PersonRow {
 }
 
 interface Props {
+  /** 条目 ID —— 用于拼「在 Bangumi 打开」的链接，也是评分提交的目标。 */
+  subjectIdForBgm: number;
+  /** 当前用户对该条目的评分（1–10），未评为 null。 */
+  myRating: number | null;
+  /** 当前收藏状态（评分提交时要沿用，不能改掉它）。 */
+  myStatus: number | null;
+  /** 是否已登录 —— 未登录时评分只读。 */
+  canInteract: boolean;
   ratingScore: number | null;
   rank: number | null;
   ratingTotal: number | null;
@@ -25,6 +35,26 @@ interface Props {
     createdAt: string;
   }[];
   persons: PersonRow[];
+  /**
+   * Bangumi 站内评论（抓 HTML 得到）。
+   *
+   * 与下面的 `reviews`（本站自建评价）**是两套东西**，因此分板块展示：
+   * 前者是「全网怎么说」，后者是「本校同学怎么说」。混在一起会让用户
+   * 分不清哪条来自哪里。
+   */
+  bgmComments: {
+    user: string;
+    userId: string | null;
+    avatarUrl: string | null;
+    rating: number | null;
+    collectionType: string | null;
+    timeText: string | null;
+    text: string;
+  }[];
+  /** BGM 评论总数（用于说明「共 N 页」）。 */
+  bgmCommentPages: number;
+  /** 抓取失败时的原因 —— 失败要说清，不要静默显示空。 */
+  bgmCommentError: string | null;
   /** 本校标识 —— 用来给本校评价打标，与弹幕的筛选口径一致 */
   schoolId?: string;
   /** 「查看全部」链接的目标 */
@@ -71,12 +101,19 @@ function mergeByPerson(persons: PersonRow[]): { person: PersonRow; relations: st
  * 评分（大数字 + 星 + 排名人数 + 直方图）、热门评价、制作人员。
  */
 export default function SubjectAside({
+  subjectIdForBgm,
+  myRating,
+  myStatus,
+  canInteract,
   ratingScore,
   rank,
   ratingTotal,
   bars,
   reviews,
   persons,
+  bgmComments,
+  bgmCommentPages,
+  bgmCommentError,
   schoolId,
   allReviewsHref,
 }: Props) {
@@ -91,10 +128,20 @@ export default function SubjectAside({
  */
 const STAFF_PREVIEW_COUNT = 12;
 
-/** 一行制作人员：头像 + 姓名 + 合并后的职位。 */
+/**
+ * 一行制作人员：头像 + 姓名 + 合并后的职位。
+ *
+ * **整行是链接**，点进 `/{persons/{id}` 人物详情页 —— 在那里能看到他的
+ * 全部参与作品与职位。用户明确要求「制作人员可以点击，点击后拉取对应词条
+ * 并进入详情页」。
+ */
 function renderStaffItem({ person, relations }: { person: PersonRow; relations: string[] }) {
   return (
-    <div key={person.personId} className="staff-item">
+    <Link
+      key={person.personId}
+      href={`/persons/${person.personId}`}
+      className="staff-item lift"
+    >
       {person.imageUrl ? (
         <Image
           src={person.imageUrl}
@@ -112,12 +159,21 @@ function renderStaffItem({ person, relations }: { person: PersonRow; relations: 
         {/* 一人多职在这里合并显示，例如「原作、脚本」 */}
         <p className="staff-item__roles">{relations.join("、")}</p>
       </div>
-    </div>
+    </Link>
   );
 }
 
   return (
     <div className="detail-column">
+      {/* ---------------------------------------------------------- 我的评分
+          放在全站评分**之前** —— 用户最关心的是「我打了多少」，其次才是大家。 */}
+      <RatingPicker
+        subjectId={subjectIdForBgm}
+        initialRating={myRating}
+        currentStatus={myStatus}
+        canInteract={canInteract}
+      />
+
       {/* ---------------------------------------------------------- 评分 */}
       {(ratingScore !== null || hasHistogram) && (
         <section className="panel">
@@ -204,6 +260,53 @@ function renderStaffItem({ person, relations }: { person: PersonRow; relations: 
                 <p className="review-preview__text text-on-surface-variant">{review.content}</p>
               </article>
             ))}
+          </div>
+        )}
+      </section>
+
+      {/* ---------------------------------------------------------- BGM 评论 */}
+      <section className="panel">
+        <h2 className="detail-section-title">
+          Bangumi 评论
+          {bgmComments.length > 0 && (
+            <a
+              href={`https://bgm.tv/subject/${subjectIdForBgm}`}
+              target="_blank"
+              rel="noreferrer"
+              className="ml-auto text-xs font-normal text-primary hover:underline"
+            >
+              在 Bangumi 打开
+            </a>
+          )}
+        </h2>
+
+        {/*
+          失败要说清原因。BGM 的评论页面是抓来的，失败模式比 API 多
+          （限流、页面结构变化、超时），静默显示空列表会让人以为「没人评论」。
+        */}
+        {bgmCommentError && bgmComments.length === 0 ? (
+          <p className="text-sm text-on-surface-variant">{bgmCommentError}</p>
+        ) : bgmComments.length === 0 ? (
+          <p className="text-sm text-on-surface-variant">Bangumi 上还没有人评论这部番。</p>
+        ) : (
+          <div className="space-y-2">
+            {bgmComments.map((comment, index) => (
+              <article key={`${comment.userId ?? comment.user}-${index}`} className="review-preview">
+                <div className="review-preview__meta">
+                  <UserAvatar url={comment.avatarUrl} nickname={comment.user} size={18} />
+                  <span className="text-on-surface">{comment.user}</span>
+                  {comment.rating !== null && <span>{comment.rating} 分</span>}
+                  {comment.collectionType && <span>· {comment.collectionType}</span>}
+                  {comment.timeText && <span className="ml-auto">{comment.timeText}</span>}
+                </div>
+                <p className="review-preview__text text-on-surface-variant">{comment.text}</p>
+              </article>
+            ))}
+            {bgmCommentPages > 1 && (
+              <p className="text-[0.6875rem] text-on-surface-variant">
+                共 {bgmCommentPages} 页，这里显示最新的一页。
+              </p>
+            )}
           </div>
         )}
       </section>

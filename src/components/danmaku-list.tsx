@@ -17,8 +17,6 @@ interface Props {
   episodeLabel: string;
   canInteract: boolean;
   schoolId?: string;
-  /** 是否已有可播放的视频（决定提示文案）。 */
-  hasPlayer: boolean;
 }
 
 /**
@@ -40,7 +38,6 @@ export default function DanmakuList({
   episodeLabel,
   canInteract,
   schoolId,
-  hasPlayer,
 }: Props) {
   const [danmakus, setDanmakus] = useState<DanmakuDto[]>([]);
   const [schoolOnly, setSchoolOnly] = useState(false);
@@ -222,12 +219,6 @@ export default function DanmakuList({
         </label>
       </div>
 
-      <p className="text-xs text-on-surface-variant/70">
-        {hasPlayer
-          ? "弹幕会叠加在上方播放器上；发送请用播放器的输入框（需要播放位置）。"
-          : "这里只是浏览。要发弹幕需要先有可播放的视频 —— 到「设置」连接你的 Jellyfin/Emby 媒体库。"}
-      </p>
-
       {/*
         外部源状态。没有这一块的话，用户看到弹幕数量对不上会以为是 bug ——
         实际是「校内 0 条 + Animeko 17 条」这种组合。
@@ -266,11 +257,6 @@ export default function DanmakuList({
               {source.ok ? ` ${source.count}` : " 失败"}
             </span>
           ))}
-          {external.externalCount > 0 && (
-            <span className="text-on-surface-variant/70">
-              （外部弹幕不属于任何学校，开启「只看本校」会隐藏它们）
-            </span>
-          )}
         </p>
       )}
 

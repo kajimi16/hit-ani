@@ -87,6 +87,10 @@ export type PagedEpisodes = OkBody<"getEpisodes">;
 export type PagedUserCollections = OkBody<"getUserCollectionsByUsername">;
 export type UserSubjectCollection = components["schemas"]["UserSubjectCollection"];
 export type RelatedPerson = components["schemas"]["RelatedPerson"];
+/** 人物详情（`/v0/persons/{id}`）。 */
+export type Person = OkBody<"getPersonById">;
+/** 人物参与的作品（`/v0/persons/{id}/subjects`）。 */
+export type PersonWork = components["schemas"]["v0_RelatedSubject"];
 export type PagedUserEpisodeCollections = OkBody<"getUserSubjectEpisodeCollection">;
 
 export class BgmApiError extends Error {
@@ -381,6 +385,36 @@ export function getSubjectPersons(
   options: BgmRequestOptions = {},
 ): Promise<RelatedPerson[]> {
   return request(`/v0/subjects/${subjectId}/persons`, {
+    method: "GET",
+    accessToken: options.accessToken,
+    signal: options.signal,
+    timeoutMs: options.timeoutMs,
+  });
+}
+
+/**
+ * 人物详情（`/v0/persons/{id}`）。
+ *
+ * 制作人员从条目页点进人物页时用 —— 与条目一样「访问时获取」，
+ * 不预热、不为没人看的人物发请求。
+ */
+export function getPerson(personId: number, options: BgmRequestOptions = {}): Promise<Person> {
+  return request(`/v0/persons/${personId}`, {
+    method: "GET",
+    accessToken: options.accessToken,
+    signal: options.signal,
+    timeoutMs: options.timeoutMs,
+  });
+}
+
+/** 人物参与的作品（含在该作品里担任的职位）。 */
+export function getPersonWorks(
+  personId: number,
+  options: BgmRequestOptions = {},
+): Promise<PersonWork[]> {
+  // 该端点**不接受任何 query 参数**（规范里是 `query?: never`），
+  // 实测也没有分页 —— 一次返回该人物参与过的全部作品。
+  return request(`/v0/persons/${personId}/subjects`, {
     method: "GET",
     accessToken: options.accessToken,
     signal: options.signal,

@@ -1545,3 +1545,56 @@
     opacity: 0.5;
   }
 }
+
+/* ================================================================== *
+ * 折叠简介
+ * ================================================================== */
+@layer components {
+  /* 默认只显示 6 行。`max-height` 而不是 `-webkit-line-clamp`：
+     后者在 `<details>` 展开时需要额外复位，而 max-height 配合
+     `details[open]` 的覆盖更直接。 */
+  /*
+   * **只对真正溢出的简介**截断与遮罩。
+   *
+   * 纯 CSS 判断不了溢出，所以 `CollapsibleSummary` 挂载后量一次
+   * `scrollHeight`，溢出才打上 `data-overflowing`。没有这个门槛时，
+   * 短简介的**完整可见**的最后一行也会被渐变淡化 —— 读起来像被截断了，
+   * 而展开按钮点了又没有任何变化。
+   */
+  .summary-collapse[data-overflowing="true"] .summary-collapse__body {
+    max-height: 9.6em; /* ≈ 6 行 × 1.6 行高 */
+    overflow: hidden;
+    /* 底部渐隐 —— 比硬切一刀更像「还有内容」 */
+    mask-image: linear-gradient(to bottom, #000 70%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, #000 70%, transparent 100%);
+  }
+  .summary-collapse[open] .summary-collapse__body {
+    max-height: none;
+    mask-image: none;
+    -webkit-mask-image: none;
+  }
+
+  /* 展开按钮：M3 风格的 tonal 底 + 右侧箭头，展开后箭头翻转 */
+  .summary-collapse__toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    /* `summary` 默认有三角标记，去掉 —— 我们自带箭头 */
+    list-style: none;
+  }
+  .summary-collapse__toggle::-webkit-details-marker {
+    display: none;
+  }
+  .summary-collapse__chevron {
+    transition: transform var(--duration-accelerate) var(--ease-standard);
+  }
+  .summary-collapse[open] .summary-collapse__chevron {
+    transform: rotate(180deg);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .summary-collapse__chevron {
+      transition: none;
+    }
+  }
+}

@@ -425,3 +425,19 @@ model JellyfinConnection {
   @@unique([userId, baseUrl])
   @@index([userId])
 }
+
+/// Bangumi 站内评论（吐槽箱）的抓取缓存。
+///
+/// 为什么单独一张表而不是复用 `DanmakuCache`：两者的内容、TTL、来源都不同
+/// （弹幕按集缓存、6 小时；评论按条目缓存、同样 6 小时但走 HTML 解析）。
+/// 混在一张表里会让查询必须带一个「类型」判别字段，得不偿失。
+///
+/// `payload` 存 JSON 字符串而不是 Json 列：评论条目里含大量中文与引号，
+/// 整体存字符串可以一次性 `JSON.parse`，也避免了 Json 列对形状的隐式约束。
+model BgmCommentsCache {
+  subjectId Int      @id
+  payload   String
+  /// BGM 的分页总数 —— 界面要显示「共 N 页」。
+  totalPages Int
+  fetchedAt DateTime @default(now())
+}
