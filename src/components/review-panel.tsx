@@ -92,7 +92,12 @@ export default function ReviewPanel({ subjectId, canInteract, schoolId }: Props)
   };
 
   return (
-    <section className="space-y-4">
+    /*
+     * `id` 是详情页右栏「热门评价 → 全部」的跳转目标。锚点必须落在真正
+     * 渲染评论区的那一层，否则点过去只会停在页面顶部（这个链接一度是死的，
+     * 因为没有任何元素带这个 id）。
+     */
+    <section id="reviews" className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
         <h2 className="text-lg font-semibold">评论 / 影评</h2>
         <span className="text-xs text-on-surface-variant/70">

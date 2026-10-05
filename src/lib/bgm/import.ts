@@ -25,6 +25,11 @@
 
 import { prisma } from "@/lib/prisma";
 import {
+  parseAirDate,
+  subjectFieldsFromDetail,
+  subjectFieldsFromSlim,
+} from "@/lib/bgm/subject-fields";
+import {
   getSubject,
   getSubjectEpisodes,
   getSubjectPersons,
@@ -42,16 +47,6 @@ const REQUEST_INTERVAL_MS = 220;
 const PAGE_SIZE = 100;
 /** 重试与退避由 `withRetry` 承担，见 `src/lib/bgm/client.ts`。 */
 
-
-/** `YYYY-MM-DD` → Date；BGM 对未定档条目会返回空串。 */
-export function parseAirDate(raw: string | undefined | null): Date | null {
-  if (!raw) return null;
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw.trim());
-  if (!match) return null;
-  const [, y, m, d] = match;
-  const date = new Date(Date.UTC(Number(y), Number(m) - 1, Number(d)));
-  return Number.isNaN(date.getTime()) ? null : date;
-}
 
 /** 分页拉全量收藏。`subjectType=2` 限定动画。 */
 export async function fetchAllCollections(
@@ -164,17 +159,11 @@ async function upsertSlimSubject(item: UserSubjectCollection): Promise<void> {
     return;
   }
 
+  // 同样来自 `subject-fields.ts`。这条路径**不能**写 ratingTotal /
+  // ratingHistogram —— SlimSubject 里没有，写进去只会把已有的值抹成空。
   const fields = {
+    ...subjectFieldsFromSlim(subject),
     type: subject.type ?? item.subject_type,
-    name: subject.name,
-    nameCn: subject.name_cn || null,
-    // SlimSubject 给的是截短简介；完整简介等 enrichSubject
-    summary: subject.short_summary || null,
-    coverUrl: subject.images?.large ?? subject.images?.common ?? null,
-    score: subject.score || null,
-    rank: subject.rank || null,
-    // SlimSubject 的 tags 是对象数组（含 count），本地只需要名字
-    tags: (subject.tags ?? []).map((tag) => tag.name),
   };
 
   await prisma.subject.upsert({
@@ -265,26 +254,10 @@ export async function enrichSubject(
 
   const detail = await withRetry(() => getSubject(subjectId), `subject ${subjectId}`);
 
-  const fields = {
-    type: detail.type,
-    name: detail.name,
-    nameCn: detail.name_cn || null,
-    summary: detail.summary || null,
-    coverUrl: detail.images?.large ?? detail.images?.common ?? null,
-    airDate: parseAirDate(detail.date),
-    score: detail.rating?.score ?? null,
-    rank: detail.rating?.rank ?? null,
-    /// 评分人数 —— 详情页右栏的「N 人评分」，以及左栏作品信息里都要用。
-    ratingTotal: detail.rating?.total ?? null,
-    // 直方图只在详情接口里，且我们只做展示 —— 直接存上游形状的 JSON，
-    // 不为它单独建表（键固定为 "1".."10"）。
-    // 用 `undefined` 而不是 `null`：Prisma 的可空 Json 列不接受裸 `null`，
-    // 而缺省就是「不写这一列」，语义正好。
-    ratingHistogram: detail.rating?.count ?? undefined,
-    // 标签也在这里补齐：收藏导入只覆盖「已收藏」的条目，
-    // 直接打开一个陌生条目时 tags 会是空的。
-    tags: (detail.tags ?? []).map((tag) => tag.name),
-  };
+  // 字段清单在 `subject-fields.ts` 里集中定义 —— 此前这里与
+  // `api/subjects/[id]/route.ts` 各写一份，结果两边漏的字段还不一样
+  // （一边漏 rank、一边漏 ratingTotal），而漏键不是类型错误，tsc 抓不到。
+  const fields = subjectFieldsFromDetail(detail);
 
   await prisma.subject.upsert({
     where: { id: detail.id },

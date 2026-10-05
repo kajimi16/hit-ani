@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth/session";
 import { countByEpisodeIds } from "@/lib/danmaku/repository";
+import { parseAirDate, subjectFieldsFromDetail } from "@/lib/bgm/subject-fields";
 import { getSubject, getSubjectEpisodes } from "@/lib/bgm/client";
 import { prisma } from "@/lib/prisma";
 
@@ -37,20 +38,15 @@ export async function GET(
         getSubjectEpisodes(subjectId, { limit: 100 }),
       ]);
 
-      const fields = {
-        type: detail.type,
-        name: detail.name,
-        nameCn: detail.name_cn || null,
-        summary: detail.summary || null,
-        coverUrl: detail.images?.large ?? detail.images?.common ?? null,
-        airDate: parseDate(detail.date),
-        score: detail.rating?.score ?? null,
-        rank: detail.rating?.rank ?? null,
-      };
+      // 这里此前漏了 `ratingTotal` 与 `ratingHistogram` —— 于是走这条路径
+      // 缓存的条目，详情页右栏的「N 人评分」与评分直方图永远是空的。
+      // 字段清单现已集中到 `@/lib/bgm/subject-fields`，两处共用一份。
+      const fields = subjectFieldsFromDetail(detail);
 
       subject = await prisma.subject.upsert({
         where: { id: detail.id },
-        create: { id: detail.id, tags: [], ...fields },
+        // `fields` 已带 tags（可能为空数组），不再单独给 `tags: []`
+        create: { id: detail.id, ...fields },
         update: fields,
         include: { episodes: { orderBy: { sort: "asc" } } },
       });
@@ -62,7 +58,7 @@ export async function GET(
           ep: episode.ep ?? null,
           name: episode.name,
           nameCn: episode.name_cn || null,
-          airdate: parseDate(episode.airdate),
+          airdate: parseAirDate(episode.airdate),
           duration: episode.duration || null,
         };
         await prisma.episode.upsert({
@@ -125,10 +121,6 @@ export async function GET(
   });
 }
 
-function parseDate(raw: string | undefined | null): Date | null {
-  if (!raw) return null;
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw.trim());
-  if (!match) return null;
-  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
-  return Number.isNaN(date.getTime()) ? null : date;
-}
+// 日期解析统一用 `@/lib/bgm/subject-fields` 里那一份。此前这里是**第三份**
+// 复制品，且同样有「13 月 45 日」被 `Date.UTC` 静默进位的问题 ——
+// 三份各自演化，其中两份带着同一个 bug。
