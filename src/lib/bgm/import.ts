@@ -27,6 +27,7 @@ import { prisma } from "@/lib/prisma";
 import {
   getSubject,
   getSubjectEpisodes,
+  getSubjectPersons,
   getUserCollections,
   getUserSubjectEpisodeCollection,
   sleep,
@@ -209,6 +210,8 @@ export interface SubjectEnrichResult {
   subjectId: number;
   episodes: number;
   progress: number;
+  /** 本次同步到的制作人员条数（0 表示未同步或接口失败）。 */
+  staff: number;
   /** true 表示本次真的去上游拉了数据；false 表示已有缓存直接返回 */
   fetched: boolean;
 }
@@ -227,14 +230,37 @@ export async function enrichSubject(
 ): Promise<SubjectEnrichResult> {
   const existing = await prisma.subject.findUnique({
     where: { id: subjectId },
-    select: { detailSyncedAt: true, _count: { select: { episodes: true } } },
+    select: {
+      detailSyncedAt: true,
+      staffSyncedAt: true,
+      _count: { select: { episodes: true, persons: true } },
+    },
   });
 
-  const hasDetail = existing?.detailSyncedAt !== null && existing?.detailSyncedAt !== undefined;
+  const hasDetail = existing?.detailSyncedAt != null;
   const hasEpisodes = (existing?._count.episodes ?? 0) > 0;
+  /*
+   * 制作人员也算「补齐」的一部分。
+   *
+   * 这一条是为了**回填**：在加入人员同步之前就已经缓存过的条目，
+   * `detailSyncedAt` 有值、章节也有，于是会被下面判为「已完整」而直接返回 ——
+   * 结果 `staffSyncedAt` 永远是 null，这些条目的制作人员永远拉不到，
+   * 顺带 `ratingTotal` / 评分直方图也补不上（它们只在详情那一趟里写）。
+   *
+   * 旧条目因此会在部署后**第一次被访问时**多走一轮详情 + 人员请求，
+   * 之后照常命中缓存。这是既有的「访问时补齐」策略的自然延伸，
+   * 一次性成本换自愈，比要求手动重跑一遍导入合理。
+   */
+  const hasStaff = existing?.staffSyncedAt != null;
 
-  if (!options.force && hasDetail && hasEpisodes) {
-    return { subjectId, episodes: existing!._count.episodes, progress: 0, fetched: false };
+  if (!options.force && hasDetail && hasEpisodes && hasStaff) {
+    return {
+      subjectId,
+      episodes: existing._count.episodes,
+      progress: 0,
+      staff: existing._count.persons,
+      fetched: false,
+    };
   }
 
   const detail = await withRetry(() => getSubject(subjectId), `subject ${subjectId}`);
@@ -248,11 +274,21 @@ export async function enrichSubject(
     airDate: parseAirDate(detail.date),
     score: detail.rating?.score ?? null,
     rank: detail.rating?.rank ?? null,
+    /// 评分人数 —— 详情页右栏的「N 人评分」，以及左栏作品信息里都要用。
+    ratingTotal: detail.rating?.total ?? null,
+    // 直方图只在详情接口里，且我们只做展示 —— 直接存上游形状的 JSON，
+    // 不为它单独建表（键固定为 "1".."10"）。
+    // 用 `undefined` 而不是 `null`：Prisma 的可空 Json 列不接受裸 `null`，
+    // 而缺省就是「不写这一列」，语义正好。
+    ratingHistogram: detail.rating?.count ?? undefined,
+    // 标签也在这里补齐：收藏导入只覆盖「已收藏」的条目，
+    // 直接打开一个陌生条目时 tags 会是空的。
+    tags: (detail.tags ?? []).map((tag) => tag.name),
   };
 
   await prisma.subject.upsert({
     where: { id: detail.id },
-    create: { id: detail.id, tags: [], ...fields },
+    create: { id: detail.id, ...fields },
     update: fields,
   });
 
@@ -284,13 +320,68 @@ export async function enrichSubject(
       ? await importEpisodeProgress(options.userId, subjectId, options.accessToken)
       : 0;
 
+  const staffCount = await syncSubjectPersons(subjectId);
+
   // 标记完成 —— 下次访问直接走缓存
   await prisma.subject.update({
     where: { id: subjectId },
     data: { detailSyncedAt: new Date() },
   });
 
-  return { subjectId, episodes: episodeCount, progress: progressCount, fetched: true };
+  return {
+    subjectId,
+    episodes: episodeCount,
+    progress: progressCount,
+    staff: staffCount,
+    fetched: true,
+  };
+}
+
+/**
+ * 同步条目的制作人员。
+ *
+ * 用 `staffSyncedAt` 单独判定，与 `detailSyncedAt` 分开 —— 人员接口挂了不该
+ * 让整条条目被判为「未同步」，否则每次打开都会把详情与全部章节重拉一遍。
+ *
+ * 失败时**不抛出**：制作人员是详情页的附加信息，拿不到就不显示那个板块，
+ * 没道理因此让整个条目页报错。返回 0 表示这次没同步到。
+ */
+async function syncSubjectPersons(subjectId: number): Promise<number> {
+  const existing = await prisma.subject.findUnique({
+    where: { id: subjectId },
+    select: { staffSyncedAt: true, _count: { select: { persons: true } } },
+  });
+  if (existing?.staffSyncedAt) return existing._count.persons;
+
+  let persons;
+  try {
+    persons = await withRetry(() => getSubjectPersons(subjectId), `persons ${subjectId}`, 2);
+  } catch (error) {
+    console.warn(`[bgm-import] 制作人员同步失败（不影响条目）：${String(error)}`);
+    return 0;
+  }
+
+  await prisma.$transaction([
+    // 先清后写：上游删掉某个职位时本地也要跟着消失，否则会留下幽灵人员。
+    // 同一个人担任多个职位不受影响 —— 主键是「条目 + 人员 + 职位」。
+    prisma.subjectPerson.deleteMany({ where: { subjectId } }),
+    prisma.subjectPerson.createMany({
+      data: persons.map((person, index) => ({
+        subjectId,
+        personId: person.id,
+        relation: person.relation,
+        name: person.name,
+        career: person.career ?? [],
+        imageUrl: person.images?.medium ?? person.images?.small ?? null,
+        // 上游已按重要度排好序，照它的顺序存
+        sort: index,
+      })),
+      skipDuplicates: true,
+    }),
+    prisma.subject.update({ where: { id: subjectId }, data: { staffSyncedAt: new Date() } }),
+  ]);
+
+  return persons.length;
 }
 
 /** 分页拉某条目全部章节。 */

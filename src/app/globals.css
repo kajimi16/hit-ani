@@ -1073,3 +1073,231 @@
     color: var(--color-on-surface-variant);
   }
 }
+
+/* ================================================================== *
+ * 条目详情页：侧栏 / 内容 / 右栏
+ * (`SubjectDetailsMultiColumnPage` + `SubjectDetailsLayoutParams`)
+ * ================================================================== */
+@layer components {
+  /*
+   * 断点与宽度直接取自 Animeko 的 `SubjectDetailsLayoutParams`：
+   *
+   * | 窗口宽        | 布局             | 侧栏 | 右栏 | 列距 |
+   * |---------------|------------------|------|------|------|
+   * | <640px        | 单列             | —    | —    | —    |
+   * | 640–1000px    | 侧栏 + 内容      | 280  | —    | 24   |
+   * | 1000–1600px   | 侧栏 + 内容 + 右栏 | 340  | 372  | 24   |
+   * | ≥1600px       | 同上（更宽）      | 340  | 372  | 48   |
+   *
+   * 用 `minmax(0, 1fr)` 而不是 `1fr` 表示内容列：前者才允许内容比轨道更窄
+   * （否则长标题/长 URL 会把整列撑开，右侧栏被挤出屏幕）。
+   */
+  .detail-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.5rem;
+    /* 详情页整页限宽，与 `maximumContentWidth` = 1300dp 一致 */
+    max-width: 1300px;
+    margin-inline: auto;
+  }
+  @media (min-width: 640px) {
+    .detail-layout {
+      grid-template-columns: 17.5rem minmax(0, 1fr);
+    }
+  }
+  /*
+   * **两栏时**右栏的内容（评分 / 热门评价 / 制作人员）跨满整行。
+   *
+   * 不这么做的话，作为第三个子元素它会被自动排到**第二行第一列** ——
+   * 也就是侧栏那一列（280px），而旁边几百像素的列空着。评分直方图与
+   * 制作人员列表挤在 280px 里很难看（实测确认）。
+   *
+   * 上界必须写到三栏断点前一位：只写 `min-width` 的话三栏模式下也会跨满，
+   * 右栏就被挤到整页底部去了（这个错误犯过一次）。
+   */
+  @media (min-width: 640px) and (max-width: 1399.98px) {
+    .detail-layout > :last-child {
+      grid-column: 1 / -1;
+    }
+  }
+  /*
+   * 三栏的起点定在 **1400px**，不是 Animeko 的 1000px。
+   *
+   * 原因是可用的横向空间被**侧栏导航**吃掉了一大块：≥1200px 时导航栏占 208px，
+   * 加上页面内边距 48px，1300px 的视口实际只剩 1044px 给这三栏。
+   * 若照搬 1000dp 断点，中栏会被压到 **184px** —— 章节列表和简介在那里根本
+   * 没法读（实测确认）。
+   *
+   * 按「中栏至少 380px」反推：
+   *   208(导航) + 48(内边距) + 260(侧栏) + 304(右栏) + 48(列距) + 380(中栏) ≈ 1248
+   * 取 1400 留出余量，同时把这一档的侧栏/右栏收窄，到 1600 再放宽。
+   */
+  @media (min-width: 1400px) {
+    .detail-layout {
+      grid-template-columns: 16.25rem minmax(0, 1fr) 19rem;
+    }
+  }
+  /* 更宽时才有本钱用 Animeko 的原始宽度（侧栏 340 / 右栏 372）与更大的列距 */
+  @media (min-width: 1600px) {
+    .detail-layout {
+      grid-template-columns: 21.25rem minmax(0, 1fr) 23.25rem;
+      gap: 3rem;
+    }
+  }
+
+  .detail-column {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    min-width: 0;
+  }
+  /* 侧栏吸顶：滚动长章节列表时封面与收藏按钮始终可见。
+     两栏起就适用（此时侧栏已经独立成列）。 */
+  @media (min-width: 640px) {
+    .detail-sidebar {
+      position: sticky;
+      top: 1.5rem;
+      align-self: start;
+      max-height: calc(100vh - 3rem);
+      overflow-y: auto;
+      scrollbar-width: thin;
+    }
+  }
+
+  /* ---------------------------------------------------------------- 区块 */
+  /* `SectionHeader`：titleMedium + 右侧可放链接 */
+  .detail-section-title {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+    font-size: 1rem;
+    font-weight: 500;
+    line-height: 1.5;
+  }
+
+  /* ---------------------------------------------------------------- 收藏统计
+   * `SubjectCollectionStatsRow`：三等分 */
+  .stat-row {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.5rem;
+    text-align: center;
+  }
+  .stat-value {
+    font-size: 1.125rem;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.4;
+  }
+  .stat-label {
+    font-size: 0.75rem;
+    color: var(--color-on-surface-variant);
+  }
+
+  /* ---------------------------------------------------------------- 信息表
+   * `SubjectInfoTable`：键值对，标签列宽 78dp */
+  .info-table {
+    display: grid;
+    grid-template-columns: 4.875rem minmax(0, 1fr);
+    gap: 0.375rem 0.75rem;
+    font-size: 0.8125rem;
+  }
+  .info-table dt {
+    color: var(--color-on-surface-variant);
+  }
+
+  /* ---------------------------------------------------------------- 标签
+   * `SubjectTagsSection`：M3 AssistChip 形态的小圆角 tonal 底 */
+  .tag-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+  }
+  .tag-chip {
+    border-radius: var(--radius-sm);
+    background-color: var(--color-surface-container-high);
+    padding: 0.125rem 0.5rem;
+    font-size: 0.75rem;
+    line-height: 1.5;
+    color: var(--color-on-surface-variant);
+  }
+  .tag-chip:hover {
+    background-color: var(--color-secondary-container);
+    color: var(--color-on-secondary-container);
+  }
+
+  /* ---------------------------------------------------------------- 评分直方图
+   * `RatingHistogram`：柱高 64dp，按最大值归一，最低可见 6% */
+  .histogram {
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    height: 4rem;
+  }
+  .histogram__bar {
+    flex: 1;
+    min-height: 3px;
+    border-radius: 2px 2px 0 0;
+    background-color: var(--color-primary);
+    opacity: 0.75;
+  }
+  .histogram__bar:hover {
+    opacity: 1;
+  }
+
+  /* ---------------------------------------------------------------- 制作人员
+   * 头像 + 姓名 + 职位；「一人多职」合并成一行多枚标签 */
+  .staff-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .staff-item {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+  }
+  .staff-item__avatar {
+    flex: 0 0 auto;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 999px;
+    object-fit: cover;
+    background-color: var(--color-surface-container-high);
+  }
+  .staff-item__name {
+    font-size: 0.8125rem;
+    line-height: 1.4;
+  }
+  .staff-item__roles {
+    font-size: 0.6875rem;
+    color: var(--color-on-surface-variant);
+  }
+
+  /* ---------------------------------------------------------------- 热门评价 */
+  .review-preview {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    border-radius: var(--radius-md);
+    background-color: var(--color-surface-container-low);
+    padding: 0.75rem;
+  }
+  .review-preview__meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.6875rem;
+    color: var(--color-on-surface-variant);
+  }
+  .review-preview__text {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    overflow: hidden;
+    font-size: 0.8125rem;
+    line-height: 1.55;
+  }
+}

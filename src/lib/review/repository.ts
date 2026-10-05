@@ -48,6 +48,14 @@ export interface ListReviewOptions {
   schoolId?: string;
   limit?: number;
   offset?: number;
+  /**
+   * 排序方式。
+   *
+   * `new`：最近发布（评论区的默认）。
+   * `hot`：点赞多者在前 —— 详情页右栏的「热门评价」用它。并列时以
+   *   `createdAt` 收尾，否则点赞数相同的几条顺序不稳定，每次刷新都换位置。
+   */
+  sort?: "new" | "hot";
 }
 
 function toDto(row: {
@@ -86,7 +94,12 @@ export async function listReviews(options: ListReviewOptions): Promise<ReviewDto
       ...(options.kind !== undefined ? { kind: options.kind } : {}),
       ...(options.schoolOnly && options.schoolId ? { schoolId: options.schoolId } : {}),
     },
-    orderBy: { createdAt: "desc" },
+    // `hot` 用点赞数优先；`new` 是「最新」。
+    // 两者都在末位带上 `createdAt`，保证顺序稳定（否则同赞数的条目每次刷新乱跳）。
+    orderBy:
+      options.sort === "hot"
+        ? [{ likes: "desc" }, { createdAt: "desc" }]
+        : { createdAt: "desc" },
     take: Math.min(options.limit ?? 20, 100),
     skip: options.offset ?? 0,
     select: {

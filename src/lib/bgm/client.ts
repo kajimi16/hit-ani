@@ -86,6 +86,7 @@ export type EpisodeDetail = OkBody<"getEpisodeById">;
 export type PagedEpisodes = OkBody<"getEpisodes">;
 export type PagedUserCollections = OkBody<"getUserCollectionsByUsername">;
 export type UserSubjectCollection = components["schemas"]["UserSubjectCollection"];
+export type RelatedPerson = components["schemas"]["RelatedPerson"];
 export type PagedUserEpisodeCollections = OkBody<"getUserSubjectEpisodeCollection">;
 
 export class BgmApiError extends Error {
@@ -361,6 +362,25 @@ export function getSubject(
   options: BgmRequestOptions = {},
 ): Promise<Subject> {
   return request(`/v0/subjects/${subjectId}`, {
+    method: "GET",
+    accessToken: options.accessToken,
+    signal: options.signal,
+    timeoutMs: options.timeoutMs,
+  });
+}
+
+
+/**
+ * 条目的制作人员（`/v0/subjects/{id}/persons`）。
+ *
+ * 返回**扁平的「人 + 职位」列表**，同一个人担任多个职位会出现多次 ——
+ * 例如「原作」与「脚本」常是同一人。这是上游的形状，照它存即可。
+ */
+export function getSubjectPersons(
+  subjectId: number,
+  options: BgmRequestOptions = {},
+): Promise<RelatedPerson[]> {
+  return request(`/v0/subjects/${subjectId}/persons`, {
     method: "GET",
     accessToken: options.accessToken,
     signal: options.signal,

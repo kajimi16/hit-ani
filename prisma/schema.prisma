@@ -93,6 +93,17 @@ model Subject {
   airDate   DateTime?
   score     Float?
   rank      Int?
+  /// 评分人数（BGM `rating.total`）。与 `score` 一起构成「N 人评分」。
+  ratingTotal Int?
+  /// 1–10 分的评分直方图（BGM `rating.count`），形如 `{"8": 2708, "9": 3111}`。
+  ///
+  /// 存下来是为了渲染详情页右栏的评分直方图 —— 那是 Animeko 详情页的标志性
+  /// 元素，而每次访问都回上游拉一遍评分分布纯属浪费。
+  ratingHistogram Json?
+  /// 作品标签（BGM `tags` 的 name 列表）。
+  ///
+  /// 收藏导入时会从 `SlimSubject` 写入；但**直接打开一个未收藏的条目**时
+  /// 是空的，由 `enrichSubject` 补上。
   tags      String[]
   cachedAt  DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -106,12 +117,45 @@ model Subject {
   /// 用户真正打开条目时才补齐详情，避免为 377 个收藏打出上千次请求。
   detailSyncedAt DateTime?
 
+  /// 制作人员（`/v0/subjects/{id}/persons`）的同步时间。
+  ///
+  /// 与 `detailSyncedAt` 分开，是因为两者**失败互不影响**：详情与章节拿到了、
+  /// 人员接口偶尔超时，不该把整条记录判为「没同步」而在每次访问时重拉全部。
+  staffSyncedAt DateTime?
+
   episodes    Episode[]
   collections Collection[]
   reviews     Review[]
+  persons     SubjectPerson[]
 
   @@index([type, airDate])
 }
+
+/// 条目关联的制作人员（导演、脚本、音乐、动画制作…）。
+///
+/// 与 `Subject` 分表而不是塞进一个 JSON 列：一个条目常有几十个职位，
+/// 分表才能按条目一次取全、并在条目删除时级联清理。
+model SubjectPerson {
+  /// BGM 人员 id。**同一人可以在同一作品里担任多个职位**
+  /// （例如「原作」与「脚本」），因此主键必须是「条目 + 人员 + 职位」。
+  subjectId Int
+  personId  Int
+  /// 职位，如「导演」「系列构成」。名称随上游，不做映射 ——
+  /// 硬编码职位表会在上游新增/改名时静默丢人。
+  relation  String
+  name      String
+  /// 职业类别（`producer` / `mangaka` / `seiyu` …），用于排序与分组。
+  career    String[]
+  imageUrl  String?
+  /// 上游返回顺序。BGM 已按「重要度」排好，照它渲染即可。
+  sort      Int
+
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@id([subjectId, personId, relation])
+  @@index([subjectId, sort])
+}
+
 
 model Episode {
   id        Int       @id
