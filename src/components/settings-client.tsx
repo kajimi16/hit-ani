@@ -130,7 +130,7 @@ export default function SettingsClient({
         <h2 className="font-medium">Bangumi 账号</h2>
         {bgmBound ? (
           <div className="space-y-3 text-sm">
-            <p className="text-success">已绑定：{bgmUsername}</p>
+            <p className="text-tertiary">已绑定：{bgmUsername}</p>
             <div className="space-y-3">
               <div className="flex flex-wrap items-center gap-3">
                 <button
@@ -156,19 +156,19 @@ export default function SettingsClient({
               </div>
 
               {stats && !importing && (
-                <p className="text-xs text-success">
+                <p className="text-xs text-tertiary">
                   导入完成：{stats.collections} 个收藏
                   （新建 {stats.created} · 更新 {stats.updated}）
                 </p>
               )}
 
               {sync?.syncedAt && !importing && (
-                <p className="text-xs text-ink-faint">
+                <p className="text-xs text-on-surface-variant/70">
                   上次同步 {new Date(sync.syncedAt).toLocaleString("zh-CN")} ·
                   已导入 {sync.collectionCount} 个收藏 ·
                   本地缓存 {sync.subjectCount} 个条目
                   <br />
-                  <span className="text-ink-faint">
+                  <span className="text-on-surface-variant/70">
                     条目的简介与章节在**首次打开时**才从 Bangumi 拉取并缓存，
                     因此导入很快，也不会为几百个收藏打出上千次请求。
                   </span>
@@ -178,36 +178,36 @@ export default function SettingsClient({
           </div>
         ) : (
           <div className="space-y-4 text-sm">
-            <p className="text-ink-muted">
+            <p className="text-on-surface-variant">
               绑定后可一键导入你在 Bangumi 的全部收藏、评分与每集观看进度。
             </p>
 
             <div className="space-y-2">
               <a
                 href="/api/auth/bgm/start"
-                className="inline-block rounded bg-accent-strong px-4 py-2 text-sm font-medium text-white hover:bg-accent"
+                className="inline-block rounded bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary"
               >
                 用 Bangumi 账号授权登录（推荐）
               </a>
-              <p className="text-xs text-ink-faint">
+              <p className="text-xs text-on-surface-variant/70">
                 跳转到 bgm.tv 完成授权。本平台全程不会接触你的 Bangumi 密码。
                 {!oauthConfigured && " 当前部署未配置 OAuth 应用，请改用下方个人令牌方式。"}
               </p>
             </div>
 
-            <details className="panel bg-surface-2">
-              <summary className="cursor-pointer text-ink">
+            <details className="panel bg-surface-container">
+              <summary className="cursor-pointer text-on-surface">
                 或者：粘贴个人访问令牌
               </summary>
               <div className="mt-3 space-y-3">
-                <ol className="list-decimal space-y-1 pl-5 text-xs text-ink-muted">
+                <ol className="list-decimal space-y-1 pl-5 text-xs text-on-surface-variant">
                   <li>
                     打开{" "}
                     <a
                       href="https://next.bgm.tv/demo/access-token"
                       target="_blank"
                       rel="noreferrer"
-                      className="text-accent underline"
+                      className="text-primary underline"
                     >
                       next.bgm.tv/demo/access-token
                     </a>{" "}
@@ -230,13 +230,13 @@ export default function SettingsClient({
                     type="button"
                     onClick={() => void bindToken()}
                     disabled={binding || token.trim().length < 8}
-                    className="rounded bg-accent-strong px-4 py-2 text-sm font-medium text-white hover:bg-accent disabled:opacity-40"
+                    className="rounded bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary disabled:opacity-40"
                   >
                     {binding ? "校验中…" : "绑定"}
                   </button>
                 </div>
 
-                <p className="text-xs text-warn">
+                <p className="text-xs text-secondary">
                   该令牌等同于你的 Bangumi 账号密码，仅保存在本站服务端。请勿分享给他人；
                   若怀疑泄露，可在 Bangumi 侧重新生成。
                 </p>
@@ -250,7 +250,7 @@ export default function SettingsClient({
         <h2 className="font-medium">QQ 账号</h2>
         {qqBound ? (
           <div className="flex flex-wrap items-center gap-3 text-sm">
-            <p className="text-success">已绑定</p>
+            <p className="text-tertiary">已绑定</p>
             <button
               type="button"
               onClick={() => void unbind("qq")}
@@ -261,10 +261,10 @@ export default function SettingsClient({
           </div>
         ) : (
           <div className="space-y-3 text-sm">
-            <p className="text-ink-muted">绑定 QQ 用于站内通知与社群同步。</p>
+            <p className="text-on-surface-variant">绑定 QQ 用于站内通知与社群同步。</p>
             <a
               href="/api/auth/qq/start"
-              className="inline-block rounded bg-accent-strong px-4 py-2 text-sm font-medium text-white hover:bg-accent"
+              className="inline-block rounded bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary"
             >
               绑定 QQ
             </a>

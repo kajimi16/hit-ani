@@ -223,7 +223,7 @@ export default function SourceManager() {
         <h2 className="text-lg font-medium">已配置的源</h2>
 
         {sources.length === 0 ? (
-          <p className="panel text-sm text-ink-faint">
+          <p className="panel text-sm text-on-surface-variant/70">
             还没有配置任何源。可以从下方预设开始，或手工填写配置。
           </p>
         ) : (
@@ -231,23 +231,23 @@ export default function SourceManager() {
             {sources.map((source) => (
               <li
                 key={source.id}
-                className="flex flex-wrap items-center gap-3 rounded border border-line bg-surface-2 p-3 text-sm"
+                className="flex flex-wrap items-center gap-3 rounded border border-outline-variant bg-surface-container p-3 text-sm"
               >
                 <span
                   className={`rounded px-2 py-0.5 text-xs ${
                     source.enabled
-                      ? "bg-success/15 text-success"
-                      : "bg-surface-3 text-ink-faint"
+                      ? "bg-tertiary-container text-tertiary"
+                      : "bg-surface-container-high text-on-surface-variant/70"
                   }`}
                 >
                   {source.enabled ? "启用" : "停用"}
                 </span>
                 <span className="font-medium">{source.name}</span>
-                <span className="rounded bg-surface-3 px-2 py-0.5 font-mono text-xs text-ink-muted">
+                <span className="rounded bg-surface-container-high px-2 py-0.5 font-mono text-xs text-on-surface-variant">
                   {source.factory}
                 </span>
                 {source.description && (
-                  <span className="text-xs text-ink-faint">{source.description}</span>
+                  <span className="text-xs text-on-surface-variant/70">{source.description}</span>
                 )}
                 <div className="ml-auto flex gap-2">
                   <button
@@ -267,7 +267,7 @@ export default function SourceManager() {
                   <button
                     type="button"
                     onClick={() => void remove(source)}
-                    className="rounded border border-danger/40 px-2 py-1 text-xs text-danger hover:bg-danger/10"
+                    className="rounded border border-error px-2 py-1 text-xs text-error hover:bg-error-container"
                   >
                     删除
                   </button>
@@ -282,21 +282,21 @@ export default function SourceManager() {
       <section className="space-y-3">
         <h2 className="text-lg font-medium">预设起点</h2>
 
-        <div className="panel space-y-1 bg-surface-2 p-3 text-xs text-ink-muted">
-          <p className="font-medium text-ink">两类源，用途完全不同</p>
+        <div className="panel space-y-1 bg-surface-container p-3 text-xs text-on-surface-variant">
+          <p className="font-medium text-on-surface">两类源，用途完全不同</p>
           <p>
-            <span className="rounded bg-surface-3 px-1.5">rss</span> —— BT 站（动漫花园、蜜柑）。
-            给的是<strong className="text-warn">磁力链接</strong>，需要 qBittorrent
+            <span className="rounded bg-surface-container-high px-1.5">rss</span> —— BT 站（动漫花园、蜜柑）。
+            给的是<strong className="text-secondary">磁力链接</strong>，需要 qBittorrent
             这类客户端下载，<strong>不能在线看</strong>。
           </p>
           <p>
-            <span className="rounded bg-surface-3 px-1.5">web-selector</span> —— 流媒体站。
-            抓的是网页，给出<strong className="text-accent">播放页链接</strong>，点开就能看。
+            <span className="rounded bg-surface-container-high px-1.5">web-selector</span> —— 流媒体站。
+            抓的是网页，给出<strong className="text-primary">播放页链接</strong>，点开就能看。
             <strong>要「在线看」就必须配这类源。</strong>
           </p>
         </div>
 
-        <p className="text-xs text-ink-faint">
+        <p className="text-xs text-on-surface-variant/70">
           预设只是模板。站点结构与可用性会变，保存前请先用下方「试搜」验证是否真的能取到数据。
         </p>
         <ul className="grid gap-3 sm:grid-cols-2">
@@ -304,12 +304,12 @@ export default function SourceManager() {
             <li key={preset.id} className="panel p-3 text-sm">
               <div className="flex items-center gap-2">
                 <span className="font-medium">{preset.name}</span>
-                <span className="rounded bg-surface-3 px-2 py-0.5 font-mono text-xs text-ink-muted">
+                <span className="rounded bg-surface-container-high px-2 py-0.5 font-mono text-xs text-on-surface-variant">
                   {preset.factory}
                 </span>
               </div>
-              <p className="mt-1 text-xs text-ink-muted">{preset.description}</p>
-              <p className="mt-1 text-xs text-warn">{preset.notes}</p>
+              <p className="mt-1 text-xs text-on-surface-variant">{preset.description}</p>
+              <p className="mt-1 text-xs text-secondary">{preset.notes}</p>
               <button
                 type="button"
                 onClick={() => applyPreset(preset)}
@@ -330,7 +330,7 @@ export default function SourceManager() {
             <button
               type="button"
               onClick={resetForm}
-              className="ml-3 text-xs font-normal text-ink-muted underline"
+              className="ml-3 text-xs font-normal text-on-surface-variant underline"
             >
               取消编辑
             </button>
@@ -374,7 +374,7 @@ export default function SourceManager() {
             type="button"
             onClick={() => void save()}
             disabled={busy || name.trim().length === 0}
-            className="rounded bg-accent-strong px-5 py-2 text-sm font-medium text-white hover:bg-accent disabled:opacity-40"
+            className="rounded bg-primary px-5 py-2 text-sm font-medium text-white hover:bg-primary disabled:opacity-40"
           >
             {busy ? "保存中…" : editingId ? "保存修改" : "创建源"}
           </button>
@@ -384,7 +384,7 @@ export default function SourceManager() {
       {/* ---------------------------------------------------------- 试搜 */}
       <section className="space-y-3">
         <h2 className="text-lg font-medium">试搜</h2>
-        <p className="text-xs text-ink-faint">
+        <p className="text-xs text-on-surface-variant/70">
           用关键词测一遍所有启用的源。配置是否正确看这里最快 —— 不用等到用户搜不到才发现。
         </p>
         <div className="flex flex-wrap gap-3">
@@ -401,49 +401,49 @@ export default function SourceManager() {
             type="button"
             onClick={() => void runSearch()}
             disabled={searching || keyword.trim().length === 0}
-            className="rounded bg-accent-strong px-5 py-2 text-sm font-medium text-white hover:bg-accent disabled:opacity-40"
+            className="rounded bg-primary px-5 py-2 text-sm font-medium text-white hover:bg-primary disabled:opacity-40"
           >
             {searching ? "抓取中…" : "试搜"}
           </button>
         </div>
 
-        {searchSummary && <p className="text-sm text-ink-muted">{searchSummary}</p>}
+        {searchSummary && <p className="text-sm text-on-surface-variant">{searchSummary}</p>}
 
         {results?.map((result) => (
           <div
             key={result.sourceId}
             className={`space-y-2 rounded border p-4 text-sm ${
-              result.ok ? "border-line" : "border-danger/40 bg-danger/10"
+              result.ok ? "border-outline-variant" : "border-error bg-error-container"
             }`}
           >
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-medium">{result.sourceName}</span>
               <span
                 className={`rounded px-2 py-0.5 text-xs ${
-                  result.ok ? "bg-success/15 text-success" : "bg-danger/20/60 text-danger"
+                  result.ok ? "bg-tertiary-container text-tertiary" : "bg-error-container text-error"
                 }`}
               >
                 {result.ok ? "成功" : "失败"}
               </span>
               {result.diagnostics && (
-                <span className="text-xs text-ink-faint">
+                <span className="text-xs text-on-surface-variant/70">
                   命中元素 {result.diagnostics.matchedElements}
                 </span>
               )}
             </div>
 
-            {result.error && <p className="text-xs text-danger">{result.error}</p>}
+            {result.error && <p className="text-xs text-error">{result.error}</p>}
 
             {result.items.length > 0 && (
               <ul className="space-y-1 text-xs">
                 {result.items.map((item) => (
                   <li key={item.url} className="flex gap-2">
-                    <span className="text-ink">{item.name}</span>
+                    <span className="text-on-surface">{item.name}</span>
                     <a
                       href={item.url}
                       target="_blank"
                       rel="noreferrer"
-                      className="truncate text-accent underline"
+                      className="truncate text-primary underline"
                     >
                       {item.url}
                     </a>
@@ -456,8 +456,8 @@ export default function SourceManager() {
               <ul className="space-y-1 text-xs">
                 {result.feedItems.map((item) => (
                   <li key={item.url}>
-                    <span className="text-ink">{item.title}</span>
-                    <span className="ml-2 font-mono text-ink-faint">
+                    <span className="text-on-surface">{item.title}</span>
+                    <span className="ml-2 font-mono text-on-surface-variant/70">
                       {item.publishedTime
                         ? new Date(item.publishedTime).toISOString().slice(0, 10)
                         : ""}
@@ -468,7 +468,7 @@ export default function SourceManager() {
             )}
 
             {result.ok && result.items.length === 0 && result.feedItems.length === 0 && (
-              <p className="text-xs text-warn">
+              <p className="text-xs text-secondary">
                 抓取成功但没有解析出条目。
                 {result.diagnostics && result.diagnostics.matchedElements === 0
                   ? "选择器命中 0 个元素 —— 很可能选择器过期了（站点改版）。"
@@ -477,7 +477,7 @@ export default function SourceManager() {
             )}
 
             {result.diagnostics && result.diagnostics.dropped.length > 0 && (
-              <details className="text-xs text-warn">
+              <details className="text-xs text-secondary">
                 <summary className="cursor-pointer">
                   {result.diagnostics.dropped.length} 个元素被丢弃
                 </summary>
@@ -495,7 +495,7 @@ export default function SourceManager() {
       </section>
 
       {notice && (
-        <p className="rounded border border-accent/40 bg-accent-dim px-3 py-2 text-sm text-accent">
+        <p className="rounded border border-primary/40 bg-primary-container px-3 py-2 text-sm text-primary">
           {notice}
         </p>
       )}

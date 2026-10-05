@@ -77,12 +77,12 @@ export default async function LibraryPage({
     <div className="space-y-8">
       <section className="space-y-2">
         <h1 className="text-2xl font-semibold">我的追番</h1>
-        <p className="text-sm text-ink-muted">
+        <p className="text-sm text-on-surface-variant">
           共 {total} 部。
           {user.bgmBound ? (
             <>
               已绑定 Bangumi（{user.bgmUsername}），可在{" "}
-              <Link href="/settings" className="text-accent underline">
+              <Link href="/settings" className="text-primary underline">
                 设置
               </Link>{" "}
               里重新导入。
@@ -90,7 +90,7 @@ export default async function LibraryPage({
           ) : (
             <>
               尚未绑定 Bangumi，
-              <Link href="/settings" className="mx-1 text-accent underline">
+              <Link href="/settings" className="mx-1 text-primary underline">
                 去绑定
               </Link>
               后可一键导入全部收藏。
@@ -105,12 +105,12 @@ export default async function LibraryPage({
           href="/library"
           className={`rounded border px-3 py-1.5 text-sm transition ${
             focused === null
-              ? "border-accent bg-accent-dim text-accent"
-              : "border-line bg-surface hover:border-line-strong"
+              ? "border-primary bg-primary-container text-primary"
+              : "border-outline-variant bg-surface-container-low hover:border-outline"
           }`}
         >
           全部
-          <span className="ml-2 text-xs text-ink-faint">{total}</span>
+          <span className="ml-2 text-xs text-on-surface-variant/70">{total}</span>
         </Link>
         {COLLECTION_STATUSES.map((meta) => {
           const active = focused?.value === meta.value;
@@ -120,12 +120,12 @@ export default async function LibraryPage({
               href={`/library?status=${meta.slug}`}
               className={`rounded border px-3 py-1.5 text-sm transition ${
                 active
-                  ? "border-accent bg-accent-dim text-accent"
-                  : "border-line bg-surface hover:border-line-strong"
+                  ? "border-primary bg-primary-container text-primary"
+                  : "border-outline-variant bg-surface-container-low hover:border-outline"
               }`}
             >
               {meta.label}
-              <span className="ml-2 text-xs text-ink-faint">
+              <span className="ml-2 text-xs text-on-surface-variant/70">
                 {countByType.get(meta.value) ?? 0}
               </span>
             </Link>
@@ -140,13 +140,13 @@ export default async function LibraryPage({
           <section key={meta.slug} className="space-y-4">
             <h2 className="flex items-baseline gap-3 text-lg font-medium">
               {meta.label}
-              <span className="text-sm text-ink-faint">
+              <span className="text-sm text-on-surface-variant/70">
                 {countByType.get(meta.value) ?? 0} 部
               </span>
             </h2>
 
             {items.length === 0 ? (
-              <p className="panel text-sm text-ink-faint">
+              <p className="panel text-sm text-on-surface-variant/70">
                 {meta.emptyHint}
               </p>
             ) : (
@@ -158,7 +158,7 @@ export default async function LibraryPage({
                     <li key={item.id}>
                       <Link
                         href={`/subjects/${item.subjectId}`}
-                        className="block overflow-hidden rounded border border-line bg-surface transition hover:border-accent"
+                        className="block overflow-hidden rounded border border-outline-variant bg-surface-container-low transition hover:border-primary"
                       >
                         {item.subject.coverUrl && (
                           <Image
@@ -174,7 +174,7 @@ export default async function LibraryPage({
                           <p className="line-clamp-2 text-sm">
                             {item.subject.nameCn || item.subject.name}
                           </p>
-                          <p className="text-xs text-ink-faint">
+                          <p className="text-xs text-on-surface-variant/70">
                             {item.rating ? `${item.rating} 分` : "未评分"}
                             {totalEpisodes > 0 && (
                               <span className="ml-2 font-mono">

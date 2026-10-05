@@ -141,7 +141,7 @@ export default function JellyfinManager() {
       <section className="space-y-3">
         <h2 className="text-lg font-medium">已连接的媒体服务器</h2>
         {connections.length === 0 ? (
-          <p className="panel text-sm text-ink-faint">
+          <p className="panel text-sm text-on-surface-variant/70">
             还没有连接。下面填你自己的 Jellyfin / Emby 地址即可。
           </p>
         ) : (
@@ -151,19 +151,19 @@ export default function JellyfinManager() {
                 key={connection.id}
                 className={`space-y-2 rounded border p-3 text-sm ${
                   connection.warning
-                    ? "border-warn/40 bg-warn/10"
-                    : "border-line bg-surface-2"
+                    ? "border-secondary bg-secondary-container"
+                    : "border-outline-variant bg-surface-container"
                 }`}
               >
                 <div className="flex flex-wrap items-center gap-3">
                 <span className="font-medium">{connection.name}</span>
-                <span className="font-mono text-xs text-ink-faint">{connection.baseUrl}</span>
+                <span className="font-mono text-xs text-on-surface-variant/70">{connection.baseUrl}</span>
                 {connection.publicBaseUrl && (
-                  <span className="font-mono text-xs text-accent">
+                  <span className="font-mono text-xs text-primary">
                     → {connection.publicBaseUrl}
                   </span>
                 )}
-                <span className="text-xs text-ink-muted">账号 {connection.remoteUserName}</span>
+                <span className="text-xs text-on-surface-variant">账号 {connection.remoteUserName}</span>
                 {connection.serverVersion && (
                   <span className="badge">
                     v{connection.serverVersion}
@@ -180,14 +180,14 @@ export default function JellyfinManager() {
                   <button
                     type="button"
                     onClick={() => void disconnect(connection.id)}
-                    className="rounded border border-danger/40 px-2 py-1 text-xs text-danger hover:bg-danger/10"
+                    className="rounded border border-error px-2 py-1 text-xs text-error hover:bg-error-container"
                   >
                     断开
                   </button>
                 </div>
                 </div>
                 {connection.warning && (
-                  <p className="text-xs text-warn">⚠️ {connection.warning}</p>
+                  <p className="text-xs text-secondary">⚠️ {connection.warning}</p>
                 )}
               </li>
             ))}
@@ -221,9 +221,9 @@ export default function JellyfinManager() {
             placeholder="浏览器侧地址（容器部署时必填），例如 http://10.0.0.5:3103"
             className="input"
           />
-          <p className="text-xs text-ink-faint">
+          <p className="text-xs text-on-surface-variant/70">
             若服务器地址填的是 Docker 内部服务名（如 <code>jellyfin</code>），
-            <strong className="text-warn">这里必须填学生能访问到的地址</strong> ——
+            <strong className="text-secondary">这里必须填学生能访问到的地址</strong> ——
             否则播放链接会指向容器内部、学生点开是黑屏。
           </p>
 
@@ -252,7 +252,7 @@ export default function JellyfinManager() {
             />
           </div>
 
-          <label className="flex items-center gap-2 text-xs text-ink-muted">
+          <label className="flex items-center gap-2 text-xs text-on-surface-variant">
             <input
               type="checkbox"
               checked={allowPrivate}
@@ -279,19 +279,19 @@ export default function JellyfinManager() {
               username.trim().length === 0 ||
               password.length === 0
             }
-            className="rounded bg-accent-strong px-5 py-2 text-sm font-medium text-white hover:bg-accent disabled:opacity-40"
+            className="rounded bg-primary px-5 py-2 text-sm font-medium text-white hover:bg-primary disabled:opacity-40"
           >
             {busy ? "连接中…" : "连接"}
           </button>
 
-          <p className="text-xs text-ink-faint">
+          <p className="text-xs text-on-surface-variant/70">
             密码仅用于换取访问令牌，**不会保存**；保存的是令牌本身，且只存在服务端。
           </p>
         </div>
       </section>
 
       {notice && (
-        <p className="rounded border border-accent/40 bg-accent-dim px-3 py-2 text-sm text-accent">
+        <p className="rounded border border-primary/40 bg-primary-container px-3 py-2 text-sm text-primary">
           {notice}
         </p>
       )}

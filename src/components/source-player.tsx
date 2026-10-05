@@ -123,10 +123,10 @@ export default function SourcePlayer({
         null);
 
   return (
-    <div className="panel accent-bar space-y-4 border-accent/40 bg-accent-dim/20">
+    <div className="panel accent-bar space-y-4 border-primary/40 bg-primary-container/20">
       <div className="flex flex-wrap items-center gap-3 text-sm">
-        <span className="font-medium text-accent">站内播放 · {sourceName}</span>
-        <span className="text-xs text-ink-faint">
+        <span className="font-medium text-primary">站内播放 · {sourceName}</span>
+        <span className="text-xs text-on-surface-variant/70">
           视频由来源站 CDN 直连你的浏览器，不经过本平台
         </span>
         <button
@@ -149,7 +149,7 @@ export default function SourcePlayer({
       )}
 
       <div className="space-y-2">
-        <p className="text-xs text-ink-muted">
+        <p className="text-xs text-on-surface-variant">
           {episodes === null
             ? "正在读取剧集列表…"
             : episodes.length === 0
@@ -170,8 +170,8 @@ export default function SourcePlayer({
                     disabled={resolving !== null}
                     className={`w-full rounded border px-2 py-1.5 text-left text-xs transition disabled:opacity-50 ${
                       active
-                        ? "border-accent bg-accent-dim text-accent"
-                        : "border-line bg-surface hover:border-line-strong"
+                        ? "border-primary bg-primary-container text-primary"
+                        : "border-outline-variant bg-surface-container-low hover:border-outline"
                     }`}
                   >
                     {busy ? "解析中…" : episode.name}

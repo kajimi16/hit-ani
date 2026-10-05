@@ -55,23 +55,23 @@ export default function RegisterPage() {
     <div className="mx-auto max-w-sm space-y-6">
       <h1 className="text-2xl font-semibold">注册</h1>
 
-      <div className="panel bg-surface-2 text-xs text-ink-muted">
-        <p className="font-medium text-ink">校内准入</p>
+      <div className="panel bg-surface-container text-xs text-on-surface-variant">
+        <p className="font-medium text-on-surface">校内准入</p>
         <p className="mt-1">只有下列学校邮箱域名的账号可以注册，学校归属由此确定：</p>
         <ul className="mt-2 space-y-1">
           {schools.map((school) => (
             <li key={school.id}>
-              <span className="text-ink">{school.name}</span>
+              <span className="text-on-surface">{school.name}</span>
               <span className="ml-2 font-mono">{school.domains.join("、")}</span>
             </li>
           ))}
-          {schools.length === 0 && <li className="text-ink-faint">正在读取学校列表…</li>}
+          {schools.length === 0 && <li className="text-on-surface-variant/70">正在读取学校列表…</li>}
         </ul>
       </div>
 
       <div className="space-y-3">
         <label className="block space-y-1 text-sm">
-          <span className="text-ink-muted">学校邮箱</span>
+          <span className="text-on-surface-variant">学校邮箱</span>
           <input
             value={email}
             onChange={(event) => setEmail(event.target.value)}
@@ -80,7 +80,7 @@ export default function RegisterPage() {
           />
         </label>
         <label className="block space-y-1 text-sm">
-          <span className="text-ink-muted">昵称</span>
+          <span className="text-on-surface-variant">昵称</span>
           <input
             value={nickname}
             onChange={(event) => setNickname(event.target.value)}
@@ -88,7 +88,7 @@ export default function RegisterPage() {
           />
         </label>
         <label className="block space-y-1 text-sm">
-          <span className="text-ink-muted">学号（可选）</span>
+          <span className="text-on-surface-variant">学号（可选）</span>
           <input
             value={studentNo}
             onChange={(event) => setStudentNo(event.target.value)}
@@ -96,7 +96,7 @@ export default function RegisterPage() {
           />
         </label>
         <label className="block space-y-1 text-sm">
-          <span className="text-ink-muted">密码（至少 8 位）</span>
+          <span className="text-on-surface-variant">密码（至少 8 位）</span>
           <input
             type="password"
             value={password}
@@ -121,9 +121,9 @@ export default function RegisterPage() {
         {busy ? "注册中…" : "注册"}
       </button>
 
-      <p className="text-center text-sm text-ink-faint">
+      <p className="text-center text-sm text-on-surface-variant/70">
         已有账号？
-        <a href="/login" className="ml-1 text-accent underline">
+        <a href="/login" className="ml-1 text-primary underline">
           登录
         </a>
       </p>

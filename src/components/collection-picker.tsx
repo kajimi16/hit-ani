@@ -66,7 +66,7 @@ export default function CollectionPicker({
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-sm text-ink-muted">收藏状态</span>
+        <span className="text-sm text-on-surface-variant">收藏状态</span>
         {COLLECTION_STATUSES.map((meta) => {
           const active = status === meta.value;
           return (
@@ -77,8 +77,8 @@ export default function CollectionPicker({
               disabled={!canInteract || pending !== null}
               className={`rounded border px-3 py-1 text-sm transition disabled:opacity-50 ${
                 active
-                  ? "border-accent bg-accent-dim text-accent"
-                  : "border-line-strong bg-surface hover:border-line-strong"
+                  ? "border-primary bg-primary-container text-primary"
+                  : "border-outline bg-surface-container-low hover:border-outline"
               }`}
             >
               {meta.label}
@@ -87,11 +87,11 @@ export default function CollectionPicker({
           );
         })}
         {status === null && (
-          <span className="text-xs text-ink-faint">未收藏</span>
+          <span className="text-xs text-on-surface-variant/70">未收藏</span>
         )}
       </div>
 
-      <p className="text-xs text-ink-faint">
+      <p className="text-xs text-on-surface-variant/70">
         {canInteract
           ? bgmBound
             ? "标记会同时同步到你的 Bangumi 账号"

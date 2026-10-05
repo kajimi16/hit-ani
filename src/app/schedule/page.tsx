@@ -5,7 +5,7 @@ import { isoDate, parseIsoDate, weekRange, weekdayLabel } from "@/lib/schedule";
 
 export const dynamic = "force-dynamic";
 
-export const metadata = { title: "新番时间表 · hit-ani" };
+export const metadata = { title: "新番时间表" };
 
 /**
  * 新番时间表。
@@ -62,7 +62,7 @@ export default async function SchedulePage({
     <div className="space-y-8">
       <section className="space-y-3">
         <h1 className="text-2xl font-semibold">新番时间表</h1>
-        <p className="text-sm text-ink-muted">
+        <p className="text-sm text-on-surface-variant">
           {isoDate(start)} ~ {isoDate(end)} · 共 {page?.total ?? 0} 部
         </p>
         <div className="flex gap-2 text-sm">
@@ -98,19 +98,19 @@ export default async function SchedulePage({
           <section key={day.key} className="space-y-3">
             <h2 className="flex items-center gap-3 text-base font-medium">
               <span>{day.label}</span>
-              <span className="font-mono text-xs text-ink-faint">{day.key}</span>
-              <span className="text-xs text-ink-faint">{day.items.length} 部</span>
+              <span className="font-mono text-xs text-on-surface-variant/70">{day.key}</span>
+              <span className="text-xs text-on-surface-variant/70">{day.items.length} 部</span>
             </h2>
 
             {day.items.length === 0 ? (
-              <p className="text-sm text-ink-faint">这天没有新番开播。</p>
+              <p className="text-sm text-on-surface-variant/70">这天没有新番开播。</p>
             ) : (
               <ul className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-6">
                 {day.items.map((item) => (
                   <li key={item.id}>
                     <Link
                       href={`/subjects/${item.id}`}
-                      className="block overflow-hidden rounded border border-line bg-surface transition hover:border-accent"
+                      className="block overflow-hidden rounded border border-outline-variant bg-surface-container-low transition hover:border-primary"
                     >
                       {item.images?.common && (
                         <Image
@@ -126,7 +126,7 @@ export default async function SchedulePage({
                         <p className="line-clamp-2 text-xs">
                           {item.name_cn || item.name}
                         </p>
-                        <p className="text-[11px] text-ink-faint">
+                        <p className="text-[11px] text-on-surface-variant/70">
                           {item.rating?.score ? item.rating.score.toFixed(1) : "暂无评分"}
                         </p>
                       </div>

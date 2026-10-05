@@ -36,7 +36,7 @@ export default function LoginPage() {
 
       <div className="space-y-3">
         <label className="block space-y-1 text-sm">
-          <span className="text-ink-muted">邮箱或学号</span>
+          <span className="text-on-surface-variant">邮箱或学号</span>
           <input
             value={identifier}
             onChange={(event) => setIdentifier(event.target.value)}
@@ -44,7 +44,7 @@ export default function LoginPage() {
           />
         </label>
         <label className="block space-y-1 text-sm">
-          <span className="text-ink-muted">密码</span>
+          <span className="text-on-surface-variant">密码</span>
           <input
             type="password"
             value={password}
@@ -72,9 +72,9 @@ export default function LoginPage() {
         {busy ? "登录中…" : "登录"}
       </button>
 
-      <p className="text-center text-sm text-ink-faint">
+      <p className="text-center text-sm text-on-surface-variant/70">
         没有账号？
-        <a href="/register" className="ml-1 text-accent underline">
+        <a href="/register" className="ml-1 text-primary underline">
           注册
         </a>
       </p>

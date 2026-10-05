@@ -1,10 +1,14 @@
 import type { Metadata } from "next";
-import Image from "next/image";
 import Link from "next/link";
+import SubjectCard from "@/components/subject-card";
+import { IconCalendar, IconSearch } from "@/components/icons";
+import { getSessionUser } from "@/lib/auth/session";
+import { CollectionStatus } from "@/lib/collection";
+import { prisma } from "@/lib/prisma";
 import { SubjectType, searchSubjects } from "@/lib/bgm/client";
 
 export const metadata: Metadata = {
-  title: "找番",
+  title: "探索",
 };
 
 /** 排序选项。抽出来是因为表单与链接构造都要用。 */
@@ -18,7 +22,22 @@ const SORTS = [
 /** 空状态下的快捷标签 —— 给不愿打字的用户一个入口。 */
 const QUICK_TAGS = ["机战", "日常", "奇幻", "恋爱", "科幻", "治愈"];
 
-/** 搜索走 BGM `POST /v0/search/subjects`，SSR 直出，无需客户端 JS。 */
+/** Hero 轮播条数。对应 Animeko `TrendingSubjectsCarousel` 的 8 个占位。 */
+const HERO_COUNT = 8;
+
+/**
+ * 探索页 —— 对应 Animeko 的 `ExplorationScreen`。
+ *
+ * 它是一列**分区流**，顺序固定为：
+ * 1. 热门趋势（居中 Hero 轮播）
+ * 2. 继续观看（横向滚动行）
+ * 3. 推荐（自适应网格）
+ *
+ * 本实现保留这个顺序与形态。差异点：
+ * - Animeko 的「推荐」是算法推荐；我们没有推荐系统，用 BGM 收藏人数排序
+ *   补齐（少了算法黑箱，但至少是「大家在看什么」）
+ * - 搜索是顶部常驻输入框（Animeko 放在侧栏 FAB 里）
+ */
 export default async function HomePage({
   searchParams,
 }: {
@@ -38,25 +57,63 @@ export default async function HomePage({
   const rawPage = Number(params.page ?? 1);
   const page = Number.isFinite(rawPage) && rawPage >= 1 ? Math.floor(rawPage) : 1;
 
-  // 没有关键词时也查一批热门 —— 空着的主页是最差的落地面。
-  // 用「收藏人数」排序拿当季与经典的热门作品。
-  const query = keyword || tags.length > 0 ? keyword : "";
-  const result = await searchSubjects(
-    {
-      keyword: query,
-      sort: keyword ? sort : "heat",
-      filter: {
-        type: [SubjectType.Anime] as never,
-        ...(tags.length ? { tag: tags } : {}),
-        ...(keyword ? {} : { air_date: [`>=${recentCutoff()}`] }),
-        nsfw: false,
-      },
-    },
-    { limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE },
-  ).catch(() => null);
-
-  const totalPages = result ? Math.max(1, Math.ceil(result.total / PAGE_SIZE)) : 1;
   const isSearching = keyword.length > 0 || tags.length > 0;
+  const user = await getSessionUser();
+
+  /**
+   * 三个分区并行取数。
+   *
+   * 空关键词时只查两次上游（Hero 8 条 + 推荐 24 条），用 offset 错开避免
+   * 两处出现同一批条目。搜索时只查一次 —— 此时页面上只有结果网格。
+   */
+  const [hero, recommended, watching] = await Promise.all([
+    isSearching
+      ? Promise.resolve(null)
+      : searchSubjects(
+          {
+            keyword: "",
+            sort: "heat",
+            filter: { type: [SubjectType.Anime] as never, air_date: [`>=${recentCutoff()}`], nsfw: false },
+          },
+          { limit: HERO_COUNT, offset: 0 },
+        ).catch(() => null),
+    searchSubjects(
+      isSearching
+        ? {
+            keyword,
+            sort,
+            filter: {
+              type: [SubjectType.Anime] as never,
+              ...(tags.length ? { tag: tags } : {}),
+              nsfw: false,
+            },
+          }
+        : {
+            keyword: "",
+            sort: "heat",
+            filter: { type: [SubjectType.Anime] as never, air_date: [`>=${recentCutoff()}`], nsfw: false },
+          },
+      {
+        limit: PAGE_SIZE,
+        offset: isSearching ? (page - 1) * PAGE_SIZE : HERO_COUNT,
+      },
+    ).catch(() => null),
+    // 「继续观看」直接读本地库，不打上游
+    user
+      ? prisma.collection
+          .findMany({
+            where: { userId: user.id, type: CollectionStatus.Doing },
+            orderBy: { updatedAt: "desc" },
+            take: 12,
+            include: { subject: { select: { id: true, name: true, nameCn: true, coverUrl: true } } },
+          })
+          .catch(() => [])
+      : Promise.resolve([]),
+  ]);
+
+  // 搜索模式下结果集是主网格；否则 Hero 单独占一块，主网格是推荐
+  const grid = recommended;
+  const totalPages = grid ? Math.max(1, Math.ceil(grid.total / PAGE_SIZE)) : 1;
 
   /** 构造分页链接：保留当前筛选条件，只换 page。 */
   const pageHref = (target: number) => {
@@ -69,40 +126,32 @@ export default async function HomePage({
     return qs ? `/?${qs}` : "/";
   };
 
-  /** 快捷标签链接：点一下即按该标签筛选。 */
-  const tagHref = (tag: string) => `/?tags=${encodeURIComponent(tag)}`;
-
   return (
-    <div className="space-y-10">
-      {/* ---------------------------------------------------------------- 搜索区 */}
-      <section className="space-y-5">
-        <div className="space-y-2">
-          <h1 className="text-3xl font-semibold tracking-tight">
-            {isSearching ? "搜索结果" : "找番"}
-          </h1>
-          <p className="text-sm text-ink-muted">
-            条目与章节数据来自 Bangumi；弹幕与评论由本站自建，可按本校筛选。
-          </p>
-        </div>
+    <div className="space-y-6">
+      <section className="space-y-4">
+        {!isSearching && (
+          <div className="space-y-1">
+            <h1 className="text-2xl font-normal">探索</h1>
+            <p className="text-sm text-on-surface-variant">
+              条目与章节数据来自 Bangumi；弹幕与评论由本站自建，可按本校筛选。
+            </p>
+          </div>
+        )}
 
-        {/*
-          搜索控件做成一个整体：输入框与按钮贴合成一个视觉单元，
-          比四个各自漂浮的控件更容易理解「这是一次搜索」。
-        */}
         <form action="/" method="get" className="space-y-3">
           <div className="flex flex-col gap-3 sm:flex-row">
             <div className="relative flex-1">
               <span
                 aria-hidden
-                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint"
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant"
               >
-                <SearchIcon />
+                <IconSearch size={18} />
               </span>
               <input
                 name="keyword"
                 defaultValue={keyword}
                 placeholder="搜索番剧名，例如：魔法少女"
-                className="input pl-9"
+                className="input pl-10"
                 aria-label="搜索关键词"
               />
             </div>
@@ -115,113 +164,150 @@ export default async function HomePage({
               aria-label="标签筛选"
             />
 
-            <select name="sort" defaultValue={sort} className="input sm:w-32" aria-label="排序方式">
-              {SORTS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+            {isSearching && (
+              <select name="sort" defaultValue={sort} className="input sm:w-32" aria-label="排序方式">
+                {SORTS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            )}
 
             <button type="submit" className="btn btn-primary sm:px-6">
               搜索
             </button>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs text-ink-faint">快捷筛选</span>
-            {QUICK_TAGS.map((tag) => (
-              <Link key={tag} href={tagHref(tag)} className="badge transition-colors hover:bg-accent-dim hover:text-accent">
-                {tag}
-              </Link>
-            ))}
-            {isSearching && (
-              <Link href="/" className="ml-1 text-xs text-ink-faint underline underline-offset-2 hover:text-ink-muted">
-                清除筛选
-              </Link>
-            )}
-          </div>
+          {!isSearching && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-on-surface-variant">快捷筛选</span>
+              {QUICK_TAGS.map((tag) => (
+                <Link
+                  key={tag}
+                  href={`/?tags=${encodeURIComponent(tag)}`}
+                  className="badge transition-colors hover:bg-primary-container hover:text-on-primary-container"
+                >
+                  {tag}
+                </Link>
+              ))}
+            </div>
+          )}
         </form>
       </section>
 
-      {/* ---------------------------------------------------------------- 失败 */}
-      {result === null && (
+      {grid === null && (
         <p className="alert alert-danger">
           Bangumi 搜索失败。上游可能暂时不可用，稍后重试即可。
         </p>
       )}
 
-      {/* ---------------------------------------------------------------- 结果 */}
-      {result !== null && (
-        <section className="space-y-5">
-          <div className="flex flex-wrap items-baseline gap-3">
-            <h2 className="section-title">
-              {isSearching ? "找到的条目" : "近期热门"}
-              <span className="text-sm font-normal text-ink-faint">
-                {result.total} 个
+      {/* ============================================================ 热门趋势
+          对应 `TrendingSubjectsCarousel`：居中 Hero 轮播，
+          区块标题右侧挂「时间表」按钮（Animeko 唯一的区块级跳转）。 */}
+      {!isSearching && hero && hero.data.length > 0 && (
+        <section>
+          <div className="section-header">
+            <h2 className="section-header__title">热门趋势</h2>
+            <div className="ml-auto">
+              <Link href="/schedule" className="btn btn-text btn-sm">
+                <IconCalendar size={18} />
+                时间表
+              </Link>
+            </div>
+          </div>
+          <div className="hero-carousel">
+            {hero.data.map((item, index) => (
+              <SubjectCard
+                key={item.id}
+                variant="hero"
+                href={`/subjects/${item.id}`}
+                title={item.name_cn || item.name}
+                image={item.images?.common ?? null}
+                subtitle={
+                  item.rating?.score
+                    ? `${item.rating.score.toFixed(1)} 分${item.rating.total ? ` · ${item.rating.total} 人评` : ""}`
+                    : item.date || null
+                }
+                priority={index < 2}
+                sizes="(max-width: 600px) 80vw, 300px"
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* ============================================================ 继续观看
+          对应 `FollowedSubjectsLazyRow`：横向滚动行，文字是观看进度。 */}
+      {!isSearching && watching.length > 0 && (
+        <section>
+          <div className="section-header">
+            <h2 className="section-header__title">继续观看</h2>
+            <div className="ml-auto">
+              <Link href="/library?status=doing" className="btn btn-text btn-sm">
+                全部
+              </Link>
+            </div>
+          </div>
+          <div className="card-row">
+            {watching.map((row) => (
+              <SubjectCard
+                key={row.id}
+                href={`/subjects/${row.subject.id}`}
+                title={row.subject.nameCn || row.subject.name}
+                image={row.subject.coverUrl}
+                subtitle="在看"
+                sizes="160px"
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* ============================================================ 推荐 / 结果 */}
+      {grid !== null && (
+        <section>
+          <div className="section-header">
+            <h2 className="section-header__title">
+              {isSearching ? "搜索结果" : "推荐"}
+              <span className="ml-3 align-middle text-sm text-on-surface-variant">
+                {grid.total} 个
               </span>
             </h2>
-            {totalPages > 1 && (
-              <span className="ml-auto font-mono text-xs text-ink-faint">
-                第 {page} / {totalPages} 页
-              </span>
+            {isSearching && (
+              <div className="ml-auto">
+                <Link href="/" className="btn btn-text btn-sm">
+                  清除筛选
+                </Link>
+              </div>
             )}
           </div>
 
-          {result.data.length === 0 ? (
-            <p className="panel text-sm text-ink-muted">
+          {grid.data.length === 0 ? (
+            <p className="panel text-sm text-on-surface-variant">
               没有匹配的条目。试试更短的关键词，或去掉标签筛选。
             </p>
           ) : (
-            <ul className="grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3 lg:grid-cols-5">
-              {result.data.map((item, index) => (
-                <li key={item.id}>
-                  <Link href={`/subjects/${item.id}`} className="poster-card">
-                    <div className="relative">
-                      {item.images?.common ? (
-                        <Image
-                          src={item.images.common}
-                          alt={item.name_cn || item.name}
-                          width={300}
-                          height={400}
-                          // 首屏前几张立即加载，其余懒加载 —— 兼顾 LCP 与带宽
-                          priority={index < 5}
-                          sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 20vw"
-                          className="poster-image"
-                        />
-                      ) : (
-                        <div className="poster-image" />
-                      )}
-
-                      {/*
-                        评分做成角标压在封面上。做在文字区里的话，
-                        用户扫视网格时很难比较分数 —— 而这是选片的主要依据。
-                      */}
-                      {item.rating?.score ? (
-                        <span className="absolute right-2 top-2 rounded-md bg-canvas/80 px-1.5 py-0.5 font-mono text-xs font-medium text-warn backdrop-blur-sm">
-                          {item.rating.score.toFixed(1)}
-                        </span>
-                      ) : null}
-                    </div>
-
-                    <div className="space-y-1 p-2.5">
-                      <p className="line-clamp-2 text-sm leading-snug text-ink">
-                        {item.name_cn || item.name}
-                      </p>
-                      <p className="truncate text-xs text-ink-faint">
-                        {item.date || "未定档"}
-                        {item.eps ? ` · ${item.eps} 集` : ""}
-                      </p>
-                    </div>
-                  </Link>
-                </li>
+            <div className="subject-grid">
+              {grid.data.map((item, index) => (
+                <SubjectCard
+                  key={item.id}
+                  href={`/subjects/${item.id}`}
+                  title={item.name_cn || item.name}
+                  image={item.images?.common ?? null}
+                  subtitle={
+                    item.rating?.score
+                      ? item.rating.score.toFixed(1)
+                      : item.date?.slice(0, 4) || "未定档"
+                  }
+                  priority={index < 4}
+                />
               ))}
-            </ul>
+            </div>
           )}
 
-          {/* ------------------------------------------------------------ 分页 */}
           {totalPages > 1 && (
-            <nav className="flex items-center justify-center gap-2 pt-2">
+            <nav className="flex items-center justify-center gap-2 pt-6">
               {page > 1 && (
                 <Link href={pageHref(page - 1)} className="btn btn-ghost btn-sm">
                   ← 上一页
@@ -231,7 +317,7 @@ export default async function HomePage({
                 只给「上一页 / 下一页」+ 当前页码，不做数字罗列 ——
                 番剧搜索常有几十页，罗列出来反而是噪音。
               */}
-              <span className="px-3 font-mono text-xs text-ink-faint">
+              <span className="px-3 font-mono text-xs text-on-surface-variant">
                 {page} / {totalPages}
               </span>
               {page < totalPages && (
@@ -248,7 +334,7 @@ export default async function HomePage({
 }
 
 /**
- * 热门榜单的起始日期 —— 「近期」取过去一年。
+ * 「近期」的起始日期 —— 取过去一年。
  *
  * 不取当季：当季作品数量太少（一季约 30 部），撑不满首页网格；
  * 一年窗口既有当季也有刚完结的高热作品。
@@ -257,13 +343,4 @@ function recentCutoff(): string {
   const date = new Date();
   date.setUTCFullYear(date.getUTCFullYear() - 1);
   return date.toISOString().slice(0, 10);
-}
-
-function SearchIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
-      <circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.7" />
-      <path d="M10.5 10.5 14 14" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-    </svg>
-  );
 }

@@ -3,7 +3,7 @@ import SourceManager from "@/components/source-manager";
 import { getSessionUser } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "媒体源 · hit-ani" };
+export const metadata = { title: "媒体源" };
 
 export default async function SourcesPage() {
   const user = await getSessionUser();
@@ -16,9 +16,9 @@ export default async function SourcesPage() {
     <div className="space-y-8">
       <section className="space-y-3">
         <h1 className="text-2xl font-semibold">抓取源（管理员）</h1>
-        <p className="text-sm text-ink-muted">
+        <p className="text-sm text-on-surface-variant">
           全站共享的「去哪里找资源」规则。只保存查找规则（URL 模板、CSS 选择器、正则），
-          <strong className="text-ink">不含视频文件、种子或直链</strong>。
+          <strong className="text-on-surface">不含视频文件、种子或直链</strong>。
         </p>
         <div className="alert alert-warn">
           <p className="font-medium">使用前请确认</p>

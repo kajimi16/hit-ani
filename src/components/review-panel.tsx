@@ -95,7 +95,7 @@ export default function ReviewPanel({ subjectId, canInteract, schoolId }: Props)
     <section className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
         <h2 className="text-lg font-semibold">评论 / 影评</h2>
-        <span className="text-xs text-ink-faint">
+        <span className="text-xs text-on-surface-variant/70">
           全体 {total} · 本校 {schoolTotal}
         </span>
         <label className="ml-auto flex items-center gap-2 text-sm">
@@ -106,12 +106,12 @@ export default function ReviewPanel({ subjectId, canInteract, schoolId }: Props)
             onChange={(event) => setSchoolOnly(event.target.checked)}
             className="size-4 accent-sky-500"
           />
-          <span className={canInteract ? "" : "text-ink-faint"}>只看本校评论</span>
+          <span className={canInteract ? "" : "text-on-surface-variant/70"}>只看本校评论</span>
         </label>
       </div>
 
       {canInteract && (
-        <div className="panel space-y-3 bg-surface-2">
+        <div className="panel space-y-3 bg-surface-container">
           <div className="flex gap-3">
             <select
               value={kind}
@@ -158,7 +158,7 @@ export default function ReviewPanel({ subjectId, canInteract, schoolId }: Props)
             type="button"
             onClick={() => void submit()}
             disabled={content.trim().length === 0}
-            className="rounded bg-accent-strong px-5 py-2 text-sm font-medium text-white hover:bg-accent disabled:opacity-40"
+            className="rounded bg-primary px-5 py-2 text-sm font-medium text-white hover:bg-primary disabled:opacity-40"
           >
             发布
           </button>
@@ -172,9 +172,9 @@ export default function ReviewPanel({ subjectId, canInteract, schoolId }: Props)
       )}
 
       <ul className="space-y-3">
-        {loading && <li className="text-sm text-ink-faint">加载中…</li>}
+        {loading && <li className="text-sm text-on-surface-variant/70">加载中…</li>}
         {!loading && reviews.length === 0 && (
-          <li className="text-sm text-ink-faint">
+          <li className="text-sm text-on-surface-variant/70">
             {schoolOnly ? "本校还没有人评论这部番。" : "还没有评论。"}
           </li>
         )}
@@ -184,27 +184,27 @@ export default function ReviewPanel({ subjectId, canInteract, schoolId }: Props)
               <span
                 className={`rounded px-1.5 py-0.5 ${
                   schoolId && review.schoolId === schoolId
-                    ? "bg-accent-dim/70 text-accent"
-                    : "bg-surface-3 text-ink-muted"
+                    ? "bg-primary-container/70 text-primary"
+                    : "bg-surface-container-high text-on-surface-variant"
                 }`}
               >
                 {review.schoolId === schoolId ? "本校" : review.schoolId}
               </span>
-              <span className="text-ink-muted">{review.authorName}</span>
-              <span className="text-ink-faint">
+              <span className="text-on-surface-variant">{review.authorName}</span>
+              <span className="text-on-surface-variant/70">
                 {review.kind === 1 ? "影评" : "短评"}
               </span>
               {review.rating !== null && (
-                <span className="text-warn">{review.rating} 分</span>
+                <span className="text-secondary">{review.rating} 分</span>
               )}
-              <span className="ml-auto text-ink-faint">
+              <span className="ml-auto text-on-surface-variant/70">
                 {new Date(review.createdAt).toLocaleString("zh-CN")}
               </span>
             </div>
             {review.title && (
-              <p className="mt-2 font-medium text-ink">{review.title}</p>
+              <p className="mt-2 font-medium text-on-surface">{review.title}</p>
             )}
-            <p className="mt-1 whitespace-pre-wrap text-sm text-ink">
+            <p className="mt-1 whitespace-pre-wrap text-sm text-on-surface">
               {review.content}
             </p>
           </li>
