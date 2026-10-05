@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { sortByPlayTime } from "@/lib/danmaku/engine";
-import { ensureReadableColor, toCssColor } from "@/lib/danmaku/readable-color";
+import { ensureReadableColor, parseCssColor, toCssColor, type Rgb } from "@/lib/danmaku/readable-color";
 import { danmakuRoomUrl } from "@/lib/danmaku/ws-url";
 import {
   applyLocalFilters,
@@ -95,6 +95,31 @@ export default function DanmakuList({
     [episodeId],
   );
 
+  /**
+   * 弹幕列表的实际背景色。
+   *
+   * 从渲染出来的 DOM 读，而不是在本文件里写死色值 —— 写死的那一份无法
+   * 与 `globals.css` 保持同步，换主题后弹幕会悄悄变得不可读。
+   * 主题由 `prefers-color-scheme` 驱动，因此也要监听它的变化。
+   */
+  const listRef = useRef<HTMLUListElement>(null);
+  const [backdrop, setBackdrop] = useState<Rgb | null>(null);
+
+  useEffect(() => {
+    const readBackdrop = () => {
+      const element = listRef.current;
+      if (!element) return;
+      const parsed = parseCssColor(getComputedStyle(element).backgroundColor);
+      if (parsed) setBackdrop(parsed);
+    };
+
+    readBackdrop();
+
+    const scheme = window.matchMedia("(prefers-color-scheme: light)");
+    scheme.addEventListener("change", readBackdrop);
+    return () => scheme.removeEventListener("change", readBackdrop);
+  }, []);
+
   useEffect(() => {
     void load(schoolOnly);
   }, [load, schoolOnly]);
@@ -157,10 +182,10 @@ export default function DanmakuList({
     <section className="space-y-3">
       <div className="flex flex-wrap items-center gap-3">
         <h2 className="text-lg font-semibold">弹幕 · {episodeLabel}</h2>
-        <span className="text-xs text-ink-faint">
+        <span className="text-xs text-on-surface-variant/70">
           {visible.length} 条
           {hiddenCount > 0 && (
-            <span className="ml-1 text-ink-faint">（本地过滤隐藏 {hiddenCount} 条）</span>
+            <span className="ml-1 text-on-surface-variant/70">（本地过滤隐藏 {hiddenCount} 条）</span>
           )}
         </span>
         <label className="ml-auto flex items-center gap-2 text-sm">
@@ -171,11 +196,11 @@ export default function DanmakuList({
             onChange={(event) => setSchoolOnly(event.target.checked)}
             className="size-4 accent-sky-500"
           />
-          <span className={canInteract ? "" : "text-ink-faint"}>只看本校</span>
+          <span className={canInteract ? "" : "text-on-surface-variant/70"}>只看本校</span>
         </label>
       </div>
 
-      <p className="text-xs text-ink-faint">
+      <p className="text-xs text-on-surface-variant/70">
         {hasPlayer
           ? "弹幕会叠加在上方播放器上；发送请用播放器的输入框（需要播放位置）。"
           : "这里只是浏览。要发弹幕需要先有可播放的视频 —— 到「设置」连接你的 Jellyfin/Emby 媒体库。"}
@@ -186,7 +211,7 @@ export default function DanmakuList({
         实际是「校内 0 条 + Animeko 17 条」这种组合。
       */}
       {external && (external.externalCount > 0 || external.sources.length > 0) && (
-        <p className="flex flex-wrap items-center gap-2 text-xs text-ink-faint">
+        <p className="flex flex-wrap items-center gap-2 text-xs text-on-surface-variant/70">
           <span>
             本校 {external.localCount} 条
             {external.externalCount > 0 && ` · 外部源 ${external.externalCount} 条`}
@@ -201,7 +226,7 @@ export default function DanmakuList({
             层级重复且埋没了重点。
           */}
           {external.externalTotalAvailable > external.externalCount && (
-            <span className="text-ink-muted">
+            <span className="text-on-surface-variant">
               共 {external.externalTotalAvailable} 条，已显示前 {external.externalCount} 条
             </span>
           )}
@@ -210,8 +235,8 @@ export default function DanmakuList({
               key={source.service}
               className={`rounded px-1.5 py-0.5 ${
                 source.ok
-                  ? "bg-surface-3 text-ink-muted"
-                  : "bg-warn/10 text-warn"
+                  ? "bg-surface-container-high text-on-surface-variant"
+                  : "bg-secondary-container text-secondary"
               }`}
               title={source.error ?? undefined}
             >
@@ -220,7 +245,7 @@ export default function DanmakuList({
             </span>
           ))}
           {external.externalCount > 0 && (
-            <span className="text-ink-faint">
+            <span className="text-on-surface-variant/70">
               （外部弹幕不属于任何学校，开启「只看本校」会隐藏它们）
             </span>
           )}
@@ -234,13 +259,13 @@ export default function DanmakuList({
       )}
 
       {/* 本地屏蔽词：用户自己的偏好，与服务端全局屏蔽词互补 */}
-      <details className="panel bg-surface-2 p-3 text-xs">
-        <summary className="cursor-pointer text-ink-muted">
+      <details className="panel bg-surface-container p-3 text-xs">
+        <summary className="cursor-pointer text-on-surface-variant">
           本地屏蔽词 {filters.state.patterns.length > 0 && `(${filters.state.patterns.length})`}
-          {hiddenCount > 0 && <span className="ml-2 text-ink-faint">正在隐藏 {hiddenCount} 条</span>}
+          {hiddenCount > 0 && <span className="ml-2 text-on-surface-variant/70">正在隐藏 {hiddenCount} 条</span>}
         </summary>
         <div className="mt-2 space-y-2">
-          <p className="text-ink-faint">
+          <p className="text-on-surface-variant/70">
             支持正则，只影响你自己（存在本机，不上传）。
           </p>
           <div className="flex flex-wrap gap-2">
@@ -269,7 +294,7 @@ export default function DanmakuList({
             </button>
           </div>
           {draftPattern.trim().length > 0 && !isValidPattern(draftPattern) && (
-            <p className="text-warn">正则不合法，暂不生效（继续输入即可）</p>
+            <p className="text-secondary">正则不合法，暂不生效（继续输入即可）</p>
           )}
           {filters.state.patterns.length > 0 && (
             <ul className="flex flex-wrap gap-1">
@@ -278,7 +303,7 @@ export default function DanmakuList({
                   <button
                     type="button"
                     onClick={() => filters.removePattern(pattern)}
-                    className="rounded bg-surface-3 px-2 py-0.5 font-mono hover:bg-surface-3"
+                    className="rounded bg-surface-container-high px-2 py-0.5 font-mono hover:bg-surface-container-high"
                     title="点击移除"
                   >
                     {pattern} ×
@@ -287,7 +312,7 @@ export default function DanmakuList({
               ))}
             </ul>
           )}
-          <label className="flex items-center gap-2 text-ink-faint">
+          <label className="flex items-center gap-2 text-on-surface-variant/70">
             <input
               type="checkbox"
               checked={filters.state.enabled}
@@ -299,44 +324,54 @@ export default function DanmakuList({
         </div>
       </details>
 
-      {loading && <p className="text-sm text-ink-faint">加载中…</p>}
+      {loading && <p className="text-sm text-on-surface-variant/70">加载中…</p>}
 
       {!loading && visible.length === 0 && danmakus.length > 0 && (
-        <p className="panel text-sm text-ink-faint">
+        <p className="panel text-sm text-on-surface-variant/70">
           全部 {danmakus.length} 条弹幕都被你的本地屏蔽词过滤了。
         </p>
       )}
 
       {!loading && danmakus.length === 0 && (
-        <p className="panel text-sm text-ink-faint">
+        <p className="panel text-sm text-on-surface-variant/70">
           {schoolOnly ? "本校还没有人在这集发弹幕。" : "这集还没有弹幕。"}
         </p>
       )}
 
-      <ul className="max-h-80 space-y-0.5 overflow-y-auto rounded border border-line p-3 text-sm">
+      <ul
+        ref={listRef}
+        className="max-h-80 space-y-0.5 overflow-y-auto rounded border border-outline-variant bg-surface-container-low p-3 text-sm"
+      >
         {visible.map((danmaku) => (
           <li key={danmaku.id} className="group flex gap-3">
-            <span className="w-12 shrink-0 font-mono text-xs text-ink-faint">
+            <span className="w-12 shrink-0 font-mono text-xs text-on-surface-variant/70">
               {fmtTime(danmaku.playTimeMs)}
             </span>
             <span
               className={`shrink-0 rounded px-1.5 text-xs ${
                 schoolId && danmaku.schoolId === schoolId
-                  ? "bg-accent-dim/70 text-accent"
-                  : "bg-surface-3 text-ink-faint"
+                  ? "bg-primary-container/70 text-primary"
+                  : "bg-surface-container-high text-on-surface-variant/70"
               }`}
             >
               {danmaku.schoolId === schoolId ? "本校" : danmaku.schoolId || "外部"}
             </span>
-            <span className="shrink-0 text-xs text-ink-faint">{danmaku.senderName}</span>
+            <span className="shrink-0 text-xs text-on-surface-variant/70">{danmaku.senderName}</span>
             <span
               className="break-all"
               /*
-               * 颜色由发送者指定，而我们是深色界面 —— 实测 17% 的弹幕
-               * 在深色背景上不可读（深蓝 1.63:1、深灰 1.32:1）。
-               * `ensureReadableColor` 保留色相、只提亮度。
+               * 颜色由发送者指定，而我们的界面有明暗两套主题 —— 实测深色
+               * 背景下 17% 的弹幕不可读（深蓝 1.63:1、深灰 1.32:1）。
+               *
+               * 背景色**从真实 DOM 读**，不在本文件里复制色值：复制一份
+               * 就会和 `globals.css` 各自演化，换主题后提亮不足且不会报错。
+               * 读不到时（如首帧）原样显示，下一帧会补上。
                */
-              style={{ color: toCssColor(ensureReadableColor(danmaku.color)) }}
+              style={
+                backdrop
+                  ? { color: toCssColor(ensureReadableColor(danmaku.color, backdrop).color) }
+                  : undefined
+              }
             >
               {danmaku.text}
             </span>
@@ -355,7 +390,7 @@ export default function DanmakuList({
                  * 2. 用 ink-muted 而非 ink-faint：举报是**操作**，不是元信息。
                  *    与时间戳同色会让它被视觉归类为「可忽略的辅助文字」。
                  */
-                className="ml-auto shrink-0 rounded px-1.5 text-xs text-ink-muted transition hover:bg-danger/10 hover:text-danger disabled:text-ink-faint"
+                className="ml-auto shrink-0 rounded px-1.5 text-xs text-on-surface-variant transition hover:bg-error-container hover:text-error disabled:text-on-surface-variant/70"
                 title="举报这条弹幕"
               >
                 {reported.has(danmaku.id) ? "已举报" : "举报"}

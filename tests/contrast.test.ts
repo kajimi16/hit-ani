@@ -6,12 +6,18 @@
  * 深色主题里最容易出的事故是「文字看不见」—— 而且**功能测试完全测不出来**：
  * DOM 在、文字在、接口 200，只是人读不到。这比崩溃更难发现。
  *
- * 本项目就发生过：`ink-faint` 初值 `#6a7387` 在卡片上只有 **3.84:1**，
- * 低于 WCAG AA 的 4.5:1，而它承载的恰恰是「共 4920 条，已显示前 3000 条」
- * 这类**必须被读到**的信息 —— 加这条提示的用意就是消除误解，
- * 结果它几乎读不出来，目的落空。而且它大量用在 `text-xs` 上，实际更糟。
+ * 本项目发生过两次：`ink-faint` 初值只有 3.84:1（低于 AA），而它承载的
+ * 恰恰是「共 4920 条，已显示前 3000 条」这类**必须被读到**的信息。
  *
- * 因此用测试把对比度钉住：改色时若跌破 AA，测试会失败。
+ * ## 现在的配色来源
+ *
+ * 已改为 Animeko 的 M3 色板（种子色 `#4F378B` 生成，见 `globals.css`）。
+ * 深色是默认且**不跟随系统**；浅色只在显式 `data-theme="light"` 时生效。
+ * M3 的角色色**设计上就保证对比度**，但仍需守住 —— 因为可能出现：
+ * - 误用 `outline`（设计用于描边，不是文字）当文字色
+ * - 在 `primaryContainer` 上放 `onSurface`（角色配错）
+ *
+ * 因此测试覆盖**明暗两套**色板下的关键配对。
  *
  * 运行：`npm test`
  */
@@ -21,7 +27,7 @@ import { test } from "node:test";
 import { readFileSync } from "node:fs";
 
 /* ---------------------------------------------------------------- *
- * WCAG 2.1 相对亮度与对比度
+ * WCAG 2.1
  * ---------------------------------------------------------------- */
 
 function srgbToLinear(channel: number): number {
@@ -30,12 +36,10 @@ function srgbToLinear(channel: number): number {
 }
 
 function relativeLuminance([r, g, b]: [number, number, number]): number {
-  return (
-    0.2126 * srgbToLinear(r) + 0.7152 * srgbToLinear(g) + 0.0722 * srgbToLinear(b)
-  );
+  return 0.2126 * srgbToLinear(r) + 0.7152 * srgbToLinear(g) + 0.0722 * srgbToLinear(b);
 }
 
-/** WCAG 对比度公式：(L1 + 0.05) / (L2 + 0.05)，L1 为较亮者。 */
+/** WCAG 对比度：(L1 + 0.05) / (L2 + 0.05)，L1 为较亮者。 */
 export function contrastRatio(
   fg: [number, number, number],
   bg: [number, number, number],
@@ -55,54 +59,96 @@ function hexToRgb(hex: string): [number, number, number] {
   ];
 }
 
-/**
- * 从 `globals.css` 读 token —— **不硬编码**。
- *
- * 硬编码的话，改了 CSS 而忘改测试，两者会一起漂移，测试就失去意义。
- * 从真实来源读取才能守住这条线。
- */
-function readTokens(): Record<string, string> {
-  const css = readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
+/** AA 对正文的要求。 */
+const AA_NORMAL = 4.5;
+/** AAA —— 正文主力色应留足余量给不同显示器。 */
+const AAA_NORMAL = 7;
+
+/* ---------------------------------------------------------------- *
+ * 从 globals.css 读色板（不硬编码，否则改了 CSS 测试会一起漂移）
+ * ---------------------------------------------------------------- */
+
+const CSS = readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
+
+const BLANK = "\n";
+
+/** 抽取 `:root { ... }` 里 `--md-*` 的定义。 */
+function parseMdTokens(block: string): Record<string, string> {
   const tokens: Record<string, string> = {};
-  for (const [, name, value] of css.matchAll(/--color-([a-z0-9-]+):\s*(#[0-9a-fA-F]{6})/g)) {
+  for (const [, name, value] of block.matchAll(/--md-([a-z-]+):\s*(#[0-9a-fA-F]{6})/g)) {
     tokens[name] = value;
   }
   return tokens;
 }
 
-/** AA 对正文的要求。 */
-const AA_NORMAL = 4.5;
-/** 所有作为背景使用的表面色。 */
-const SURFACES = ["canvas", "surface", "surface-2", "surface-3"] as const;
-/** 所有用于文字的颜色。 */
-const INKS = ["ink", "ink-muted", "ink-faint"] as const;
 
-/* ---------------------------------------------------------------- *
- * token 存在性
- * ---------------------------------------------------------------- */
+/** 四层表面（Animeko 的分层语义）。 */
+const SURFACES = [
+  "surface-container-lowest",
+  "surface-container-low",
+  "surface-container",
+  "surface-container-high",
+  "surface-container-highest",
+] as const;
 
-test("globals.css 里定义了必需的颜色 token", () => {
-  const tokens = readTokens();
-  for (const name of [...INKS, ...SURFACES]) {
-    assert.ok(tokens[name], `缺少 token --color-${name}`);
+/** 在某个表面上会出现的文字色 —— 只列出真实用到的配对。 */
+const FOREGROUNDS = ["on-surface", "on-surface-variant"] as const;
+
+/** 暗色 = `:root`；浅色 = `:root[data-theme="light"]`（显式选择，不跟随系统）。 */
+function readPalettes(): { dark: Record<string, string>; light: Record<string, string> } {
+  const lightBlock =
+    /:root\[data-theme="light"\]\s*\{([\s\S]*?)\n\}/.exec(CSS)?.[1] ?? "";
+  const darkBlock = /^:root\s*\{([\s\S]*?)\n\}/m.exec(CSS)?.[1] ?? "";
+  return { dark: parseMdTokens(darkBlock), light: parseMdTokens(lightBlock) };
+}
+
+test("明暗两套色板都定义了全部 M3 角色", () => {
+  const { dark, light } = readPalettes();
+  const required = [
+    ...SURFACES,
+    ...FOREGROUNDS,
+    "primary",
+    "on-primary",
+    "primary-container",
+    "on-primary-container",
+    "secondary-container",
+    "on-secondary-container",
+    "tertiary-container",
+    "on-tertiary-container",
+    "error-container",
+    "on-error-container",
+    "outline",
+    "outline-variant",
+  ];
+
+  for (const [name, palette] of [
+    ["dark", dark],
+    ["light", light],
+  ] as const) {
+    for (const role of required) {
+      assert.ok(palette[role], `${name} 色板缺少 --md-${role}`);
+    }
   }
 });
 
 /* ---------------------------------------------------------------- *
- * 对比度
+ * 前景 / 表面配对
  * ---------------------------------------------------------------- */
 
-test("三级文字色在每一种表面色上都满足 WCAG AA（4.5:1）", () => {
-  const tokens = readTokens();
+test("明暗两套下，文字色在所有表面上都满足 AA", () => {
+  const { dark, light } = readPalettes();
   const failures: string[] = [];
 
-  for (const ink of INKS) {
-    for (const surface of SURFACES) {
-      const ratio = contrastRatio(hexToRgb(tokens[ink]), hexToRgb(tokens[surface]));
-      if (ratio < AA_NORMAL) {
-        failures.push(
-          `${ink} 在 ${surface} 上仅 ${ratio.toFixed(2)}:1（要求 ≥ ${AA_NORMAL}）`,
-        );
+  for (const [name, palette] of [
+    ["dark", dark],
+    ["light", light],
+  ] as const) {
+    for (const fg of FOREGROUNDS) {
+      for (const surface of SURFACES) {
+        const ratio = contrastRatio(hexToRgb(palette[fg]), hexToRgb(palette[surface]));
+        if (ratio < AA_NORMAL) {
+          failures.push(`${name}: ${fg} 在 ${surface} 上仅 ${ratio.toFixed(2)}:1`);
+        }
       }
     }
   }
@@ -110,64 +156,100 @@ test("三级文字色在每一种表面色上都满足 WCAG AA（4.5:1）", () =
   assert.deepEqual(failures, [], `对比度不达标：\n  ${failures.join("\n  ")}`);
 });
 
-test("最深的三级层次也达标 —— ink-faint 不是「装饰性」颜色", () => {
-  // ink-faint 承载的是「共 N 条，已显示前 M 条」这类信息，
-  // 不是可有可无的装饰。因此它必须过 AA，而不是走「装饰文字可放宽」的口子。
-  const tokens = readTokens();
-  const worst = Math.min(
-    ...SURFACES.map((s) => contrastRatio(hexToRgb(tokens["ink-faint"]), hexToRgb(tokens[s]))),
-  );
-  assert.ok(
-    worst >= AA_NORMAL,
-    `ink-faint 最差对比度 ${worst.toFixed(2)}:1，低于 AA 的 ${AA_NORMAL}`,
-  );
-});
-
-test("三级之间有明确区分（不是名义上的三级）", () => {
-  // 若把 ink-faint 提到与 ink-muted 同值，对比度测试仍会通过，
-  // 但层次就没了 —— 那等于把三级压成两级，信息层级丢失。
-  const tokens = readTokens();
-  const lum = (name: string) => relativeLuminance(hexToRgb(tokens[name]));
-
-  const inkToMuted = lum("ink") / lum("ink-muted");
-  const mutedToFaint = lum("ink-muted") / lum("ink-faint");
-
-  assert.ok(inkToMuted > 1.5, `ink 与 ink-muted 亮度比仅 ${inkToMuted.toFixed(2)}，区分不足`);
-  assert.ok(
-    mutedToFaint > 1.15,
-    `ink-muted 与 ink-faint 亮度比仅 ${mutedToFaint.toFixed(2)}，几乎无法区分`,
-  );
-});
-
-test("表面色由深到浅递进（背景层次成立）", () => {
-  const tokens = readTokens();
-  const lums = SURFACES.map((s) => relativeLuminance(hexToRgb(tokens[s])));
-  for (let i = 1; i < lums.length; i += 1) {
-    assert.ok(
-      lums[i] > lums[i - 1],
-      `${SURFACES[i]} 应比 ${SURFACES[i - 1]} 亮（当前 ${lums[i].toFixed(4)} vs ${lums[i - 1].toFixed(4)}）`,
+test("主文字色在页面底色上达 AAA（留余量给不同显示器）", () => {
+  const { dark, light } = readPalettes();
+  for (const [name, palette] of [
+    ["dark", dark],
+    ["light", light],
+  ] as const) {
+    const ratio = contrastRatio(
+      hexToRgb(palette["on-surface"]),
+      hexToRgb(palette["surface-container-lowest"]),
     );
+    assert.ok(ratio >= AAA_NORMAL, `${name}: on-surface 仅 ${ratio.toFixed(2)}:1，未达 AAA`);
   }
 });
 
-test("正文色在画布上远超 AAA（留足余量给不同显示器）", () => {
-  // ink 是主力文字色。只满足 AA（4.5）在低质量屏幕上仍可能吃力，
-  // 因此要求它达到 AAA（7:1）以上。
-  const tokens = readTokens();
-  const ratio = contrastRatio(hexToRgb(tokens["ink"]), hexToRgb(tokens["canvas"]));
-  assert.ok(ratio >= 7, `ink 在 canvas 上仅 ${ratio.toFixed(2)}:1，未达 AAA`);
+/* ---------------------------------------------------------------- *
+ * container / on-container 配对（M3 的核心约定）
+ * ---------------------------------------------------------------- */
+
+test("container 与 on-container 成对使用，且都满足 AA", () => {
+  const { dark, light } = readPalettes();
+  const pairs = [
+    ["primary-container", "on-primary-container"],
+    ["secondary-container", "on-secondary-container"],
+    ["tertiary-container", "on-tertiary-container"],
+    ["error-container", "on-error-container"],
+  ] as const;
+
+  const failures: string[] = [];
+  for (const [name, palette] of [
+    ["dark", dark],
+    ["light", light],
+  ] as const) {
+    for (const [container, onContainer] of pairs) {
+      const ratio = contrastRatio(hexToRgb(palette[onContainer]), hexToRgb(palette[container]));
+      if (ratio < AA_NORMAL) {
+        failures.push(`${name}: ${onContainer} 在 ${container} 上仅 ${ratio.toFixed(2)}:1`);
+      }
+    }
+  }
+  assert.deepEqual(failures, [], `角色配错：\n  ${failures.join("\n  ")}`);
 });
 
-test("语义色在画布上满足 AA 大字号阈值（用于徽标与提示）", () => {
-  // success / warn / danger 常用在 text-xs 的徽标与提示条上。
-  // 这些颜色由设计 token 直接给出（非纯黑/纯白），因此需要单独校验。
-  const tokens = readTokens();
-  const canvas = hexToRgb(tokens["canvas"]);
-  for (const name of ["success", "warn", "danger"] as const) {
-    const ratio = contrastRatio(hexToRgb(tokens[name]), canvas);
-    assert.ok(
-      ratio >= 4.5,
-      `${name} 在 canvas 上仅 ${ratio.toFixed(2)}:1，低于 AA 正文阈值`,
-    );
+test("按钮文字与按钮底色满足 AA", () => {
+  const { dark, light } = readPalettes();
+  for (const [name, palette] of [
+    ["dark", dark],
+    ["light", light],
+  ] as const) {
+    const ratio = contrastRatio(hexToRgb(palette["on-primary"]), hexToRgb(palette["primary"]));
+    assert.ok(ratio >= AA_NORMAL, `${name}: on-primary 在 primary 上仅 ${ratio.toFixed(2)}:1`);
+  }
+});
+
+/* ---------------------------------------------------------------- *
+ * 描边角色
+ * ---------------------------------------------------------------- */
+
+test("outline 与 outline-variant 是描边色，不与表面同色导致边界消失", () => {
+  const { dark, light } = readPalettes();
+  for (const [name, palette] of [
+    ["dark", dark],
+    ["light", light],
+  ] as const) {
+    for (const role of ["outline", "outline-variant"] as const) {
+      for (const surface of ["surface-container-lowest", "surface-container-low"] as const) {
+        const ratio = contrastRatio(hexToRgb(palette[role]), hexToRgb(palette[surface]));
+        // 描边不需要达到正文标准，但必须能看出边界（≥1.3:1）
+        assert.ok(
+          ratio >= 1.3,
+          `${name}: ${role} 在 ${surface} 上仅 ${ratio.toFixed(2)}:1，边界不可见`,
+        );
+      }
+    }
+  }
+});
+
+test("四层表面单调递进 —— 深色下越亮、浅色下越暗", () => {
+  // M3 语义：`surfaceContainer` 表示「在背景之上」。深色主题下提亮、
+  // 浅色主题下压暗，因此两个色板的单调方向**相反**。
+  // 若浅色板只是照抄深色，浅色模式下层级会消失 —— 这条断言能抓出来。
+  const { dark, light } = readPalettes();
+
+  for (const [name, palette] of [
+    ["dark", dark],
+    ["light", light],
+  ] as const) {
+    const lums = SURFACES.map((s) => relativeLuminance(hexToRgb(palette[s])));
+    const ascending = lums[lums.length - 1] > lums[0];
+    for (let i = 1; i < lums.length; i += 1) {
+      const step = lums[i] - lums[i - 1];
+      assert.ok(
+        ascending ? step > 0 : step < 0,
+        `${name}: ${SURFACES[i]} 与 ${SURFACES[i - 1]} 的层级方向不一致（应${ascending ? "递增" : "递减"}）`,
+      );
+    }
   }
 });

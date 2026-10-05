@@ -3,7 +3,7 @@
 import Hls from "hls.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { allocateTracks, mergeById, shouldRefill, sortByPlayTime } from "@/lib/danmaku/engine";
-import { ensureReadableColor, toCssColor } from "@/lib/danmaku/readable-color";
+import { contrastOutlineFor, toCssColor } from "@/lib/danmaku/readable-color";
 import { danmakuRoomUrl } from "@/lib/danmaku/ws-url";
 import {
   DanmakuLocation,
@@ -318,32 +318,44 @@ export default function VideoPlayer({
       });
 
       ctx.font = "16px system-ui, sans-serif";
-      ctx.shadowColor = "rgba(0,0,0,0.85)";
-      ctx.shadowBlur = 3;
+      /*
+       * canvas 上没有 CSS 层可以兜底，而且背景是**视频画面** —— 亮度完全
+       * 不可知（可能全白也可能全黑）。因此这里**不改弹幕颜色**：
+       *
+       * - 用 `ensureReadableColor` 需要已知背景色，视频画面给不出；
+       * - 改色还会破坏发送者的意图（有人特意为亮画面选了深色）。
+       *
+       * 改为描边与字色亮度相反：亮字配暗描边、暗字配亮描边。
+       * 这对任意画面都成立，且保留原色。
+       */
+      ctx.lineWidth = 3;
+      ctx.lineJoin = "round";
+      ctx.miterLimit = 2;
 
       for (const { danmaku, track } of assignments) {
         const elapsed = renderMediaMs - danmaku.playTimeMs;
         if (elapsed < 0) continue;
 
         const textWidth = Array.from(danmaku.text).length * CHAR_WIDTH;
-        // 与列表同一套可读性处理 —— canvas 没有 CSS 层可兜底，
-        // 深色弹幕在这里会直接看不见（比列表更严重）。
-        ctx.fillStyle = toCssColor(ensureReadableColor(danmaku.color));
+        ctx.strokeStyle = contrastOutlineFor(danmaku.color);
+        ctx.fillStyle = toCssColor(danmaku.color);
 
         if (danmaku.location === DanmakuLocation.Normal) {
           const x = width - elapsed * SPEED_PX_PER_MS;
           if (x + textWidth < 0) continue;
-          ctx.fillText(danmaku.text, x, track * TRACK_HEIGHT + 18);
+          const y = track * TRACK_HEIGHT + 18;
+          ctx.strokeText(danmaku.text, x, y);
+          ctx.fillText(danmaku.text, x, y);
         } else {
           const x = (width - textWidth) / 2;
           const y =
             danmaku.location === DanmakuLocation.Top
               ? 16 + track * TRACK_HEIGHT
               : CANVAS_HEIGHT - 10 - track * TRACK_HEIGHT;
+          ctx.strokeText(danmaku.text, x, y);
           ctx.fillText(danmaku.text, x, y);
         }
       }
-      ctx.shadowBlur = 0;
     };
 
     // 轨道一：requestAnimationFrame —— 正常情况下的平滑绘制（~60fps）
@@ -577,10 +589,10 @@ export default function VideoPlayer({
         <span
           className={`rounded px-2 py-0.5 text-xs ${
             connection === "open"
-              ? "bg-success/15 text-success"
+              ? "bg-tertiary-container text-tertiary"
               : connection === "fallback"
-                ? "bg-warn/15 text-warn"
-                : "bg-surface-3 text-ink-muted"
+                ? "bg-secondary-container text-secondary"
+                : "bg-surface-container-high text-on-surface-variant"
           }`}
         >
           {connection === "open" ? "弹幕实时" : connection === "fallback" ? "弹幕 REST" : "连接中…"}
@@ -593,12 +605,12 @@ export default function VideoPlayer({
             onChange={(event) => setSchoolOnly(event.target.checked)}
             className="size-4 accent-sky-500"
           />
-          <span className={canInteract ? "" : "text-ink-faint"}>只看本校弹幕</span>
+          <span className={canInteract ? "" : "text-on-surface-variant/70"}>只看本校弹幕</span>
         </label>
       </div>
 
       {/* 播放器：video 与弹幕 canvas 叠放 */}
-      <div className="relative overflow-hidden rounded border border-line bg-black">
+      <div className="relative overflow-hidden rounded border border-outline-variant bg-black">
         <video
           ref={videoRef}
           controls
@@ -620,12 +632,12 @@ export default function VideoPlayer({
         </p>
       )}
 
-      <div className="flex flex-wrap items-center gap-3 text-xs text-ink-faint">
+      <div className="flex flex-wrap items-center gap-3 text-xs text-on-surface-variant/70">
         <span className="font-mono">
           {fmt(mediaTimeMs)} / {durationMs > 0 ? fmt(durationMs) : "--:--"}
         </span>
         <span>已加载弹幕 {danmakus.length} 条</span>
-        <span className="text-ink-faint">
+        <span className="text-on-surface-variant/70">
           视频由你的 Jellyfin 服务器直连播放，不经过本平台
         </span>
       </div>
@@ -660,7 +672,7 @@ export default function VideoPlayer({
           type="button"
           onClick={() => void send()}
           disabled={!canInteract || episodeId === null || draft.trim().length === 0}
-          className="rounded bg-accent-strong px-5 py-2 text-sm font-medium text-white hover:bg-accent disabled:opacity-40"
+          className="rounded bg-primary px-5 py-2 text-sm font-medium text-white hover:bg-primary disabled:opacity-40"
         >
           发送
         </button>
