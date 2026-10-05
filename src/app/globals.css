@@ -1,71 +1,77 @@
 @import "tailwindcss";
 
 /*
- * hit-ani 设计系统
+ * hit-ani 设计系统 —— 对齐 Animeko 桌面端
  *
- * ## 为什么之前"丑"
+ * ## 配色来源（调研结论，见 docs/ANIMEKO-UI.md）
  *
- * 原文件是 create-next-app 的脚手架残留：它用**未分层**的选择器写
- * `body { background: var(--background) }`，而 Tailwind v4 把工具类放在
- * `@layer utilities` 里 —— **未分层 CSS 优先于任何 layer**，与选择器权重无关。
+ * Animeko **不硬编码任何配色**：它用一个种子色 `DefaultSeedColor = #4F378B`
+ * 经 materialkolor 的 `dynamicColorScheme(style = TonalSpot)` 在运行时生成
+ * 整套 Material 3 配色。源码里除种子色外没有别的十六进制。
  *
- * 于是 `layout.tsx` 上的 `bg-neutral-950` 被静默覆盖成白色，
- * 而所有组件都按深色设计：深色输入框浮在白底上、浅色文字在白底上几乎不可见。
+ * 因此这里取 **M3 baseline 色板**：`#4F378B` 恰好等于 baseline 的
+ * `primaryContainer`（暗色），从它生成的 TonalSpot 方案与 baseline 极接近。
+ * 这是对「运行时生成」最忠实的静态近似 —— 而不是我另挑一套颜色。
  *
- * 现在所有基础样式都在 `@layer base` 内，工具类可以正常覆盖它们。
+ * ## 四层表面（Animeko `AniThemeDefaults` 的语义映射）
  *
- * ## 设计基调
+ * | 用途 | M3 role |
+ * | --- | --- |
+ * | 页面内容背景 | `surfaceContainerLowest` |
+ * | 导航栏 / 滚动后的顶栏 | `surfaceContainer` |
+ * | 背景型卡片 | `surfaceContainerLow` |
+ * | 功能性卡片（追番列表等） | `surfaceContainerHigh` |
  *
- * 影音平台用深色是合理的（观影时不刺眼、海报对比强）。因此不依赖
- * `prefers-color-scheme` —— **固定深色**，避免用户系统主题不同导致外观分裂。
+ * ## 深浅色
+ *
+ * Animeko `ThemeSettings.darkMode` 默认 `AUTO`（跟随系统），因此这里也用
+ * `prefers-color-scheme` 而非固定深色 —— 这是它的实际行为。
  */
 
 @theme {
-  /* ---------------------------------------------------------------- 表面
-   * 用带一点蓝的深色而非纯灰：纯灰在深色下显得脏，微蓝更有质感。 */
-  --color-canvas: #0a0b0f;
-  --color-surface: #12151d;
-  --color-surface-2: #191d27;
-  --color-surface-3: #212630;
+  /* 表面 —— 名字对齐 M3 role，便于与 Animeko 源码逐条对照 */
+  --color-surface-container-lowest: var(--md-surface-container-lowest);
+  --color-surface-container-low: var(--md-surface-container-low);
+  --color-surface-container: var(--md-surface-container);
+  --color-surface-container-high: var(--md-surface-container-high);
+  --color-surface-container-highest: var(--md-surface-container-highest);
+  --color-surface: var(--md-surface);
+  --color-surface-variant: var(--md-surface-variant);
 
-  /* 描边。分两级：普通分隔用 line，需要突出的用 line-strong。 */
-  --color-line: #232838;
-  --color-line-strong: #333a4d;
+  /* 前景 */
+  --color-on-surface: var(--md-on-surface);
+  --color-on-surface-variant: var(--md-on-surface-variant);
+  --color-outline: var(--md-outline);
+  --color-outline-variant: var(--md-outline-variant);
 
-  /* ---------------------------------------------------------------- 文字
-   * 三级层次：正文 / 次要 / 微弱。用三级而非两级，是因为信息密度高的
-   * 列表页（章节、弹幕、资源）需要区分"标签"和"辅助说明"。
-   *
-   * ⚠️ 三级的取值都必须满足 WCAG AA（正文 4.5:1），**最暗的 ink-faint 也一样** ——
-   * 它承载的不是装饰，而是「共 N 条，已显示前 M 条」这类必须被读到的信息。
-   *
-   * 实测（画布 → 卡片）：ink 17.08 → 15.84、muted 7.86 → 7.29、faint 6.22 → 5.77。
-   * 三者都在 AA 之上，且相邻两级有明确区分（不是名义上的三级）。
-   *
-   * 初版 faint 取 #6a7387 只有 4.14:1（卡片上 3.84:1）—— 不达标，
-   * 而且它大量用在 text-xs 上，实际比数字更糟。
-   * 有 tests/contrast.test.ts 守着这条线，改色时会失败。 */
-  --color-ink: #eceff5;
-  --color-ink-muted: #9ba4b7;
-  --color-ink-faint: #8891a5;
+  /* 主色 */
+  --color-primary: var(--md-primary);
+  --color-on-primary: var(--md-on-primary);
+  --color-primary-container: var(--md-primary-container);
+  --color-on-primary-container: var(--md-on-primary-container);
+  --color-secondary: var(--md-secondary);
+  --color-secondary-container: var(--md-secondary-container);
+  --color-on-secondary-container: var(--md-on-secondary-container);
+  --color-tertiary: var(--md-tertiary);
+  --color-tertiary-container: var(--md-tertiary-container);
+  --color-on-tertiary-container: var(--md-on-tertiary-container);
 
-  /* ---------------------------------------------------------------- 强调色
-   * 品红而非天蓝：天蓝是 Tailwind 默认色，一眼就能看出"没设计过"。
-   * 品红在影音场景里辨识度更高，也更贴合动漫平台的气质。 */
-  --color-accent: #f472b6;
-  --color-accent-strong: #ec4899;
-  --color-accent-dim: #831843;
-  --color-accent-ink: #ffffff;
+  /* 语义 */
+  --color-error: var(--md-error);
+  --color-on-error: var(--md-on-error);
+  --color-error-container: var(--md-error-container);
+  --color-on-error-container: var(--md-on-error-container);
+  --color-scrim: var(--md-scrim);
 
-  /* 语义色 */
-  --color-success: #34d399;
-  --color-warn: #fbbf24;
-  --color-danger: #f87171;
-  --color-info: #38bdf8;
+  /* 圆角 —— Animeko **没有覆盖 `Shapes`**（全仓库 `Shapes(` 0 命中），
+   * 因此是 M3 库默认值。卡片/列表行统一用 `shapes.medium` = 12px。 */
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 28px;
 
-  /* ---------------------------------------------------------------- 字体
-   * 必须显式列出中文字体。脚手架用的是 `Arial`，中文会回退到系统默认，
-   * 导致标题与正文的字重、字面宽度不一致，整页看起来"松垮"。 */
+  /* 字体 —— Animeko 的 Typography 只替换 fontFamily，不动字号/字重，即 M3 默认 */
   --font-sans:
     ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
     "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Source Han Sans SC",
@@ -73,30 +79,129 @@
   --font-mono:
     ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono",
     "Noto Sans Mono CJK SC", monospace;
+}
 
-  /* 圆角统一成两档 —— 混用四五种半径是"没设计"的典型特征 */
-  --radius-card: 0.75rem;
-  --radius-control: 0.5rem;
+/* ================================================================== *
+ * M3 色板 —— 从种子色 #4F378B 生成（静态近似）
+ * ================================================================== */
+
+:root {
+  /* 种子色。Animeko 唯一的硬编码颜色。 */
+  --seed: #4f378b;
+
+  /* ---- 暗色（M3 baseline dark）---- */
+  --md-primary: #d0bcff;
+  --md-on-primary: #381e72;
+  --md-primary-container: #4f378b;
+  --md-on-primary-container: #eaddff;
+  --md-secondary: #ccc2dc;
+  --md-secondary-container: #4a4458;
+  --md-on-secondary-container: #e8def8;
+  --md-tertiary: #efb8c8;
+  --md-tertiary-container: #633b48;
+  --md-on-tertiary-container: #ffd8e4;
+  --md-error: #f2b8b5;
+  --md-on-error: #601410;
+  --md-error-container: #8c1d18;
+  --md-on-error-container: #f9dedc;
+  --md-surface: #141218;
+  --md-surface-variant: #49454f;
+  --md-on-surface: #e6e0e9;
+  --md-on-surface-variant: #cac4d0;
+  --md-outline: #938f99;
+  --md-outline-variant: #49454f;
+  /* 四层表面：由深到浅，Animeko 的分层语义 */
+  --md-surface-container-lowest: #0f0d13;
+  --md-surface-container-low: #1d1b20;
+  --md-surface-container: #211f26;
+  --md-surface-container-high: #2b2930;
+  --md-surface-container-highest: #36343b;
+  --md-scrim: #000000;
+
+  /* 半透明梯度 —— 直接来自 Animeko 的 `Colors.kt`，
+   * 那是它唯一有约定的透明度体系 */
+  --alpha-looming: 0.9;
+  --alpha-slightly-weaken: 0.618;
+  --alpha-weaken: 0.5;
+  --alpha-strongly-weaken: 0.382;
+  --alpha-disabled: 0.12;
+
+  /* 动画 —— Animeko `EasingDurations` + `MaterialEasing` 的实际取值 */
+  --duration-standard: 300ms;
+  --duration-accelerate: 200ms;
+  --duration-decelerate: 250ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-emphasized-decelerate: cubic-bezier(0.05, 0.7, 0.1, 1);
+
+  /* 卡片底部渐变遮罩（`BasicCarouselItem.carouselBrush`）。
+   * 用变量是为了让 hover 态只换背景、不重写整条声明。 */
+  --card-scrim: linear-gradient(
+    to bottom,
+    transparent 0%,
+    transparent 33%,
+    rgb(0 0 0 / 0.612) 100%
+  );
+  --card-scrim-hover: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgb(0 0 0 / 0.15) 40%,
+    rgb(0 0 0 / 0.72) 100%
+  );
+}
+
+/* 浅色色板 —— **只有显式设置 `data-theme="light"` 才生效**。
+ *
+ * 刻意**不**用 `@media (prefers-color-scheme: light)`：本项目已定「深色主题固定」，
+ * 不跟随系统偏好。Animeko 的 `ThemeSettings.darkMode` 默认是 AUTO（跟随系统），
+ * 这里不照搬 —— 换主题是用户可见的行为变化，不该由系统设置悄悄决定。
+ *
+ * 依赖系统偏好的第二个问题是它**不可测**：本机上 headless 浏览器报 light，
+ * 于是所有截图验证都在浅色下跑，深色配色反而没被真正看过一眼。 */
+:root[data-theme="light"] {
+    --md-primary: #6750a4;
+    --md-on-primary: #ffffff;
+    --md-primary-container: #eaddff;
+    --md-on-primary-container: #21005d;
+    --md-secondary: #625b71;
+    --md-secondary-container: #e8def8;
+    --md-on-secondary-container: #1d192b;
+    --md-tertiary: #7d5260;
+    --md-tertiary-container: #ffd8e4;
+    --md-on-tertiary-container: #31111d;
+    --md-error: #b3261e;
+    --md-on-error: #ffffff;
+    --md-error-container: #f9dedc;
+    --md-on-error-container: #410e0b;
+    --md-surface: #fef7ff;
+    --md-surface-variant: #e7e0ec;
+    --md-on-surface: #1d1b20;
+    --md-on-surface-variant: #49454f;
+    --md-outline: #79747e;
+    --md-outline-variant: #cac4d0;
+    --md-surface-container-lowest: #ffffff;
+    --md-surface-container-low: #f7f2fa;
+    --md-surface-container: #f3edf7;
+    --md-surface-container-high: #ece6f0;
+    --md-surface-container-highest: #e6e0e9;
 }
 
 /* ================================================================== *
  * 基础样式
  *
- * 全部放进 @layer base：这样工具类（如 bg-surface、text-ink）才能覆盖它们。
- * 这正是之前出问题的地方 —— 未分层的规则会赢过所有工具类。
+ * 全部放进 @layer base —— 否则会压过 @layer utilities 里的工具类
+ * （这是本项目早期「整页白底」的根因）。
  * ================================================================== */
 @layer base {
   html {
-    /* 深色背景下浏览器原生控件（滚动条、表单）用深色变体 */
-    color-scheme: dark;
+    color-scheme: light dark;
     -webkit-text-size-adjust: 100%;
   }
 
   body {
-    background-color: var(--color-canvas);
-    color: var(--color-ink);
+    background-color: var(--color-surface-container-lowest);
+    color: var(--color-on-surface);
     font-family: var(--font-sans);
-    /* 中文正文行高比西文需要更大一些 */
+    /* M3 bodyLarge 是 16/24 = 1.5；中文再加到 1.65 更透气 */
     line-height: 1.65;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
@@ -107,34 +212,30 @@
   h3,
   h4 {
     line-height: 1.3;
-    /* 中文标题不需要负字距，但轻微收紧能显得更紧凑 */
     letter-spacing: -0.01em;
     font-weight: 600;
   }
 
-  /* 聚焦可见性：键盘用户必须能看到焦点在哪 */
   :focus-visible {
-    outline: 2px solid var(--color-accent);
+    outline: 2px solid var(--color-primary);
     outline-offset: 2px;
     border-radius: 2px;
   }
 
-  /* 链接默认继承颜色，避免在深色背景上出现浏览器默认的深蓝 */
   a {
     color: inherit;
     text-decoration: none;
   }
 
-  /* 选区颜色跟随主题 */
   ::selection {
-    background-color: var(--color-accent-dim);
-    color: var(--color-ink);
+    background-color: var(--color-primary-container);
+    color: var(--color-on-primary-container);
   }
 
-  /* 滚动条：默认的浅色滚动条在深色页面上非常突兀 */
+  /* 滚动条跟随主题；默认的浅色滚动条在深色页面上很突兀 */
   * {
     scrollbar-width: thin;
-    scrollbar-color: var(--color-line-strong) transparent;
+    scrollbar-color: var(--color-outline-variant) transparent;
   }
   ::-webkit-scrollbar {
     width: 10px;
@@ -144,227 +245,748 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background-color: var(--color-line-strong);
+    background-color: var(--color-outline-variant);
     border-radius: 999px;
     border: 2px solid transparent;
     background-clip: content-box;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background-color: var(--color-ink-faint);
+    background-color: var(--color-outline);
     background-clip: content-box;
   }
 }
 
 /* ================================================================== *
- * 组件类
- *
- * 把重复的工具类组合收敛到语义化的类名。之前有 48 处硬编码的
- * `bg-neutral-900 border-neutral-800` 之类，改一次主题要动几十个文件。
+ * 组件类 —— 对齐 M3 的组件形态（Animeko 用 M3 默认组件）
  * ================================================================== */
 @layer components {
-  /* ---------------------------------------------------------------- 按钮 */
+  /* ---------------------------------------------------------------- 按钮
+   * M3 的 Button / FilledTonalButton 都是**胶囊形**（`Shapes.full`），
+   * Animeko 未覆盖 —— 这是它视觉上的一部分。 */
   .btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 0.4rem;
-    border-radius: var(--radius-control);
-    padding: 0.5rem 1rem;
+    gap: 0.5rem;
+    border-radius: 999px;
+    padding: 0.6rem 1.5rem;
+    /* M3 labelLarge: 14sp / Medium */
     font-size: 0.875rem;
     font-weight: 500;
     line-height: 1.25rem;
     white-space: nowrap;
-    transition:
-      background-color 150ms ease,
-      border-color 150ms ease,
-      color 150ms ease;
+    border: none;
     cursor: pointer;
+    transition:
+      background-color var(--duration-accelerate) var(--ease-standard),
+      box-shadow var(--duration-accelerate) var(--ease-standard),
+      color var(--duration-accelerate) var(--ease-standard);
   }
   .btn:disabled {
-    opacity: 0.45;
+    opacity: var(--alpha-disabled);
     cursor: not-allowed;
   }
 
+  /* Filled（M3 primary） */
   .btn-primary {
-    background-color: var(--color-accent-strong);
-    color: var(--color-accent-ink);
+    background-color: var(--color-primary);
+    color: var(--color-on-primary);
   }
   .btn-primary:hover:not(:disabled) {
-    background-color: var(--color-accent);
+    box-shadow: 0 1px 3px 1px color-mix(in oklab, var(--color-primary) 30%, transparent);
   }
 
+  /* Outlined —— Animeko 里「次要操作」的默认形态 */
   .btn-ghost {
-    border: 1px solid var(--color-line-strong);
     background-color: transparent;
-    color: var(--color-ink-muted);
+    color: var(--color-primary);
+    border: 1px solid var(--color-outline);
   }
   .btn-ghost:hover:not(:disabled) {
-    background-color: var(--color-surface-2);
-    color: var(--color-ink);
+    background-color: color-mix(in oklab, var(--color-primary) 8%, transparent);
+  }
+
+  /* Tonal（M3 FilledTonalButton → secondaryContainer） */
+  .btn-tonal {
+    background-color: var(--color-secondary-container);
+    color: var(--color-on-secondary-container);
+  }
+  .btn-tonal:hover:not(:disabled) {
+    box-shadow: 0 1px 3px 1px color-mix(in oklab, var(--color-secondary) 30%, transparent);
+  }
+
+  /* Text（M3 TextButton）—— 用于卡片内的轻量操作 */
+  .btn-text {
+    background-color: transparent;
+    color: var(--color-primary);
+    padding-inline: 0.75rem;
+  }
+  .btn-text:hover:not(:disabled) {
+    background-color: color-mix(in oklab, var(--color-primary) 8%, transparent);
   }
 
   .btn-danger {
-    border: 1px solid color-mix(in oklab, var(--color-danger) 40%, transparent);
     background-color: transparent;
-    color: var(--color-danger);
+    color: var(--color-error);
+    border: 1px solid color-mix(in oklab, var(--color-error) 50%, transparent);
   }
   .btn-danger:hover:not(:disabled) {
-    background-color: color-mix(in oklab, var(--color-danger) 12%, transparent);
+    background-color: color-mix(in oklab, var(--color-error) 12%, transparent);
   }
 
   .btn-sm {
-    padding: 0.25rem 0.6rem;
+    padding: 0.3rem 0.85rem;
     font-size: 0.75rem;
-    border-radius: 0.375rem;
+    line-height: 1.125rem;
   }
 
-  /* ---------------------------------------------------------------- 表单 */
+  /* ---------------------------------------------------------------- 输入框
+   * M3 OutlinedTextField：outline 描边，聚焦时转为 primary 并加粗。
+   * 圆角取 8px（M3 新版规范；4px 在 Web 上过尖）。 */
   .input {
     width: 100%;
-    border-radius: var(--radius-control);
-    border: 1px solid var(--color-line-strong);
-    background-color: var(--color-surface);
-    padding: 0.5rem 0.75rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-outline);
+    background-color: transparent;
+    padding: 0.55rem 0.85rem;
     font-size: 0.875rem;
-    color: var(--color-ink);
+    color: var(--color-on-surface);
     transition:
-      border-color 150ms ease,
-      box-shadow 150ms ease;
+      border-color var(--duration-accelerate) var(--ease-standard),
+      box-shadow var(--duration-accelerate) var(--ease-standard);
   }
   .input::placeholder {
-    color: var(--color-ink-faint);
+    color: var(--color-on-surface-variant);
   }
   .input:focus {
     outline: none;
-    border-color: var(--color-accent);
-    /* 聚焦时给一圈淡光晕，比单纯换边框色更明确 */
-    box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-accent) 18%, transparent);
+    border-color: var(--color-primary);
+    /* 用 inset shadow 加粗描边，不改变布局 */
+    box-shadow: inset 0 0 0 1px var(--color-primary);
   }
   .input:disabled {
-    opacity: 0.5;
+    opacity: var(--alpha-disabled);
     cursor: not-allowed;
   }
 
-  /* 原生 select 在深色下的箭头是黑的，必须替换 */
+  /* 原生 select 的箭头无法适配两套主题，必须替换 */
   select.input {
     appearance: none;
     padding-right: 2rem;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%239ba4b7' d='M6 8.5 2 4.5h8z'/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23938f99' d='M6 8.5 2 4.5h8z'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
-    background-position: right 0.65rem center;
+    background-position: right 0.7rem center;
   }
 
-  /* ---------------------------------------------------------------- 卡片与面板 */
+  /* ---------------------------------------------------------------- 卡片与面板
+   * Animeko 靠**表面层级**区分区块，描边只用在输入框与分割线上。
+   * 卡片圆角统一 `shapes.medium` = 12px。 */
   .panel {
-    border-radius: var(--radius-card);
-    border: 1px solid var(--color-line);
-    background-color: var(--color-surface);
+    border-radius: var(--radius-md);
+    background-color: var(--color-surface-container-low);
     padding: 1.25rem;
   }
 
-  /*
-   * 海报卡片。整体可点，悬停时轻微上浮 + 边框转强调色 ——
-   * 这是影音平台最核心的交互单元，值得做得有反馈感。
-   */
-  .poster-card {
-    display: block;
-    overflow: hidden;
-    border-radius: var(--radius-card);
-    border: 1px solid var(--color-line);
-    background-color: var(--color-surface);
-    transition:
-      transform 200ms cubic-bezier(0.2, 0, 0, 1),
-      border-color 200ms ease,
-      box-shadow 200ms ease;
-  }
-  .poster-card:hover {
-    transform: translateY(-3px);
-    border-color: var(--color-accent);
-    box-shadow: 0 8px 24px -8px color-mix(in oklab, var(--color-accent) 35%, transparent);
+  /* 功能性卡片（追番列表等）—— 比背景型卡片亮一层 */
+  .card-raised {
+    border-radius: var(--radius-md);
+    background-color: var(--color-surface-container-high);
   }
 
-  /* 海报图：固定 3:4，避免不同尺寸封面把网格撑得参差 */
+  /* 分割线用 outlineVariant，比描边整块轻 */
+  .divider {
+    border-color: var(--color-outline-variant);
+  }
+}
+
+/* ================================================================== *
+ * 条目卡片、徽标、提示条
+ * ================================================================== */
+@layer components {
+  /* ---------------------------------------------------------------- 条目卡片
+   * Animeko 的核心交互单元。封面 **9:16**（`SubjectCoverCard.kt`：
+   * `aspectRatio(9f / 16)`），不是海报常见的 3:4 —— 这条被写错会让整个
+   * 网格与参考实现差一截。
+   *
+   * 圆角 `shapes.large` = 16px（网格卡片）。 */
+  .subject-card {
+    position: relative;
+    display: block;
+    aspect-ratio: 9 / 16;
+    overflow: hidden;
+    border-radius: var(--radius-lg);
+    background-color: var(--color-surface-container);
+  }
+  /* Animeko 的卡片**没有** hover 抬起/缩放，只有 ripple。
+   * 只做一点点亮度反馈 —— 加阴影会在密集网格里显得很脏。 */
+  .subject-card:hover .subject-card__scrim {
+    background-image: var(--card-scrim-hover);
+  }
+
+  /* 底部渐变遮罩 + 文字。对应 `BasicCarouselItem` 的 `carouselBrush`：
+   * transparent 0% → transparent 33% → black@61.2% 100%，
+   * 内容 BottomStart、padding 16px、gap 4px。 */
+  .subject-card__scrim {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: 0.25rem;
+    padding: 0.75rem;
+    background-image: var(--card-scrim);
+    color: #ffffff;
+  }
+  /* titleMedium 16/24 Medium，maxLines=2 */
+  .subject-card__title {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+    font-size: 0.9375rem;
+    font-weight: 500;
+    line-height: 1.35;
+    text-shadow: 0 1px 3px rgb(0 0 0 / 0.7);
+  }
+  /* labelSmall 11/16，1 行省略 */
+  .subject-card__progress {
+    overflow: hidden;
+    font-size: 0.6875rem;
+    line-height: 1.45;
+    color: rgb(255 255 255 / 0.9);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  /* 「有新集」时的播放角标 —— Animeko 唯一的卡片角标，
+   * **没有评分角标、没有集数徽标**。 */
+  .subject-card__play {
+    position: absolute;
+    right: 0.5rem;
+    bottom: 0.5rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 999px;
+    background-color: var(--color-secondary-container);
+    color: var(--color-on-secondary-container);
+  }
+  .subject-card__play:hover {
+    background-color: color-mix(in oklab, var(--color-secondary-container) 80%, var(--color-on-secondary-container));
+  }
+
+  /* 详情页封面用 Bangumi 原图比例 849/1200 ≈ 0.7075，
+   * 与卡片的 9:16 裁切不同（`SubjectDetailsHeader.kt`）。 */
   .poster-image {
-    aspect-ratio: 3 / 4;
+    aspect-ratio: 849 / 1200;
     width: 100%;
     object-fit: cover;
-    background-color: var(--color-surface-2);
+    background-color: var(--color-surface-container);
   }
 
-  /* ---------------------------------------------------------------- 徽标 */
+  /* 压在封面上的角标。用 scrim 半透明底保证在任意画面上可读，
+   * 而不是靠文字阴影 —— 后者在浅色海报上会失效。 */
+  .poster-badge {
+    position: absolute;
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    background-color: color-mix(in oklab, var(--color-scrim) 72%, transparent);
+    padding: 0.1rem 0.5rem;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    line-height: 1.25rem;
+    color: #ffffff;
+    backdrop-filter: blur(4px);
+  }
+
+  /* ---------------------------------------------------------------- 徽标
+   * M3 AssistChip 的形态：小圆角 + tonal 底。 */
   .badge {
     display: inline-flex;
     align-items: center;
     gap: 0.25rem;
-    border-radius: 999px;
+    border-radius: var(--radius-sm);
     padding: 0.1rem 0.5rem;
     font-size: 0.75rem;
     line-height: 1.5;
-    background-color: var(--color-surface-3);
-    color: var(--color-ink-muted);
+    background-color: var(--color-surface-container-highest);
+    color: var(--color-on-surface-variant);
     white-space: nowrap;
   }
   .badge-accent {
-    background-color: var(--color-accent-dim);
-    color: #fbcfe8;
+    background-color: var(--color-primary-container);
+    color: var(--color-on-primary-container);
   }
   .badge-success {
-    background-color: color-mix(in oklab, var(--color-success) 20%, transparent);
-    color: var(--color-success);
+    background-color: var(--color-tertiary-container);
+    color: var(--color-on-tertiary-container);
   }
   .badge-warn {
-    background-color: color-mix(in oklab, var(--color-warn) 20%, transparent);
-    color: var(--color-warn);
+    background-color: var(--color-secondary-container);
+    color: var(--color-on-secondary-container);
   }
   .badge-danger {
-    background-color: color-mix(in oklab, var(--color-danger) 20%, transparent);
-    color: var(--color-danger);
+    background-color: var(--color-error-container);
+    color: var(--color-on-error-container);
   }
 
-  /* ---------------------------------------------------------------- 提示条 */
-  /* 语义化的提示块 —— 原先是内联的 border-red-900 bg-red-950/40 这种组合 */
+  /* ---------------------------------------------------------------- 提示条
+   * Animeko 用 M3 的 container 色对（容器底 + on 色文字），语义清晰
+   * 且在两套主题下都成立。 */
   .alert {
-    border-radius: var(--radius-control);
-    border: 1px solid var(--color-line-strong);
-    background-color: var(--color-surface-2);
-    padding: 0.65rem 0.9rem;
+    border-radius: var(--radius-md);
+    padding: 0.8rem 1rem;
     font-size: 0.875rem;
-    color: var(--color-ink-muted);
+    background-color: var(--color-surface-container-high);
+    color: var(--color-on-surface-variant);
   }
   .alert-danger {
-    border-color: color-mix(in oklab, var(--color-danger) 35%, transparent);
-    background-color: color-mix(in oklab, var(--color-danger) 10%, transparent);
-    color: #fca5a5;
+    background-color: var(--color-error-container);
+    color: var(--color-on-error-container);
   }
   .alert-warn {
-    border-color: color-mix(in oklab, var(--color-warn) 35%, transparent);
-    background-color: color-mix(in oklab, var(--color-warn) 10%, transparent);
-    color: #fcd34d;
+    background-color: var(--color-secondary-container);
+    color: var(--color-on-secondary-container);
   }
   .alert-success {
-    border-color: color-mix(in oklab, var(--color-success) 35%, transparent);
-    background-color: color-mix(in oklab, var(--color-success) 10%, transparent);
-    color: #6ee7b7;
+    background-color: var(--color-tertiary-container);
+    color: var(--color-on-tertiary-container);
   }
 
-  /* ---------------------------------------------------------------- 区块标题 */
+  /* ---------------------------------------------------------------- 排版辅助 */
   .section-title {
     display: flex;
     align-items: baseline;
     gap: 0.75rem;
-    font-size: 1.125rem;
+    /* M3 titleLarge: 22sp */
+    font-size: 1.375rem;
     font-weight: 600;
+    line-height: 1.75rem;
   }
 
-  /* 次要说明文字 */
+  /* M3 bodySmall。用于辅助说明 —— 用 onSurfaceVariant 而不是更暗的自定义色，
+   * 因为 M3 的角色色已保证对比度达标。 */
   .hint {
     font-size: 0.75rem;
-    color: var(--color-ink-faint);
-    line-height: 1.6;
+    line-height: 1.45;
+    color: var(--color-on-surface-variant);
   }
 
-  /* 侧边强调条 —— 用于"这条很重要"的提示，比整块变色更克制 */
+  /* 左侧强调条 —— 用于「这条很重要」的提示，比整块变色克制 */
   .accent-bar {
-    border-left: 3px solid var(--color-accent);
+    border-left: 3px solid var(--color-primary);
+  }
+}
+
+/* ================================================================== *
+ * Animeko 布局原语：页面容器、自适应网格、导航栏、Hero 轮播、骨架屏
+ * ================================================================== */
+@layer components {
+  /* ---------------------------------------------------------------- 页面容器
+   * `ExplorationScreen` 用 `widthIn(max = 1300.dp)` 居中，水平内边距
+   * 紧凑 16px / 否则 24px（`paneHorizontalPadding`）。 */
+  .page-shell {
+    width: 100%;
+    max-width: 1300px;
+    margin-inline: auto;
+    padding-inline: 1rem;
+  }
+  @media (min-width: 600px) {
+    .page-shell {
+      padding-inline: 1.5rem;
+    }
+  }
+
+  /* ---------------------------------------------------------------- 区块标题
+   * `NavTitleHeader`：headlineSmall、高 ≥48px 垂直居中，
+   * 右侧可放动作按钮。 */
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-height: 3rem;
+    margin-block: 0.75rem 0.5rem;
+  }
+  .section-header__title {
+    font-size: 1.25rem;
+    font-weight: 400;
+    line-height: 1.75rem;
+    letter-spacing: 0;
+  }
+
+  /* ---------------------------------------------------------------- 自适应网格
+   * 精确复刻 `SubjectGridDefaults.coverLayoutParameters` 的
+   * `GridCells.Adaptive(minSize)` —— 列数 = floor((宽 + gap) / (min + gap))。
+   *
+   * | 条件            | minSize | gap |
+   * |-----------------|---------|-----|
+   * | 宽 <600 或 高<480 | 100px   | 8px |
+   * | 宽 ≥600         | 128px   | 12px|
+   * | 宽 ≥840         | 150px   | 16px|
+   * | 宽 ≥1200        | 180px   | 16px| */
+  .subject-grid {
+    display: grid;
+    gap: 0.5rem;
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  }
+  @media (min-width: 600px) {
+    .subject-grid {
+      gap: 0.75rem;
+      grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+    }
+  }
+  @media (min-width: 840px) {
+    .subject-grid {
+      gap: 1rem;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    }
+  }
+  @media (min-width: 1200px) {
+    .subject-grid {
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    }
+  }
+
+  /* 横向滚动行（「继续观看」）。`FollowedSubjectsLazyRow` 的卡片宽度
+   * 按尺寸类 120/140/160px，同样 9:16。 */
+  .card-row {
+    display: flex;
+    gap: 0.5rem;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    padding-bottom: 0.5rem;
+    scrollbar-width: thin;
+  }
+  .card-row > * {
+    flex: 0 0 auto;
+    width: 7.5rem;
+    scroll-snap-align: start;
+  }
+  @media (min-width: 600px) {
+    .card-row {
+      gap: 0.75rem;
+    }
+    .card-row > * {
+      width: 8.75rem;
+    }
+  }
+  @media (min-width: 840px) {
+    .card-row {
+      gap: 1rem;
+    }
+    .card-row > * {
+      width: 10rem;
+    }
+  }
+
+  /* ---------------------------------------------------------------- Hero 轮播
+   * `TrendingSubjectsCarousel`：`HorizontalCenteredHeroCarousel`
+   * maxItemWidth 300px（≥medium）/ 240px，间距 8px，圆角 `extraLarge` = 28px。 */
+  .hero-carousel {
+    display: flex;
+    gap: 0.5rem;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    padding-bottom: 0.5rem;
+  }
+  .hero-card {
+    position: relative;
+    flex: 0 0 auto;
+    width: 15rem;
+    aspect-ratio: 9 / 16;
+    overflow: hidden;
+    border-radius: var(--radius-xl);
+    background-color: var(--color-surface-container);
+    scroll-snap-align: center;
+  }
+  @media (min-width: 600px) {
+    .hero-card {
+      width: 18.75rem;
+    }
+  }
+  /* Hero 上的标题用 titleMedium 且允许 2 行；内边距 16px */
+  .hero-card .subject-card__scrim {
+    padding: 1rem;
+  }
+  .hero-card .subject-card__title {
+    font-size: 1rem;
+    line-height: 1.5rem;
+  }
+
+  /* ---------------------------------------------------------------- 骨架屏
+   * 对应 `Modifier.placeholder`：底色 = 内容色 @10% 叠在 surface 上，
+   * 默认 fade 高亮（`highlightColor = surface @30%`）无限循环，圆角 8px。
+   *
+   * 不用转圈 —— Animeko 全站没有转圈加载态。 */
+  .skeleton {
+    border-radius: var(--radius-sm);
+    background-color: color-mix(in oklab, var(--color-on-surface) 10%, var(--color-surface-container-low));
+    animation: skeleton-fade 1.5s ease-in-out infinite;
+  }
+  @keyframes skeleton-fade {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.55;
+    }
+  }
+  .skeleton-cover {
+    aspect-ratio: 9 / 16;
+    border-radius: var(--radius-lg);
+  }
+  /* 尊重「减少动态效果」偏好 —— 无限动画对前庭敏感用户不友好 */
+  @media (prefers-reduced-motion: reduce) {
+    .skeleton {
+      animation: none;
+    }
+  }
+}
+
+/* ================================================================== *
+ * 导航：宽屏 NavigationRail、窄屏 NavigationBar
+ * (`AniNavigationSuiteLayout.calculateLayoutType`)
+ * ================================================================== */
+@layer components {
+  .app-shell {
+    display: flex;
+    min-height: 100vh;
+    width: 100%;
+  }
+
+  /* ---- 侧边栏（≥840px）---- */
+  .nav-rail {
+    display: none;
+    flex-direction: column;
+    flex: 0 0 auto;
+    width: 5rem;
+    gap: 0.75rem;
+    border-right: 1px solid var(--color-outline-variant);
+    background-color: var(--color-surface-container);
+    padding: 0.75rem 0;
+  }
+  @media (min-width: 840px) {
+    .nav-rail {
+      display: flex;
+    }
+  }
+  /* 展开态：给标签留位置 */
+  @media (min-width: 1200px) {
+    .nav-rail {
+      width: 13rem;
+      align-items: stretch;
+      padding-inline: 0.75rem;
+    }
+  }
+
+  .nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.375rem 0.25rem;
+    font-size: 0.6875rem;
+    line-height: 1.2;
+    color: var(--color-on-surface-variant);
+    transition: color var(--duration-accelerate) var(--ease-standard);
+  }
+  @media (min-width: 1200px) {
+    .nav-item {
+      flex-direction: row;
+      gap: 0.75rem;
+      border-radius: 999px;
+      padding: 0.75rem 1rem;
+      font-size: 0.875rem;
+    }
+  }
+  /* M3 NavigationRail 的选中态是**药丸形 tonal 底**，不是只有变色。
+   * 图标容器圆角与药丸一致。 */
+  .nav-item__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 3.5rem;
+    height: 2rem;
+    border-radius: 999px;
+    transition: background-color var(--duration-accelerate) var(--ease-standard);
+  }
+  @media (min-width: 1200px) {
+    .nav-item__icon {
+      width: 1.5rem;
+      height: 1.5rem;
+      border-radius: 0;
+      margin-left: -0.75rem;
+    }
+  }
+  .nav-item:hover {
+    color: var(--color-on-surface);
+  }
+  .nav-item:hover .nav-item__icon {
+    background-color: color-mix(in oklab, var(--color-on-surface) 8%, transparent);
+  }
+  .nav-item[aria-current="page"] {
+    color: var(--color-on-surface);
+  }
+  .nav-item[aria-current="page"] .nav-item__icon {
+    background-color: var(--color-secondary-container);
+    color: var(--color-on-secondary-container);
+  }
+  @media (min-width: 1200px) {
+    .nav-item[aria-current="page"] {
+      background-color: var(--color-secondary-container);
+      color: var(--color-on-secondary-container);
+    }
+    .nav-item[aria-current="page"] .nav-item__icon {
+      background-color: transparent;
+    }
+  }
+
+  /* ---- 底部栏（<840px）---- */
+  .nav-bar {
+    position: fixed;
+    inset-inline: 0;
+    bottom: 0;
+    z-index: 40;
+    display: flex;
+    align-items: stretch;
+    border-top: 1px solid var(--color-outline-variant);
+    background-color: var(--color-surface-container);
+    /* 给 iOS 的 home indicator 留空间 */
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+  @media (min-width: 840px) {
+    .nav-bar {
+      display: none;
+    }
+  }
+  .nav-bar .nav-item {
+    flex: 1;
+    padding: 0.5rem 0.25rem;
+  }
+
+  /* ---- 内容区 ---- */
+  .app-main {
+    flex: 1;
+    min-width: 0;
+  }
+  /* 底部栏是 fixed，给内容留出高度，否则最后一行永远被遮住 */
+  @media (max-width: 839px) {
+    .app-main {
+      padding-bottom: 4.5rem;
+    }
+  }
+}
+
+/* ================================================================== *
+ * 条目详情页：封面虚化背景 + 章节格
+ * (`SubjectBlurredBackground` / `EpisodesSection`)
+ * ================================================================== */
+@layer components {
+  /* ---------------------------------------------------------------- 封面虚化背景
+   * Animeko 详情页最显眼的视觉标志：整张封面放大 + 高斯模糊，上面压一层
+   * 竖直渐变 —— 顶部只透出约 36% 的背景（surface@0xA2 ≈ 63.5% 遮盖），
+   * 到 40% 高度后完全变成页面底色。
+   *
+   * 用 `filter: blur()` 而不是预先模糊图片：无需额外资源，且任意封面都成立。
+   * `pointer-events: none` 是必需的 —— 它是纯装饰，不该吃掉点击。 */
+  .detail-backdrop {
+    position: absolute;
+    inset-inline: 0;
+    top: 0;
+    height: 26rem;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  .detail-backdrop__image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    /* 放大再裁切，避免模糊后在边缘露出底色 */
+    transform: scale(1.2);
+    filter: blur(32px) saturate(1.4);
+  }
+  .detail-backdrop__scrim {
+    position: absolute;
+    inset: 0;
+    background-image: linear-gradient(
+      to bottom,
+      color-mix(in oklab, var(--color-surface-container-lowest) 64%, transparent) 0%,
+      color-mix(in oklab, var(--color-surface-container-lowest) 64%, transparent) 40%,
+      var(--color-surface-container-lowest) 88%
+    );
+  }
+
+  /* ---------------------------------------------------------------- 评分
+   * Animeko：大数字 + 五星 + 「#排名 · N 人评分」 */
+  .rating-score {
+    font-size: 2rem;
+    font-weight: 600;
+    line-height: 1;
+    color: var(--color-primary);
+  }
+  .rating-stars {
+    display: inline-flex;
+    gap: 0.125rem;
+    color: var(--color-primary);
+  }
+
+  /* ---------------------------------------------------------------- 章节格
+   * `EpisodeGridCell`：圆角 12px、最小 80px 高。
+   * 选中 = primaryContainer 底 + primary 2px 描边；
+   * 已看 = surfaceContainerLow 底 + 次要文字色。 */
+  .episode-grid {
+    display: grid;
+    gap: 0.5rem;
+    grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+  }
+  .episode-cell {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    min-height: 5rem;
+    border-radius: var(--radius-md);
+    border: 2px solid transparent;
+    background-color: var(--color-surface-container-low);
+    padding: 0.625rem 0.75rem;
+    text-align: left;
+    transition: background-color var(--duration-accelerate) var(--ease-standard);
+  }
+  .episode-cell:hover {
+    background-color: var(--color-surface-container);
+  }
+  .episode-cell[aria-current="true"] {
+    background-color: var(--color-primary-container);
+    border-color: var(--color-primary);
+    color: var(--color-on-primary-container);
+  }
+  /* 已看：底色更暗、文字更弱 —— 扫视时能一眼分出进度 */
+  .episode-cell[data-watched="true"] {
+    background-color: var(--color-surface-container);
+    color: color-mix(in oklab, var(--color-on-surface-variant) 70%, transparent);
+  }
+  .episode-cell__number {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    opacity: 0.75;
+  }
+  .episode-cell__title {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+    font-size: 0.8125rem;
+    line-height: 1.35;
+  }
+  .episode-cell__meta {
+    margin-top: auto;
+    font-size: 0.6875rem;
+    color: var(--color-on-surface-variant);
+  }
+  .episode-cell[aria-current="true"] .episode-cell__meta {
+    color: color-mix(in oklab, var(--color-on-primary-container) 80%, transparent);
   }
 }
