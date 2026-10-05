@@ -186,7 +186,25 @@ model Collection {
   rating    Int?
   /** 来源：bgm = 从 Bangumi 导入，local = 站内修改 */
   source    String   @default("bgm")
+  /**
+   * 本地的最后修改时间（Prisma `@updatedAt` 自动维护）。
+   *
+   * 任何编辑都会刷新它 —— 因此它**不是**「加入收藏的时间」，
+   * 按它排序等于按「最近动过」排序。
+   */
   updatedAt DateTime @updatedAt
+
+  /**
+   * 加入收藏的时间（来自 Bangumi 收藏记录的 `updated_at`）。
+   *
+   * 为什么不能复用 `updatedAt`：那是 Prisma 自动维护的**本地**修改时间，
+   * 改一次评分或评论就会刷新，于是「按加入时间排序」会变成「按最近动过排序」——
+   * 那正是用户抱怨排序选项缺失时要的那个语义，用错了等于没修。
+   *
+   * 可空：站内手动添加的收藏没有上游时间；导入时若上游缺该字段也为空。
+   * 排序时用 `nulls: "last"` 让这些条目垫底，而不是混在中间。
+   */
+  collectedAt DateTime?
 
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
@@ -194,6 +212,8 @@ model Collection {
   @@unique([userId, subjectId])
   @@index([subjectId, type])
   @@index([userId, type])
+  /// 追番页按「加入时间」排序时走这个索引，避免全表排序
+  @@index([userId, collectedAt])
 }
 
 /// 单集进度。type: 0未看 1想看 2看过 3抛弃（对齐 BGM EpisodeCollectionType）

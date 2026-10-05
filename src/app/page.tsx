@@ -143,12 +143,7 @@ export default async function HomePage({
     <div className="space-y-6">
       <section className="space-y-4">
         {!isSearching && (
-          <div className="space-y-1">
-            <h1 className="text-2xl font-normal">探索</h1>
-            <p className="text-sm text-on-surface-variant">
-              条目与章节数据来自 Bangumi；弹幕与评论由本站自建，可按本校筛选。
-            </p>
-          </div>
+          <h1 className="text-2xl font-normal">探索</h1>
         )}
 
         <form action="/" method="get" className="space-y-3">

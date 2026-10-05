@@ -24,6 +24,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
+import { parseCollectedAt } from "@/lib/bgm/collected-at";
 import { subjectFieldsFromDetail, subjectFieldsFromSlim } from "@/lib/bgm/subject-fields";
 import { parseIsoDate } from "@/lib/date";
 import {
@@ -171,22 +172,43 @@ async function upsertSlimSubject(item: UserSubjectCollection): Promise<void> {
   });
 }
 
-/** 写收藏关系。调用前必须保证对应 `Subject` 已存在（外键）。 */
+/**
+ * 写收藏关系。调用前必须保证对应 `Subject` 已存在（外键）。
+ *
+ * ## `collectedAt` 来自哪里
+ *
+ * BGM 的收藏接口**没有** `created_at` —— 唯一的字段是 `updated_at`
+ * （「最后修改时间」）。这也是 BGM 自己站内「收藏时间」排序所用的值：
+ * 对绝大多数「加进去就没再动过」的条目，它就等于加入收藏的时间。
+ *
+ * 因此我们存它、并在界面上叫「加入时间」—— 与用户的说法和 BGM 的惯例一致。
+ * 别指望它是精确的「创建时间」，这一点在字段注释里已写明。
+ *
+ * `collectedAt` 是**条件键**：上游没给或解析不出来时整个键缺席。
+ * 不然一次「上游少了这个字段」的导入会把已有时间清成 null，
+ * 排序随即全乱 —— 与本项目此前踩过的 `ratingTotal` / `airDate` 完全同类。
+ */
 async function upsertCollection(
   userId: string,
   item: UserSubjectCollection,
 ): Promise<void> {
+  const collectedAt = parseCollectedAt(item.updated_at);
+
   const fields = {
     type: item.type,
     comment: item.comment ?? null,
     rating: item.rate || null,
+    ...(collectedAt ? { collectedAt } : {}),
   };
+
   await prisma.collection.upsert({
     where: { userId_subjectId: { userId, subjectId: item.subject_id } },
     create: { userId, subjectId: item.subject_id, source: "bgm", ...fields },
     update: fields,
   });
 }
+
+
 
 /* ------------------------------------------------------------------ *
  * 访问时补齐
