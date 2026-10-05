@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionUser, requireSessionUser } from "@/lib/auth/session";
 import { isBlocked } from "@/lib/danmaku/filter";
+import { listCollectionComments } from "@/lib/review/collection-comments";
 import {
   ReviewKind,
   countReviews,
@@ -56,7 +57,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "仅看本校评论需要登录" }, { status: 401 });
   }
 
-  const [reviews, total, schoolTotal] = await Promise.all([
+  const [reviews, total, schoolTotal, collectionComments] = await Promise.all([
     listReviews({
       subjectId: query.subjectId,
       kind: query.kind as ReviewKindValue | undefined,
@@ -69,6 +70,18 @@ export async function GET(request: Request) {
     sessionUser
       ? countReviews(query.subjectId, sessionUser.schoolId)
       : Promise.resolve(0),
+    /*
+     * 收藏短评（`Collection.comment`）—— 详情页原先完全不显示它们，
+     * 导致「我在 BGM 上写的短评」只在时光机出现。见该模块的说明。
+     * 单次取一页足够：一个条目的收藏短评很少超过几十条。
+     */
+    listCollectionComments({
+      subjectId: query.subjectId,
+      viewerId: sessionUser?.id ?? null,
+      schoolOnly,
+      schoolId: sessionUser?.schoolId,
+      limit: 50,
+    }).catch(() => []),
   ]);
 
   return NextResponse.json({
@@ -77,6 +90,8 @@ export async function GET(request: Request) {
     schoolTotal,
     schoolOnly,
     data: reviews,
+    /** 与 `data` 是**两个来源**，前端各标各的来源、合并按时间排序。 */
+    collectionComments,
   });
 }
 

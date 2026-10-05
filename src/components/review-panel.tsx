@@ -3,6 +3,25 @@
 import { useCallback, useEffect, useState } from "react";
 import InlineConfirm from "@/components/inline-confirm";
 
+/**
+ * 收藏短评（`Collection.comment`）。
+ *
+ * 与 `ReviewItem` 是**两个来源**：一个写在 Bangumi 的收藏里（导入带入），
+ * 一个写在本站的评论表单里。详情页此前只显示后者，于是「我在 BGM 写的短评」
+ * 在详情页找不到 —— 见 `@/lib/review/collection-comments`。
+ */
+export interface CollectionCommentItem {
+  id: string;
+  comment: string;
+  rating: number | null;
+  statusLabel: string;
+  authorName: string;
+  authorAvatar: string | null;
+  schoolId: string;
+  isMine: boolean;
+  at: string;
+}
+
 export interface ReviewItem {
   id: string;
   kind: number;
@@ -36,6 +55,8 @@ interface Props {
 /** 评论 / 影评面板。支持「只看本校」，与弹幕共用同一套 schoolId 边界。 */
 export default function ReviewPanel({ subjectId, canInteract, schoolId }: Props) {
   const [reviews, setReviews] = useState<ReviewItem[]>([]);
+  /** 收藏短评 —— 与 `reviews` 分开存，渲染时按时间合并。 */
+  const [collectionComments, setCollectionComments] = useState<CollectionCommentItem[]>([]);
   const [total, setTotal] = useState(0);
   const [schoolTotal, setSchoolTotal] = useState(0);
   const [schoolOnly, setSchoolOnly] = useState(false);
@@ -76,11 +97,18 @@ export default function ReviewPanel({ subjectId, canInteract, schoolId }: Props)
           data?: ReviewItem[];
           total?: number;
           schoolTotal?: number;
+          /** 收藏短评 —— 与 `data` 是两个来源，见类型定义处的说明。 */
+          collectionComments?: CollectionCommentItem[];
           error?: string;
         };
         if (!response.ok) throw new Error(body.error ?? "加载失败");
 
         setReviews((previous) => (append ? [...previous, ...(body.data ?? [])] : (body.data ?? [])));
+        /*
+         * 收藏短评**只在首屏取**（不参与分页）—— 一个条目的收藏短评很少超过
+         * 几十条，且它们不是本站在管理的 UGC，不需要逐页浏览。
+         */
+        if (!append) setCollectionComments(body.collectionComments ?? []);
         setTotal(body.total ?? 0);
         setSchoolTotal(body.schoolTotal ?? 0);
       } catch (e) {
@@ -248,13 +276,50 @@ export default function ReviewPanel({ subjectId, canInteract, schoolId }: Props)
       )}
 
       <ul className="space-y-3">
-        {loading && reviews.length === 0 && (
+        {loading && reviews.length === 0 && collectionComments.length === 0 && (
           <li className="text-sm text-on-surface-variant/70">加载中…</li>
         )}
-        {!loading && reviews.length === 0 && (
+        {!loading && reviews.length === 0 && collectionComments.length === 0 && (
           <li className="text-sm text-on-surface-variant/70">
             {schoolOnly ? "本校还没有人评论这部番。" : "还没有评论。"}
           </li>
+        )}
+
+        {/*
+          收藏短评（`Collection.comment`）—— 在 Bangumi 收藏时顺手写的那句话。
+          与下面的「本站在建的评论」是两个来源，因此单独一组、标明出处：
+          用户此前找不到自己写过的短评，就是因为它们原先只在时光机出现。
+          本组永远排在前面（「我的」优先），组内按本站写的在前。
+        */}
+        {collectionComments.length > 0 && (
+          <li className="pt-1 text-xs text-on-surface-variant">
+            本站用户在 Bangumi 写的短评
+          </li>
+        )}
+        {collectionComments.map((item) => (
+          <li key={item.id} className="panel">
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className="rounded bg-secondary-container px-1.5 py-0.5 text-on-secondary-container">
+                {item.isMine ? "我的短评" : "Bangumi"}
+              </span>
+              {schoolId && item.schoolId === schoolId && (
+                <span className="rounded bg-primary-container/70 px-1.5 py-0.5 text-primary">
+                  本校
+                </span>
+              )}
+              <span className="text-on-surface-variant">{item.authorName}</span>
+              <span className="text-on-surface-variant/70">{item.statusLabel}</span>
+              {item.rating !== null && <span className="text-secondary">{item.rating} 分</span>}
+              <span className="ml-auto text-on-surface-variant/70">
+                {new Date(item.at).toLocaleDateString("zh-CN")}
+              </span>
+            </div>
+            <p className="mt-1 whitespace-pre-wrap text-sm text-on-surface">{item.comment}</p>
+          </li>
+        ))}
+
+        {reviews.length > 0 && (
+          <li className="pt-1 text-xs text-on-surface-variant">本站评论</li>
         )}
         {reviews.map((review) => (
           <li key={review.id} className="panel">
