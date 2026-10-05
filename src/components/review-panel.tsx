@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import InlineConfirm from "@/components/inline-confirm";
 
 export interface ReviewItem {
   id: string;
@@ -44,6 +45,13 @@ export default function ReviewPanel({ subjectId, canInteract, schoolId }: Props)
   const [rating, setRating] = useState<number | "">("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  /**
+   * 是否正在等待发布确认。
+   *
+   * 发布是**不可撤销**的（写进库、所有人可见），而「发布」按钮紧跟在
+   * 文本框下方 —— 手机上很容易在收键盘时误触。用户明确要求二次确认。
+   */
+  const [confirming, setConfirming] = useState(false);
 
   /**
    * 拉一页评论。
@@ -112,6 +120,7 @@ export default function ReviewPanel({ subjectId, canInteract, schoolId }: Props)
 
   const submit = async () => {
     if (!content.trim()) return;
+    setConfirming(false);
     setError(null);
     try {
       const response = await fetch("/api/reviews", {
@@ -206,13 +215,30 @@ export default function ReviewPanel({ subjectId, canInteract, schoolId }: Props)
 
           <button
             type="button"
-            onClick={() => void submit()}
-            disabled={content.trim().length === 0}
-            className="rounded bg-primary px-5 py-2 text-sm font-medium text-white hover:bg-primary disabled:opacity-40"
+            onClick={() => setConfirming(true)}
+            disabled={content.trim().length === 0 || confirming}
+            className="btn btn-primary"
           >
             发布
           </button>
         </div>
+      )}
+
+      {/*
+        二次确认。发布不可撤销，而按钮就在文本框下方 —— 手机上收键盘时
+        容易误触。确认条里写明**是短评还是影评、多少字**，让用户能核对。
+      */}
+      {confirming && (
+        <InlineConfirm
+          title={`发布这条${kind === 1 ? "影评" : "短评"}？`}
+          detail={`${content.trim().length} 字${rating === "" ? "" : ` · 打 ${rating} 分`}${
+            kind === 1 && title.trim() ? ` · 标题「${title.trim()}」` : ""
+          }。发布后所有人都能看到，且无法撤回。`}
+          confirmLabel="确认发布"
+          busy={loading}
+          onConfirm={() => void submit()}
+          onCancel={() => setConfirming(false)}
+        />
       )}
 
       {error && (

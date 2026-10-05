@@ -3,7 +3,9 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { IconStar } from "@/components/icons";
+import InlineConfirm from "@/components/inline-confirm";
 import { CollectionStatus } from "@/lib/collection";
+import { describeRatingChange } from "@/lib/rating-change";
 
 interface Props {
   subjectId: number;
@@ -35,8 +37,9 @@ interface Props {
  *
  * ## 交互取舍
  *
- * 十档星星太挤，用**一排 1–10 的数字按钮**：点一下即提交，点当前值则清除。
- * 比下拉框少一次点击，也比滑杆精确（滑杆在触屏上很难停准）。
+ * 十档星星太挤，用**一排 1–10 的数字按钮**（比下拉框少一次点击，也比滑杆
+ * 精确）。但按钮紧挨着，触屏上极易点错相邻一格 —— 因此**点击只是暂存**，
+ * 界面上明确显示这次会改变什么，再点「确认」才写库。见 `InlineConfirm`。
  */
 export default function RatingPicker({
   subjectId,
@@ -48,11 +51,29 @@ export default function RatingPicker({
   const [rating, setRating] = useState<number | null>(initialRating);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * 已暂存、等待确认的分数。
+   *
+   * `undefined` 表示没有待确认的操作；`null` 是一个**有效值**（清除评分），
+   * 因此不能只用 `null` 表示「无」。
+   */
+  const [staged, setStaged] = useState<number | null | undefined>(undefined);
 
-  const choose = async (value: number) => {
+  /**
+   * 点击某个分数 —— **只暂存，不提交**。
+   *
+   * 点当前值 = 取消评分（与多数平台的星评一致）。
+   */
+  const stage = (value: number) => {
     if (!canInteract || pending) return;
-    // 点当前值 = 取消评分（与多数平台的星评一致）
-    const next = rating === value ? null : value;
+    setError(null);
+    setStaged(rating === value ? null : value);
+  };
+
+  /** 确认后真正提交。 */
+  const commit = async () => {
+    if (!canInteract || pending || staged === undefined) return;
+    const next = staged;
     const previous = rating;
     setRating(next); // 乐观更新，失败时回滚
     setPending(true);
@@ -80,6 +101,7 @@ export default function RatingPicker({
         const body = (await response.json()) as { error?: string };
         throw new Error(body.error ?? "保存失败");
       }
+      setStaged(undefined);
       router.refresh();
     } catch (e) {
       setRating(previous);
@@ -88,6 +110,9 @@ export default function RatingPicker({
       setPending(false);
     }
   };
+
+  /** 待确认时展示的说明 —— 由纯函数算，见 `@/lib/rating-change`。 */
+  const change = staged === undefined ? null : describeRatingChange(rating, staged, currentStatus);
 
   return (
     <section className="panel">
@@ -101,18 +126,23 @@ export default function RatingPicker({
       <div className="flex flex-wrap gap-1" role="group" aria-label="我的评分">
         {Array.from({ length: 10 }, (_, index) => index + 1).map((value) => {
           const active = rating === value;
+          // 暂存的分数用虚线框高亮 —— 与「已保存」的实心色区分开，
+          // 否则用户会以为已经写进去了
+          const stagedNow = staged === value && staged !== undefined && staged !== rating;
           return (
             <button
               key={value}
               type="button"
-              onClick={() => void choose(value)}
+              onClick={() => stage(value)}
               disabled={!canInteract || pending}
               aria-pressed={active}
               aria-label={`打 ${value} 分`}
-              className={`min-w-8 rounded-md px-1.5 py-1 font-mono text-xs transition-colors ${
+              className={`min-w-8 rounded-md border px-1.5 py-1 font-mono text-xs transition-colors ${
                 active
-                  ? "bg-primary text-on-primary"
-                  : "bg-surface-container-high text-on-surface-variant hover:bg-secondary-container hover:text-on-secondary-container"
+                  ? "border-primary bg-primary text-on-primary"
+                  : stagedNow
+                    ? "border-primary bg-surface-container-high text-primary"
+                    : "border-transparent bg-surface-container-high text-on-surface-variant hover:bg-secondary-container hover:text-on-secondary-container"
               } disabled:opacity-50`}
             >
               {value}
@@ -121,14 +151,26 @@ export default function RatingPicker({
         })}
       </div>
 
+      {change && (
+        <div className="mt-3">
+          <InlineConfirm
+            title={change.title}
+            detail={change.detail}
+            busy={pending}
+            onConfirm={() => void commit()}
+            onCancel={() => setStaged(undefined)}
+          />
+        </div>
+      )}
+
       <p className="mt-2 flex items-center gap-1 text-[0.6875rem] text-on-surface-variant">
         {rating !== null ? (
           <>
             <IconStar size={12} filled />
-            再点一次同一个分数可以取消评分。
+            点一个分数，确认后生效。再点一次当前分数可以取消评分。
           </>
         ) : canInteract ? (
-          "点一个分数即可评分，不需要写评论。"
+          "点一个分数，确认后生效。评分不需要写评论。"
         ) : (
           "登录后可以评分。"
         )}
