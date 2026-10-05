@@ -7,6 +7,7 @@ import { CollectionStatus } from "@/lib/collection";
 import { prisma } from "@/lib/prisma";
 import { SubjectType, searchSubjects, withRetry } from "@/lib/bgm/client";
 import { BGM_MAX_PAGE_SIZE, pageCount, pageOffset } from "@/lib/bgm/paging";
+import { recommendQuery } from "@/lib/bgm/recommend";
 
 export const metadata: Metadata = {
   title: "探索",
@@ -23,17 +24,6 @@ const SORTS = [
 /** 空状态下的快捷标签 —— 给不愿打字的用户一个入口。 */
 const QUICK_TAGS = ["机战", "日常", "奇幻", "恋爱", "科幻", "治愈"];
 
-
-/** 首页「热门趋势 / 推荐」共用的查询：近一年的动画，按收藏人数排序。 */
-const RECOMMEND_QUERY = {
-  keyword: "",
-  sort: "heat" as const,
-  filter: {
-    type: [SubjectType.Anime] as never,
-    air_date: [`>=${recentCutoff()}`],
-    nsfw: false,
-  },
-};
 
 /**
  * 取一页上游数据，失败时重试并**记录真实原因**。
@@ -99,7 +89,7 @@ export default async function HomePage({
   const [hero, recommended, watching] = await Promise.all([
     isSearching
       ? Promise.resolve(null)
-      : load(() => searchSubjects(RECOMMEND_QUERY, { limit: HERO_COUNT, offset: 0 }), "hero"),
+      : load(() => searchSubjects(recommendQuery(), { limit: HERO_COUNT, offset: 0 }), "hero"),
     load(
       () =>
         searchSubjects(
@@ -113,7 +103,7 @@ export default async function HomePage({
                   nsfw: false,
                 },
               }
-            : RECOMMEND_QUERY,
+            : recommendQuery(),
           {
             limit: BGM_MAX_PAGE_SIZE,
             // Hero 占掉前 8 条，推荐从第 9 条开始；搜索时没有 Hero，从头开始
@@ -368,14 +358,3 @@ export default async function HomePage({
   );
 }
 
-/**
- * 「近期」的起始日期 —— 取过去一年。
- *
- * 不取当季：当季作品数量太少（一季约 30 部），撑不满首页网格；
- * 一年窗口既有当季也有刚完结的高热作品。
- */
-function recentCutoff(): string {
-  const date = new Date();
-  date.setUTCFullYear(date.getUTCFullYear() - 1);
-  return date.toISOString().slice(0, 10);
-}
