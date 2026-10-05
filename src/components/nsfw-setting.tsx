@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import {
   DEFAULT_NSFW_PREFERENCE,
+  NSFW_COOKIE,
   NSFW_LABELS,
   parseNsfwCookie,
   writeNsfwCookie,
@@ -13,7 +14,9 @@ import {
 /** 读取当前 cookie 里的偏好（服务端已渲染过一次，这里只是拿来做初值）。 */
 function readCurrent(): NsfwPreference {
   if (typeof document === "undefined") return DEFAULT_NSFW_PREFERENCE;
-  const match = document.cookie.match(new RegExp(`(?:^|; )${"hit-ani-nsfw"}=([^;]*)`));
+  // 用导出的常量而不是字面量：cookie 名在写入侧（`writeNsfwCookie`）与本处
+  // 必须一致，抄两份的话改名时只改一处 —— 症状是「设置了但读不回来」。
+  const match = document.cookie.match(new RegExp(`(?:^|; )${NSFW_COOKIE}=([^;]*)`));
   return parseNsfwCookie(match?.[1]);
 }
 
@@ -56,15 +59,6 @@ export default function NsfwSetting() {
           </button>
         ))}
       </div>
-
-      <p className="text-xs text-on-surface-variant">
-        {/*
-          如实说明：Bangumi 的 nsfw 参数需要账号权限，无权限时会被静默忽略。
-          说成「显示全部 R18」会让用户以为是本站的问题。
-        */}
-        「显示」表示**不再主动过滤**。能不能查到 R18 条目取决于你 Bangumi 账号的
-        权限 —— 没有权限时 Bangumi 会忽略该选项，此时结果与「不显示」相同。
-      </p>
     </section>
   );
 }
