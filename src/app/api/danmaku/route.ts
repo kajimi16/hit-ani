@@ -4,7 +4,7 @@ import { UnauthorizedError, getSessionUser, requireSessionUser } from "@/lib/aut
 import { normalizeQuery, validateSendInput } from "@/lib/danmaku/engine";
 import { isBlocked } from "@/lib/danmaku/filter";
 import { danmakuRateLimiter } from "@/lib/danmaku/rate-limit";
-import { fetchExternalDanmaku } from "@/lib/danmaku/external";
+import { MAX_DANMAKU_PER_SOURCE, fetchExternalDanmaku } from "@/lib/danmaku/external";
 import { countDanmaku, createDanmaku, listDanmaku } from "@/lib/danmaku/repository";
 import { danmakuQuerySchema, danmakuSendSchema } from "@/lib/danmaku/schema";
 import { prisma } from "@/lib/prisma";
@@ -81,18 +81,39 @@ export async function GET(request: Request) {
    * 而这里原先只对 `local` 应用了 `take: limit` —— 于是 `?limit=100`
    * 实际返回 4920 条，浏览器要渲染几千个 DOM 节点。
    */
+  /*
+   * 外部弹幕（Animeko / dandanplay）。
+   *
+   * `maxItems` 与 `subjectId` 都必要（缺 subjectId 会让 dandanplay 整源被跳过）。
+   * 时间窗则**在合并时过滤** —— 外部源返回的是整集快照，
+   * 不按窗过滤会导致「传了 fromMs 却仍从第 0 秒返回」，
+   * 而按需补充（refill）正是靠 fromMs 分页的。
+   */
   const external = schoolOnly
     ? { items: [], sources: [], totalAvailable: 0 }
     : await fetchExternalDanmaku({
         episodeId: query.episodeId,
-        // dandanplay 需要条目信息做匹配；查得到才传
+        // dandanplay 需要条目信息做匹配；缺了该源会被整源跳过
         subjectId: await subjectIdOf(query.episodeId),
-        maxItems: effectiveQuery.limit,
+        /*
+         * 取**单源上限**而非 `limit`。
+         *
+         * 外部源返回的是整集快照，若在这里就按 `limit` 截断，
+         * 后面的时间窗过滤会把它切成空 —— 例如窗口从第 17 分钟起，
+         * 而前 2000 条只覆盖到第 17 分钟，过滤后什么也不剩。
+         *
+         * 正确的顺序是：取全量（缓存的，不额外请求）→ 按窗过滤 → 合并时再截断。
+         */
+        maxItems: MAX_DANMAKU_PER_SOURCE,
       }).catch(() => ({ items: [], sources: [], totalAvailable: 0 }));
+
+  const inWindow = (playTimeMs: number): boolean =>
+    (effectiveQuery.fromMs === undefined || playTimeMs >= effectiveQuery.fromMs) &&
+    (effectiveQuery.toMs === undefined || playTimeMs <= effectiveQuery.toMs);
 
   // 合并后按时间排序，让本地与外部弹幕交织在同一条时间轴上。
   // 再截一次：本地与外部各自可能都接近上限，合并后会超。
-  const merged = [...local, ...external.items]
+  const merged = [...local, ...external.items.filter((d) => inWindow(d.playTimeMs))]
     .sort((a, b) => a.playTimeMs - b.playTimeMs || (a.id < b.id ? -1 : 1))
     .slice(0, effectiveQuery.limit);
 

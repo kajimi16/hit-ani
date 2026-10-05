@@ -25,6 +25,7 @@ import {
   REPOPULATE_LOOKBACK_MS,
   canRefillNow,
   clampPlayTime,
+  pendingAfterThrottle,
   repopulateWindow,
 } from "@/lib/danmaku/window";
 
@@ -190,4 +191,53 @@ test("模拟停顿式拖动：每次停顿后都放行", () => {
     }
   }
   assert.equal(allowed, 5, "每次停顿都该放行");
+});
+
+/* ---------------------------------------------------------------- *
+ * coalesce —— 不丢弃「收手的那一次」
+ * ---------------------------------------------------------------- */
+
+test("pendingAfterThrottle 返回剩余等待时间", () => {
+  const t = 1_000_000;
+  assert.equal(pendingAfterThrottle(t, t), MIN_REFILL_INTERVAL_MS, "刚回填完应等满一个窗口");
+  assert.equal(pendingAfterThrottle(t, t + 100), MIN_REFILL_INTERVAL_MS - 100);
+  assert.equal(pendingAfterThrottle(t, t + MIN_REFILL_INTERVAL_MS), 0, "已到期无需等待");
+  assert.equal(pendingAfterThrottle(t, t + 99999), 0, "过期后不该返回负数");
+});
+
+test("★ 进房后立刻 seek 不会被永久丢弃", () => {
+  // 这是 advisory 指出的边界：用户进房后直奔上次看到的位置，只发一次 seek。
+  // 若它被丢弃，窗口永远停在进房位置，且此后没有后续 seek 兜底。
+  const joinAt = 1_000_000;
+  const seekAt = joinAt + 50; // 进房后 50ms 就拖了
+
+  assert.equal(canRefillNow(joinAt, seekAt), false, "节流窗内应被挂起");
+  const wait = pendingAfterThrottle(joinAt, seekAt);
+  assert.ok(wait > 0 && wait <= MIN_REFILL_INTERVAL_MS, `应挂起等待，实际 ${wait}`);
+
+  // 等过窗口后补发
+  assert.equal(canRefillNow(joinAt, seekAt + wait), true, "窗口过后应能补发");
+});
+
+test("窗口内多次 seek 只保留最后一次（coalesce 语义）", () => {
+  // 模拟：挂起期间连续来 5 个位置，最终应只用最后一个
+  const lastRefillAt = 1_000_000;
+  let now = lastRefillAt + 10;
+  let pending: number | null = null;
+
+  for (const position of [1000, 2000, 3000, 4000, 5000]) {
+    if (canRefillNow(lastRefillAt, now)) pending = null;
+    else pending = position; // 只保留最新
+    now += 10;
+  }
+
+  assert.equal(pending, 5000, "应保留最后一次位置");
+});
+
+test("coalesce 的等待时间不超过一个节流窗口", () => {
+  // 若等待时间随积压增长，用户会感到明显卡顿
+  for (const elapsed of [0, 100, 299, 300]) {
+    const wait = pendingAfterThrottle(1_000_000, 1_000_000 + elapsed);
+    assert.ok(wait <= MIN_REFILL_INTERVAL_MS, `elapsed=${elapsed} 等待 ${wait} 超窗`);
+  }
 });

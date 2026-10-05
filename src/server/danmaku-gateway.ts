@@ -29,7 +29,12 @@ import { danmakuRateLimiter } from "@/lib/danmaku/rate-limit";
 import { MAX_DANMAKU_PER_SOURCE, fetchExternalDanmaku } from "@/lib/danmaku/external";
 import { createDanmaku, listDanmaku } from "@/lib/danmaku/repository";
 import { DANMAKU_LIMITS, type DanmakuDto } from "@/lib/danmaku/types";
-import { canRefillNow, clampPlayTime, repopulateWindow } from "@/lib/danmaku/window";
+import {
+  canRefillNow,
+  clampPlayTime,
+  pendingAfterThrottle,
+  repopulateWindow,
+} from "@/lib/danmaku/window";
 import { prisma } from "@/lib/prisma";
 
 const PORT = Number(process.env.DANMAKU_GATEWAY_PORT ?? 3002);
@@ -48,6 +53,15 @@ interface Client {
    * 客户端可能被篡改，程序化 seek 也会绕过客户端的防抖。
    */
   lastRefillAt: number;
+  /**
+   * 被节流时挂起的位置（coalesce）。
+   *
+   * **不丢弃**「收手的那一次」：用户进房后直奔某个位置只发一次 seek，
+   * 丢掉就再也没有后续 seek 来兜底，窗口会永远停在旧位置。
+   */
+  pendingPlayTimeMs: number | null;
+  /** 补发挂起位置的计时器。 */
+  pendingTimer: ReturnType<typeof setTimeout> | undefined;
 }
 
 /** episodeId → 已连接的客户端。 */
@@ -213,6 +227,8 @@ async function onConnection(
     userId: session.userId,
     alive: true,
     lastRefillAt: 0,
+    pendingPlayTimeMs: null,
+    pendingTimer: undefined,
   };
   roomOf(episodeId).add(client);
 
@@ -227,6 +243,11 @@ async function onConnection(
   });
 
   socket.on("close", () => {
+    // 挂起的补发要清掉，否则会在已关闭的连接上触发
+    clearTimeout(client.pendingTimer);
+    client.pendingTimer = undefined;
+    client.pendingPlayTimeMs = null;
+
     const room = rooms.get(episodeId);
     room?.delete(client);
     if (room && room.size === 0) rooms.delete(episodeId);
@@ -269,17 +290,36 @@ async function handleMessage(client: Client, raw: string): Promise<void> {
    */
   if (parsed.type === "seek") {
     /*
-     * 服务端节流。
+     * 服务端节流（coalesce）。
      *
      * 用户**拖动**进度条时 `seeked` 会连发几十次 —— 每次都查库、还可能打
      * dandanplay。客户端的防抖是第一道防线，但客户端可被篡改，
-     * 程序化修改 `currentTime` 也会绕过它，因此这里必须独立设限。
+     * 程序化修改 `currentTime` 也会绕过它。
+     *
+     * 被节流时**记下最新位置并补发**，而不是丢弃 —— 丢弃会漏掉
+     * 「进房后直奔某位置」那种只发一次 seek 的情形（此后没有兜底）。
      */
+    const position = Number(parsed.playTimeMs);
     const now = Date.now();
-    if (!canRefillNow(client.lastRefillAt, now)) return;
 
-    client.lastRefillAt = now;
-    await sendWindow(client, Number(parsed.playTimeMs));
+    if (canRefillNow(client.lastRefillAt, now)) {
+      client.lastRefillAt = now;
+      await sendWindow(client, position);
+      return;
+    }
+
+    // 节流窗口内：只保留最新位置（更早的中间位置无意义），到期补发
+    client.pendingPlayTimeMs = position;
+    if (client.pendingTimer === undefined) {
+      client.pendingTimer = setTimeout(() => {
+        client.pendingTimer = undefined;
+        const pending = client.pendingPlayTimeMs;
+        client.pendingPlayTimeMs = null;
+        if (pending === null) return;
+        client.lastRefillAt = Date.now();
+        void sendWindow(client, pending);
+      }, pendingAfterThrottle(client.lastRefillAt, now));
+    }
     return;
   }
 

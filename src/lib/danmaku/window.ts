@@ -70,11 +70,8 @@ export const MIN_REFILL_INTERVAL_MS = 300;
 /**
  * 判定现在是否可以回填。
  *
- * 节流窗口内的请求**被丢弃**（不排队）—— 这是有意的取舍：
- * - 客户端已防抖，正常拖动不会连续发；
- * - 真被丢弃的那次，紧接的后续 seek 会带来更新的位置，
- *   而「最后一个位置」才是用户实际停在的地方；
- * - 排队反而会把过期的中间位置全部执行一遍，正是要避免的浪费。
+ * 节流窗口内的请求**不立即执行**，但也不丢弃 —— 由调用方记下最新位置，
+ * 等窗口过期后补发（coalesce）。见 `pendingAfterThrottle`。
  */
 export function canRefillNow(
   lastRefillAt: number,
@@ -82,4 +79,26 @@ export function canRefillNow(
   minIntervalMs = MIN_REFILL_INTERVAL_MS,
 ): boolean {
   return now - lastRefillAt >= minIntervalMs;
+}
+
+/**
+ * 被节流时应等待多久才能补发。
+ *
+ * ## 为什么不能直接丢弃
+ *
+ * 「丢弃 + 靠后续 seek 兜底」在**拖动**场景成立，但有个缺口：
+ * 用户进房后直奔上次看到的位置（很常见）只发一次 seek ——
+ * 若它被丢掉，窗口就永远停在进房位置，且**此后不会再有 seek**。
+ * 兜底不成立，表现为「seek 偶尔不生效」。
+ *
+ * 原则：**别丢掉「收手的那一次」**。被节流时记下最新位置，
+ * 窗口一过就补发 —— 这也顺带覆盖了程序化连续 seek。
+ */
+export function pendingAfterThrottle(
+  lastRefillAt: number,
+  now: number,
+  minIntervalMs = MIN_REFILL_INTERVAL_MS,
+): number {
+  const elapsed = now - lastRefillAt;
+  return Math.max(0, minIntervalMs - elapsed);
 }
