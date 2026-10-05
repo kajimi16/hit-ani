@@ -18,7 +18,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { subjectFieldsFromDetail, subjectFieldsFromSlim } from "@/lib/bgm/subject-fields";
-import { parseIsoDate } from "@/lib/date";
+import { isoDate, parseIsoDate } from "@/lib/date";
 import type { Subject } from "@/lib/bgm/client";
 
 /** 与真实响应同形状的最小条目（字段值取自条目 493016）。 */
@@ -111,50 +111,83 @@ test("parseIsoDate 用 UTC，不受本地时区影响", () => {
  * 轻量映射：**键集**本身就是不变量
  * ---------------------------------------------------------------- */
 
-/**
- * `subjectFieldsFromSlim` 的返回值会被当作 `update: fields` 在**每次重新导入
- * 收藏时**整体写入 —— 因此它多带一个键，就意味着一列被清空。
+/*
+ * 这个函数的返回值会被当作 `update: fields` 在**每次重新导入收藏时**整体写入，
+ * 于是它有两条方向相反、都必须守住的约束：
  *
- * `SlimSubject` 里没有评分人数与评分分布，若哪天有人「顺手补齐」把这两个键
- * 加上（或把实现改成复用 `subjectFieldsFromDetail`），那么每次重跑导入都会把
- * 已存的 `ratingTotal` / `ratingHistogram` 覆盖成 `null` —— 详情页右栏的
- * 「N 人评分」与直方图会**在全站范围内**消失，而没有任何测试会失败。
+ * 1. **多一个键就可能清空一列**：`SlimSubject` 里没有评分人数与评分分布，
+ *    若有人「顺手补齐」把 `ratingTotal` / `ratingHistogram` 加上（或把实现改成
+ *    复用 `subjectFieldsFromDetail`），每次重跑导入都会把它们覆盖成 null ——
+ *    详情页右栏的「N 人评分」与直方图会**在全站范围内**消失，且没有测试会失败。
+ * 2. **少一个键就会丢数据**：`SlimSubject` 确实提供 `date`（规范标注
+ *    `air date in YYYY-MM-DD format`，实测收藏接口 8/8 都带）。漏掉它会让
+ *    「导入过但没打开过」的条目在作品信息里显示「未定档」，直到点进去才补上。
  *
- * 所以这里断言的是**键集**，不是取值：漏键与多键都要能被抓住。
- * 用 `Object.keys` 而不是逐项取值，因为「多了一个不该有的键」正是要防的形态。
+ * 因此断言的是**键集**，不是取值 —— 多键与漏键都要能被抓住。
  */
+
+/** 轻量映射永远输出的键。新增键前必须先想「这会不会清空已有数据」。 */
+const SLIM_ALWAYS_KEYS = ["type", "name", "nameCn", "summary", "coverUrl", "score", "rank", "tags"];
+
 test("轻量映射绝不携带评分人数与评分直方图", () => {
   const fields = subjectFieldsFromSlim({
     name: "异国日记",
-    name_cn: "异国日记",
-    short_summary: "截短简介",
-    images: { common: "https://lain.bgm.tv/c.jpg" },
+    date: "2026-01-04",
     score: 8.4,
     rank: 66,
-    tags: [{ name: "治愈" }],
   });
 
   const keys = Object.keys(fields);
-  assert.equal(
-    keys.includes("ratingTotal"),
-    false,
-    "带上 ratingTotal 会在每次重新导入收藏时把它清空",
-  );
-  assert.equal(
-    keys.includes("ratingHistogram"),
-    false,
-    "带上 ratingHistogram 会在每次重新导入收藏时把它清空",
-  );
-  // 同理：`airDate` 也不该出现在轻量路径 —— SlimSubject 没有日期字段，
-  // 带上它只会把已有的首播日期写成 null。
-  assert.equal(keys.includes("airDate"), false, "SlimSubject 没有日期，不该带 airDate");
+  for (const forbidden of ["ratingTotal", "ratingHistogram"]) {
+    assert.equal(
+      keys.includes(forbidden),
+      false,
+      `带上 ${forbidden} 会在每次重新导入收藏时把它清空`,
+    );
+  }
 });
 
-test("轻量映射的键集与「不覆盖」的承诺一致", () => {
-  // 把允许的键写死，任何人新增键都要先想清楚「这会不会清空已有数据」。
-  const allowed = ["type", "name", "nameCn", "summary", "coverUrl", "score", "rank", "tags"];
-  const keys = Object.keys(subjectFieldsFromSlim({ name: "x" })).sort();
-  assert.deepEqual(keys, [...allowed].sort());
+test("上游给了 date 就必须带走 —— 否则「导入过但没打开」的条目显示未定档", () => {
+  // 这条防的是「漏键」。此前的实现漏了 `date`，理由是「SlimSubject 没有日期字段」——
+  // 那个理由是**错的**（规范与实测都证明有），测试因此把一个错误固化成了断言。
+  const fields = subjectFieldsFromSlim({ name: "异国日记", date: "2026-01-04" });
+  assert.ok(fields.airDate instanceof Date, "airDate 未被映射，作品信息会显示未定档");
+  assert.equal(isoDate(fields.airDate!), "2026-01-04");
+});
+
+test("上游没给 date 时 airDate 键**缺席**，而不是 null", () => {
+  // 这条是「不覆盖」的关键：缺席 → Prisma 的 update 不碰这一列；
+  // 写 null → 把详情接口已经取到的首播日期清掉。
+  // `date` 在规范里是可选的，所以这条路径真实存在。
+  const fields = subjectFieldsFromSlim({ name: "未定档的条目" });
+  assert.equal(
+    Object.keys(fields).includes("airDate"),
+    false,
+    "airDate 必须缺席而不是 null，否则会清空已有日期",
+  );
+  assert.equal(fields.airDate, undefined);
+});
+
+test("date 畸形时按「没有日期」处理，绝不清空已有值", () => {
+  // 与上一条同理：解析失败也应缺席，而不是写 null。
+  for (const bad of ["", "2026-13-45", "未定档", "2026/01/04"]) {
+    const fields = subjectFieldsFromSlim({ name: "x", date: bad });
+    assert.equal(
+      Object.keys(fields).includes("airDate"),
+      false,
+      `date=${JSON.stringify(bad)} 应缺席，而不是写出一个 null`,
+    );
+  }
+});
+
+test("总是输出的键集固定 —— 任何人新增键都会在这里被拦住", () => {
+  // 不带 date 时的键集
+  const withoutDate = Object.keys(subjectFieldsFromSlim({ name: "x" })).sort();
+  assert.deepEqual(withoutDate, [...SLIM_ALWAYS_KEYS].sort());
+
+  // 带 date 时只多出 airDate 一个
+  const withDate = Object.keys(subjectFieldsFromSlim({ name: "x", date: "2026-01-04" })).sort();
+  assert.deepEqual(withDate, [...SLIM_ALWAYS_KEYS, "airDate"].sort());
 });
 
 test("轻量映射对缺失的可选字段给 null / 空数组，不抛错", () => {

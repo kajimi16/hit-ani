@@ -74,20 +74,46 @@ export function subjectFieldsFromDetail(detail: Subject): SubjectFields {
 /**
  * 收藏列表内嵌的 `SlimSubject` 能提供的字段。
  *
- * 比详情少得多：没有完整简介、没有评分分布、没有标签计数 —— 这些要等
- * 用户真正打开条目时由详情接口补。因此它**不覆盖**已有数据，
- * 尤其是不能把 `ratingTotal` / `ratingHistogram` 写成 null。
+ * 比详情少一些：没有完整简介、没有评分分布 —— 这些要等用户真正打开条目时
+ * 由详情接口补。但它**确实提供 `date`**（`SlimSubject.date`，规范里标注为
+ * `air date in YYYY-MM-DD format`），实测收藏接口 8/8 都带上了。
+ *
+ * ## 两条相反的约束，决定了这个函数的形状
+ *
+ * 1. **不能漏字段**：漏掉 `date` 会让「导入过但没打开过」的条目在作品信息里
+ *    显示「未定档」，直到用户点进去才补上（实测有 9 个这样的条目）。
+ * 2. **不能覆盖已有数据**：返回值作为 `update: fields` 在**每次重新导入收藏**
+ *    时整体写入，多带一个 `null` 就会把值抹掉。
+ *
+ * `date` 在规范里是**可选**的，所以无条件写 `airDate: parseIsoDate(date)`
+ * 会同时踩中第 2 条：某个条目这次没带 `date`，就会把详情接口已经取到的首播
+ * 日期清空。因此 `airDate` 是一个**条件键** —— 只有真的解析出日期时才出现，
+ * 否则整个键缺席，Prisma 便不会碰这一列。
+ *
+ * 同理，`ratingTotal` / `ratingHistogram` **永远不出现**：`SlimSubject` 里
+ * 根本没有评分分布，带上它们等于每次导入都清空一次右栏的「N 人评分」与直方图。
  */
+export type SlimSubjectFields = Omit<
+  SubjectFields,
+  "airDate" | "ratingTotal" | "ratingHistogram"
+> & {
+  /** **条件键**：上游给了可解析的日期时才有，否则缺席（而不是 null）。 */
+  airDate?: Date;
+};
+
 export function subjectFieldsFromSlim(subject: {
   type?: number;
   name: string;
   name_cn?: string;
   short_summary?: string;
+  date?: string;
   images?: { large?: string; common?: string; medium?: string };
   score?: number;
   rank?: number;
   tags?: { name: string }[];
-}): Omit<SubjectFields, "airDate" | "ratingTotal" | "ratingHistogram"> & { tags: string[] } {
+}): SlimSubjectFields {
+  const airDate = parseIsoDate(subject.date);
+
   return {
     type: subject.type ?? 2,
     name: subject.name,
@@ -98,5 +124,7 @@ export function subjectFieldsFromSlim(subject: {
     score: subject.score || null,
     rank: subject.rank || null,
     tags: (subject.tags ?? []).map((tag) => tag.name),
+    // 条件展开：没有日期时这个键根本不存在，`update` 便不会清空已有值
+    ...(airDate ? { airDate } : {}),
   };
 }
