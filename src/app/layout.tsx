@@ -45,26 +45,6 @@ export default async function RootLayout({
 
           <div className="app-main">
             <main className="page-shell py-6">{children}</main>
-
-            <footer className="page-shell border-t border-outline-variant py-6 text-xs text-on-surface-variant/70" style={{ marginTop: "3rem" }}>
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                <span>hit-ani · 校内动漫平台</span>
-                <span className="text-outline">|</span>
-                <span>
-                  条目与章节数据来自{" "}
-                  <a
-                    href="https://bangumi.tv"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="underline decoration-outline underline-offset-2 hover:text-primary"
-                  >
-                    Bangumi
-                  </a>
-                </span>
-                <span className="text-outline">|</span>
-                <span>本站不托管视频内容</span>
-              </div>
-            </footer>
           </div>
         </div>
       </body>

@@ -29,7 +29,8 @@ import {
   getSubjectEpisodes,
   getUserCollections,
   getUserSubjectEpisodeCollection,
-  isRetryable,
+  sleep,
+  withRetry,
   type Episode,
   type PagedUserEpisodeCollections,
   type UserSubjectCollection,
@@ -38,38 +39,8 @@ import {
 /** 单次上游请求之间的间隔。BGM 限流阈值未公开，保守取值。 */
 const REQUEST_INTERVAL_MS = 220;
 const PAGE_SIZE = 100;
-const MAX_RETRIES = 4;
-const BASE_BACKOFF_MS = 500;
+/** 重试与退避由 `withRetry` 承担，见 `src/lib/bgm/client.ts`。 */
 
-export function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/**
- * 带指数退避的重试。
- *
- * 可重试的判定见 `isRetryable`：429/5xx（上游抖动）与 `TimeoutError`（我们自己的超时）。
- * `AbortError` 不重试 —— 那是调用方主动放弃。
- */
-export async function withRetry<T>(
-  fn: () => Promise<T>,
-  label: string,
-  maxRetries = MAX_RETRIES,
-): Promise<T> {
-  let lastError: unknown;
-  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
-    try {
-      return await fn();
-    } catch (error) {
-      lastError = error;
-      if (!isRetryable(error) || attempt === maxRetries) throw error;
-      const backoff = BASE_BACKOFF_MS * 2 ** attempt;
-      console.warn(`[bgm-import] ${label} 失败，${backoff}ms 后重试（第 ${attempt + 1} 次）`);
-      await sleep(backoff);
-    }
-  }
-  throw lastError;
-}
 
 /** `YYYY-MM-DD` → Date；BGM 对未定档条目会返回空串。 */
 export function parseAirDate(raw: string | undefined | null): Date | null {

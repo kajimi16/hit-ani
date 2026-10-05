@@ -109,3 +109,71 @@ test("HTTP 错误的重试判定：429/5xx 可重试，4xx 不可", () => {
   assert.equal(isRetryable(mk(401)), false);
   assert.equal(isRetryable(new Error("random")), false);
 });
+
+/**
+ * 网络层瞬时错误必须可重试。
+ *
+ * 真实事故：经代理访问 BGM 时偶发 `TypeError: fetch failed`
+ * （底层 `ECONNRESET`），实测约 1/16。它**既不是** `BgmApiError`
+ * （没有 HTTP 状态码）也**不是** `TimeoutError`，于是被旧实现判为不可重试 ——
+ * 用户侧表现为「刷新一下就报加载失败」。
+ */
+test("网络层瞬时错误可重试（undici 把原因藏在 cause 里）", () => {
+  const undici = (code: string, name = "Error") => {
+    const cause = new Error("socket hang up");
+    cause.name = name;
+    Object.assign(cause, { code });
+    const error = new TypeError("fetch failed");
+    Object.assign(error, { cause });
+    return error;
+  };
+
+  for (const code of [
+    "ECONNRESET",
+    "ECONNREFUSED",
+    "EPIPE",
+    "ETIMEDOUT",
+    "EAI_AGAIN",
+    "UND_ERR_SOCKET",
+    "UND_ERR_CONNECT_TIMEOUT",
+  ]) {
+    assert.equal(isRetryable(undici(code)), true, `${code} 应可重试`);
+  }
+});
+
+test("嵌套在 AggregateError 里的原因也能被找到", () => {
+  // undici 在解析到多个地址时会把每个失败包进 `errors[]`，
+  // 只查第一层 cause 会漏掉。
+  const ipv4 = Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" });
+  const ipv6 = Object.assign(new Error("connect ENETUNREACH"), { code: "ENETUNREACH" });
+  const aggregate = new AggregateError([ipv4, ipv6], "all addresses failed");
+  const error = Object.assign(new TypeError("fetch failed"), { cause: aggregate });
+
+  assert.equal(isRetryable(error), true);
+});
+
+test("不可自愈的错误码不重试", () => {
+  // 这些说明请求本身有问题，重试只是浪费时间和配额。
+  for (const code of ["ENOTSUP", "EINVAL", "EPERM", "UND_ERR_INVALID_ARG"]) {
+    const cause = Object.assign(new Error("bad"), { code });
+    const error = Object.assign(new TypeError("fetch failed"), { cause });
+    assert.equal(isRetryable(error), false, `${code} 不该重试`);
+  }
+});
+
+test("主动取消优先于网络错误判定，即使被包成 fetch failed", () => {
+  // 中止也可能走 undici 的错误路径。若不先排除 AbortError，
+  // 用户离开页面反而会触发一串重试。
+  const abort = new Error("已取消");
+  abort.name = "AbortError";
+  Object.assign(abort, { code: "ECONNRESET" });
+  const wrapped = Object.assign(new TypeError("fetch failed"), { cause: abort });
+  assert.equal(isRetryable(wrapped), false);
+});
+
+test("没有可识别错误码的普通 Error 不重试（保持既有判定）", () => {
+  assert.equal(isRetryable(new Error("random")), false);
+  assert.equal(isRetryable(new TypeError("fetch failed")), false);
+  assert.equal(isRetryable(null), false);
+  assert.equal(isRetryable("boom"), false);
+});

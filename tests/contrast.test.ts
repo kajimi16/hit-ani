@@ -70,10 +70,9 @@ const AAA_NORMAL = 7;
 
 const CSS = readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
 
-const BLANK = "\n";
-
 /** 抽取 `:root { ... }` 里 `--md-*` 的定义。 */
 function parseMdTokens(block: string): Record<string, string> {
+
   const tokens: Record<string, string> = {};
   for (const [, name, value] of block.matchAll(/--md-([a-z-]+):\s*(#[0-9a-fA-F]{6})/g)) {
     tokens[name] = value;

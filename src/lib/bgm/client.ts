@@ -111,19 +111,130 @@ export const BGM_REQUEST_TIMEOUT_MS = Number(
 );
 
 /**
+ * 会自愈的网络层错误码。
+ *
+ * 这些都不是「请求本身有问题」，而是链路抖动 —— 连接被重置、临时解析失败、
+ * 套接字超时。它们由 undici 包成 `TypeError: fetch failed`，**真实原因在
+ * `cause` 里**，只看外层 `message` 什么都看不出来。
+ */
+const TRANSIENT_NETWORK_CODES = new Set([
+  "ECONNRESET",
+  "ECONNREFUSED",
+  "EPIPE",
+  "ETIMEDOUT",
+  "ENETUNREACH",
+  "EHOSTUNREACH",
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "UND_ERR_SOCKET",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_HEADERS_TIMEOUT",
+  "UND_ERR_BODY_TIMEOUT",
+]);
+
+/**
+ * 遍历错误及其整条嵌套链，收集 `code`，并看是否出现过中止。
+ *
+ * 要往下挖是因为 undici 会把原因层层包裹：
+ * `TypeError: fetch failed` → `cause: AggregateError` → `errors[i].code`。
+ * 只查第一层会漏掉大部分真实原因。
+ *
+ * 中止与错误码**一起**收集而不是分两次遍历，是因为「主动取消」的判定必须
+ * 覆盖整条链：中止同样会被包进 `fetch failed`，只看顶层 `name` 会漏 ——
+ * 那种情况下重试的正是用户已经放弃的请求。
+ */
+function inspectErrorChain(
+  error: unknown,
+  depth = 0,
+): { codes: string[]; aborted: boolean; timedOut: boolean } {
+  if (depth > 4 || !(error instanceof Error)) {
+    return { codes: [], aborted: false, timedOut: false };
+  }
+
+  // 用 `in` + `typeof` 窄化，而不是给 `error` 套一个「我猜的形状」再直接读字段 ——
+  // 那样写即使形状不对也不会报错，读出来是错的。
+  const codes: string[] = [];
+  if ("code" in error && typeof error.code === "string") codes.push(error.code);
+
+  const aborted = error.name === "AbortError";
+  let timedOut = error.name === "TimeoutError";
+
+  // undici 解析到多个地址时会把每个失败放进 `errors[]`
+  const children: unknown[] =
+    "errors" in error && Array.isArray(error.errors) ? error.errors : [error.cause];
+
+  for (const child of children) {
+    const nested = inspectErrorChain(child, depth + 1);
+    codes.push(...nested.codes);
+    timedOut ||= nested.timedOut;
+    // 主动取消是「一票否决」：链上任何一环中止，整次请求就作废
+    if (nested.aborted) return { codes, aborted: true, timedOut };
+  }
+  return { codes, aborted, timedOut };
+}
+
+/**
  * 判定某次失败是否值得重试。
  *
  * - 429 / 5xx：上游限流或抖动
  * - `TimeoutError`：我们自己的超时触发，值得重试
+ * - **网络层瞬时错误**：连接被重置 / 临时解析失败等（见 `TRANSIENT_NETWORK_CODES`）
  *
  * **不**重试 `AbortError`：那是调用方主动取消（用户离开页面、任务被中止），
- * 重试只会把已放弃的工作重新捡起来。
+ * 重试只会把已放弃的工作重新捡起来。这个判定对**整条** cause 链生效。
+ *
+ * 加网络层错误这一条的原因很具体：此前只认 `TimeoutError` 与 429/5xx，
+ * 而经代理访问上游时的典型失败是 `TypeError: fetch failed`（`ECONNRESET`）——
+ * 它**既不是** `BgmApiError` 也不是 `TimeoutError`，于是被判为不可重试。
+ * 实测并发请求的失败率约 1/16，用户侧表现为「点一下刷新就报加载失败」。
  */
 export function isRetryable(error: unknown): boolean {
   if (error instanceof BgmApiError) {
     return error.status === 429 || error.status >= 500;
   }
-  return error instanceof Error && error.name === "TimeoutError";
+  if (!(error instanceof Error)) return false;
+  const { codes, aborted, timedOut } = inspectErrorChain(error);
+  if (aborted) return false;
+  if (timedOut) return true;
+  return codes.some((code) => TRANSIENT_NETWORK_CODES.has(code));
+}
+
+
+export function sleep(ms: number): Promise<void> {
+  const { promise, resolve } = Promise.withResolvers<void>();
+  setTimeout(resolve, ms);
+  return promise;
+}
+
+const MAX_RETRIES = 4;
+const BASE_BACKOFF_MS = 500;
+
+/**
+ * 带指数退避的重试。
+ *
+ * 可重试的判定见 `isRetryable`。`AbortError` 不重试 —— 那是调用方主动放弃。
+ *
+ * 放在网络层（而不是导入流程里）是因为它对本模块所有请求都适用：
+ * 探索页、条目页、导入都走同一条链路，各自实现一份必然漂移。
+ */
+export async function withRetry<T>(
+  fn: () => Promise<T>,
+  label: string,
+  maxRetries = MAX_RETRIES,
+): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      if (!isRetryable(error) || attempt === maxRetries) throw error;
+      const backoff = BASE_BACKOFF_MS * 2 ** attempt;
+      console.warn(`[bgm] ${label} 失败，${backoff}ms 后重试（第 ${attempt + 1} 次）`);
+      await sleep(backoff);
+    }
+  }
+  throw lastError;
 }
 
 export interface BgmRequestOptions {

@@ -5,7 +5,8 @@ import { IconCalendar, IconSearch } from "@/components/icons";
 import { getSessionUser } from "@/lib/auth/session";
 import { CollectionStatus } from "@/lib/collection";
 import { prisma } from "@/lib/prisma";
-import { SubjectType, searchSubjects } from "@/lib/bgm/client";
+import { SubjectType, searchSubjects, withRetry } from "@/lib/bgm/client";
+import { BGM_MAX_PAGE_SIZE, pageCount, pageOffset } from "@/lib/bgm/paging";
 
 export const metadata: Metadata = {
   title: "探索",
@@ -21,6 +22,36 @@ const SORTS = [
 
 /** 空状态下的快捷标签 —— 给不愿打字的用户一个入口。 */
 const QUICK_TAGS = ["机战", "日常", "奇幻", "恋爱", "科幻", "治愈"];
+
+
+/** 首页「热门趋势 / 推荐」共用的查询：近一年的动画，按收藏人数排序。 */
+const RECOMMEND_QUERY = {
+  keyword: "",
+  sort: "heat" as const,
+  filter: {
+    type: [SubjectType.Anime] as never,
+    air_date: [`>=${recentCutoff()}`],
+    nsfw: false,
+  },
+};
+
+/**
+ * 取一页上游数据，失败时重试并**记录真实原因**。
+ *
+ * 为什么要记：此前这里只是 `.catch(() => null)`，把错误整个吞掉。结果是
+ * 「加载失败」这个提示背后具体是限流、连接被重置还是超时，服务端日志里
+ * 一个字都没有 —— 用户报障时无从查起。
+ *
+ * 返回 `null` 而不是抛出：首页三个分区各自独立，一个失败不该让整页白屏。
+ */
+async function load<T>(fn: () => Promise<T>, label: string): Promise<T | null> {
+  try {
+    return await withRetry(fn, label, 2);
+  } catch (error) {
+    console.error(`[home] ${label} 加载失败：`, error);
+    return null;
+  }
+}
 
 /** Hero 轮播条数。对应 Animeko `TrendingSubjectsCarousel` 的 8 个占位。 */
 const HERO_COUNT = 8;
@@ -53,7 +84,6 @@ export default async function HomePage({
     ? (params.sort as (typeof SORTS)[number]["value"])
     : "match";
 
-  const PAGE_SIZE = 24;
   const rawPage = Number(params.page ?? 1);
   const page = Number.isFinite(rawPage) && rawPage >= 1 ? Math.floor(rawPage) : 1;
 
@@ -63,41 +93,35 @@ export default async function HomePage({
   /**
    * 三个分区并行取数。
    *
-   * 空关键词时只查两次上游（Hero 8 条 + 推荐 24 条），用 offset 错开避免
-   * 两处出现同一批条目。搜索时只查一次 —— 此时页面上只有结果网格。
+   * 空关键词时查两次上游（Hero 8 条 + 推荐一页），用 offset 错开避免两处
+   * 出现同一批条目。搜索时只查一次 —— 此时页面上只有结果网格。
    */
   const [hero, recommended, watching] = await Promise.all([
     isSearching
       ? Promise.resolve(null)
-      : searchSubjects(
+      : load(() => searchSubjects(RECOMMEND_QUERY, { limit: HERO_COUNT, offset: 0 }), "hero"),
+    load(
+      () =>
+        searchSubjects(
+          isSearching
+            ? {
+                keyword,
+                sort,
+                filter: {
+                  type: [SubjectType.Anime] as never,
+                  ...(tags.length ? { tag: tags } : {}),
+                  nsfw: false,
+                },
+              }
+            : RECOMMEND_QUERY,
           {
-            keyword: "",
-            sort: "heat",
-            filter: { type: [SubjectType.Anime] as never, air_date: [`>=${recentCutoff()}`], nsfw: false },
+            limit: BGM_MAX_PAGE_SIZE,
+            // Hero 占掉前 8 条，推荐从第 9 条开始；搜索时没有 Hero，从头开始
+            offset: pageOffset(page, isSearching ? 0 : HERO_COUNT),
           },
-          { limit: HERO_COUNT, offset: 0 },
-        ).catch(() => null),
-    searchSubjects(
-      isSearching
-        ? {
-            keyword,
-            sort,
-            filter: {
-              type: [SubjectType.Anime] as never,
-              ...(tags.length ? { tag: tags } : {}),
-              nsfw: false,
-            },
-          }
-        : {
-            keyword: "",
-            sort: "heat",
-            filter: { type: [SubjectType.Anime] as never, air_date: [`>=${recentCutoff()}`], nsfw: false },
-          },
-      {
-        limit: PAGE_SIZE,
-        offset: isSearching ? (page - 1) * PAGE_SIZE : HERO_COUNT,
-      },
-    ).catch(() => null),
+        ),
+      "subjects",
+    ),
     // 「继续观看」直接读本地库，不打上游
     user
       ? prisma.collection
@@ -111,9 +135,8 @@ export default async function HomePage({
       : Promise.resolve([]),
   ]);
 
-  // 搜索模式下结果集是主网格；否则 Hero 单独占一块，主网格是推荐
   const grid = recommended;
-  const totalPages = grid ? Math.max(1, Math.ceil(grid.total / PAGE_SIZE)) : 1;
+  const totalPages = grid ? pageCount(grid.total, isSearching ? 0 : HERO_COUNT) : 1;
 
   /** 构造分页链接：保留当前筛选条件，只换 page。 */
   const pageHref = (target: number) => {
@@ -306,12 +329,24 @@ export default async function HomePage({
             </div>
           )}
 
+          {/*
+            分页用**普通 `<a>`** 而不是 `<Link>`。
+
+            为什么：翻页在本机实测会静默失效 —— React 的 `<Link>` 处理器确实
+            跑了（`defaultPrevented` 变 true），但 Next 客户端路由没有提交这次
+            导航，URL 与内容都不变，也不报错。多次实测下「有时成功、有时不动」。
+
+            而这一页的全部内容都由 `searchParams` 决定、每次渲染都要打上游，
+            客户端路由省下的那点收益本来就不成立。用普通链接换来**必定生效**：
+            即使某个环境里客户端路由又出问题，也只是退化成整页加载，
+            不会变成「点了没反应」。
+          */}
           {totalPages > 1 && (
             <nav className="flex items-center justify-center gap-2 pt-6">
               {page > 1 && (
-                <Link href={pageHref(page - 1)} className="btn btn-ghost btn-sm">
+                <a href={pageHref(page - 1)} className="btn btn-ghost btn-sm">
                   ← 上一页
-                </Link>
+                </a>
               )}
               {/*
                 只给「上一页 / 下一页」+ 当前页码，不做数字罗列 ——
@@ -321,9 +356,9 @@ export default async function HomePage({
                 {page} / {totalPages}
               </span>
               {page < totalPages && (
-                <Link href={pageHref(page + 1)} className="btn btn-ghost btn-sm">
+                <a href={pageHref(page + 1)} className="btn btn-ghost btn-sm">
                   下一页 →
-                </Link>
+                </a>
               )}
             </nav>
           )}
