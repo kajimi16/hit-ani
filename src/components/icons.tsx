@@ -43,6 +43,17 @@ export function IconExplore({ size = 24, className }: IconProps) {
   );
 }
 
+/** 好友 —— 两个人（Material 的 `people`）。 */
+export function IconPeople({ size = 24, className }: IconProps) {
+  return (
+    <svg {...base(size, className)}>
+      <circle cx="9" cy="8" r="3.5" />
+      <path d="M2.5 20c0-3.3 2.9-5.5 6.5-5.5s6.5 2.2 6.5 5.5" />
+      <path d="M16 5.2a3.5 3.5 0 0 1 0 5.6M17.5 14.8c2.4.6 4 2.3 4 5.2" />
+    </svg>
+  );
+}
+
 /** 时光机 —— 带指针的表盘（Material 的 `history`）。 */
 export function IconHistory({ size = 24, className }: IconProps) {
   return (

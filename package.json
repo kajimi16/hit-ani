@@ -13,7 +13,7 @@
     "db:seed": "tsx --env-file=.env prisma/seed.ts",
     "db:studio": "prisma studio",
     "bgm:types": "openapi-typescript .bgm-v0.yaml -o src/lib/bgm/schema.d.ts",
-    "test": "tsx --env-file=.env --test tests/*.test.ts",
+    "test": "tsx --env-file=.env --test --test-concurrency=1 tests/*.test.ts",
     "smoke": "tsx --env-file=.env scripts/smoke.ts",
     "bgm:check": "tsx --env-file=.env scripts/bgm-check.ts",
     "bgm:bind-check": "tsx --env-file=.env scripts/bgm-bind-check.ts",

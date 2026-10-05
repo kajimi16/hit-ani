@@ -1,22 +1,16 @@
 import { redirect } from "next/navigation";
-import { LibraryGridCard, LibraryListRow, type LibraryItem } from "@/components/library-views";
+import { LibraryGridCard, LibraryListRow } from "@/components/library-views";
 import { IconChevron } from "@/components/icons";
 import { getSessionUser } from "@/lib/auth/session";
+import { COLLECTION_STATUSES, statusBySlug } from "@/lib/collection";
 import {
-  COLLECTION_STATUSES,
-  statusBySlug,
-  type CollectionStatusValue,
-} from "@/lib/collection";
-import {
-  LIBRARY_GROUP_PREVIEW,
   LIBRARY_PAGE_SIZE,
   LIBRARY_SORTS,
   LIBRARY_VIEWS,
   libraryHref,
   parseLibraryQuery,
 } from "@/lib/library-query";
-import { collectionOrderBy } from "@/lib/library-sort";
-import { prisma } from "@/lib/prisma";
+import { loadLibrary, toLibraryItem, type LibraryRow } from "@/lib/library/service";
 
 export const dynamic = "force-dynamic";
 
@@ -59,106 +53,19 @@ export default async function LibraryPage({
   const focused = statusBySlug(params.status);
   const query = parseLibraryQuery(params);
 
-  /**
-   * 取数的两条路径。
-   *
-   * - **聚焦单一状态**：一次查询，按页取 `LIBRARY_PAGE_SIZE` 条。
-   * - **全部**：**每组各查一次**，每组只取前 `LIBRARY_GROUP_PREVIEW` 条。
-   *
-   * 「全部」这里一开始写成「一次取 60 行，再在内存里按组切分」，那是错的 ——
-   * 排序是全局的，前 60 行很可能全落在同一个状态里，另外四组因此显示为空，
-   * 而它们其实有内容（实测「全部」只渲染出约 14 张卡片）。每组一次查询虽然
-   * 变成五次往返，但每次只回十几行，代价远小于把几百条塞进 RSC 载荷。
+  /*
+   * 取数走共享实现（`@/lib/library/service`）—— 与「别人的追番页」同一份。
+   * 两处各写一遍必然漂移，而漂移的后果是**隐私失效**（私密收藏漏出来）。
+   * 自己的页面 `viewerId === userId`，因此不会被过滤。
    */
-  const include = {
-    subject: {
-      select: {
-        id: true,
-        name: true,
-        nameCn: true,
-        coverUrl: true,
-        score: true,
-        rank: true,
-        // 只要计数，不要把 6000+ 个 episode 行传进 RSC 载荷
-        _count: { select: { episodes: true } },
-      },
-    },
-  } as const;
-
-  /** 每个状态取一次；聚焦时只取该状态，且按页取。 */
-  const loadGroup = (type: CollectionStatusValue, take: number, skip = 0) =>
-    prisma.collection.findMany({
-      where: { userId: user.id, type },
-      orderBy: collectionOrderBy(query.sort),
-      take,
-      skip,
-      include,
-    });
-
-  const [groupRows, counts, totalForFocused] = await Promise.all([
-    focused
-      ? loadGroup(focused.value, LIBRARY_PAGE_SIZE, (query.page - 1) * LIBRARY_PAGE_SIZE).then(
-          (rows) => new Map([[focused.value, rows]]),
-        )
-      : Promise.all(
-          COLLECTION_STATUSES.map(
-            async (meta) => [meta.value, await loadGroup(meta.value, LIBRARY_GROUP_PREVIEW)] as const,
-          ),
-        ).then((entries) => new Map(entries)),
-    prisma.collection.groupBy({
-      by: ["type"],
-      where: { userId: user.id },
-      _count: { _all: true },
-    }),
-    focused ? prisma.collection.count({ where: { userId: user.id, type: focused.value } }) : Promise.resolve(0),
-  ]);
-
-  /** 状态值 → 该组本次要渲染的行。 */
-  const rowsByType = groupRows;
-  const allRows = [...rowsByType.values()].flat();
-
-  const countByType = new Map(counts.map((row) => [row.type, row._count._all]));
-
-  /** 观看进度：已看集数。只看当前用户自己的进度记录。 */
-  const watchedBySubject = new Map<number, number>();
-  if (allRows.length > 0) {
-    const progressRows = await prisma.episodeProgress.findMany({
-      where: {
-        userId: user.id,
-        type: 2, // EpisodeProgress 的 Done（与条目收藏的语义不同）
-        episode: { subjectId: { in: allRows.map((item) => item.subjectId) } },
-      },
-      select: { episode: { select: { subjectId: true } } },
-    });
-    for (const row of progressRows) {
-      const subjectId = row.episode.subjectId;
-      watchedBySubject.set(subjectId, (watchedBySubject.get(subjectId) ?? 0) + 1);
-    }
-  }
-
-
-
-  // 显式标注键类型：Prisma 返回的 `type` 是 number，而标签表的键是字面量联合，
-  // 不加会在 `get` 处报「number 不能赋给 CollectionStatusValue」。
-  const statusLabelByValue = new Map<CollectionStatusValue, string>(
-    COLLECTION_STATUSES.map((meta) => [meta.value, meta.label]),
-  );
-
-  const toItem = (row: (typeof allRows)[number]): LibraryItem => ({
-    collectionId: row.id,
-    subjectId: row.subjectId,
-    title: row.subject.nameCn || row.subject.name,
-    originalTitle: row.subject.name,
-    coverUrl: row.subject.coverUrl,
-    bgmScore: row.subject.score,
-    myRating: row.rating,
-    myComment: row.comment,
-    bgmRank: row.subject.rank,
-    watchedEpisodes: watchedBySubject.get(row.subjectId) ?? 0,
-    totalEpisodes: row.subject._count.episodes,
-    collectedAt: row.collectedAt?.toISOString() ?? null,
-    statusLabel: statusLabelByValue.get(row.type as CollectionStatusValue) ?? "未知",
+  const { rowsByType, countByType, watchedBySubject, totalForFocused } = await loadLibrary({
+    userId: user.id,
+    viewerId: user.id,
+    focused,
+    query,
   });
+
+  const toItem = (row: LibraryRow) => toLibraryItem(row, watchedBySubject);
 
   const hrefFor = (overrides: Partial<{ status: string; sort: typeof query.sort; view: typeof query.view; page: number }>) =>
     libraryHref({

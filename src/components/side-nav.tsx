@@ -8,6 +8,7 @@ import {
   IconDatabase,
   IconExplore,
   IconHistory,
+  IconPeople,
   IconSettings,
 } from "@/components/icons";
 import UserMenu from "@/components/user-menu";
@@ -59,6 +60,13 @@ export default function SideNav({ isAdmin, user }: Props) {
     { href: "/library", label: "追番", icon: IconBookmark, match: (p) => p.startsWith("/library") },
     { href: "/schedule", label: "时间表", icon: IconCalendar, match: (p) => p.startsWith("/schedule") },
     { href: "/timeline", label: "时光机", icon: IconHistory, match: (p) => p.startsWith("/timeline") },
+    {
+      href: "/friends",
+      label: "好友",
+      icon: IconPeople,
+      // 别人的追番页也属于这一块 —— 从好友列表点进去时侧栏不该失去高亮
+      match: (p) => p.startsWith("/friends") || p.startsWith("/users/"),
+    },
   ];
 
   if (isAdmin) {

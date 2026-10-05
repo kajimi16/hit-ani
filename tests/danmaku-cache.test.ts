@@ -25,11 +25,18 @@ import {
 /**
  * 本文件专用的服务名前缀。
  *
- * `node --test` **并行**执行多个测试文件，而本表是共享的 ——
- * 若用固定的 `service` 名，另一个文件里的 `clearDanmakuCache()`
- * 会在本文件断言前把数据清掉（实测踩过：`undefined !== 3`）。
+ * 让本文件的 `clearNamespace()` 只清自己的行，不误伤别的测试。
  *
- * 因此每个文件、每个用例都用独立命名空间，互不干扰。
+ * **但它挡不住反向的干扰**：另一个文件（`external-danmaku-limits`）调用的
+ * `clearDanmakuCache()` 是**全表 `deleteMany({})`** —— 唯一的服务名前缀对它
+ * 无效。两个文件并行跑时，它会在本文件断言前把行清掉。
+ *
+ * 这一点一度表现为「偶发失败」（8 次全量里必现一次），而本文件单跑 10 次
+ * 都不复现 —— 因为干扰来自**另一个进程**。
+ *
+ * 根治办法是让测试文件**串行**执行（`package.json` 的 `test` 脚本已加
+ * `--test-concurrency=1`）：它们共用同一个真实 Postgres，跨进程并行本身
+ * 就是不安全的前提。全量套件只需 ~5 秒，串行的代价可以忽略。
  */
 const NS = `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 const svc = (name: string) => `${NS}-${name}`;

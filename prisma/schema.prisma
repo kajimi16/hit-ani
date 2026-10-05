@@ -49,6 +49,10 @@ model User {
   reviews     Review[]
   danmakuReports DanmakuReport[]
   jellyfinConnections JellyfinConnection[]
+  /// 我关注的人（单向）
+  following   UserFollow[] @relation("follower")
+  /// 关注我的人（单向）
+  followers   UserFollow[] @relation("followee")
 
   @@index([schoolId])
 }
@@ -440,4 +444,33 @@ model BgmCommentsCache {
   /// BGM 的分页总数 —— 界面要显示「共 N 页」。
   totalPages Int
   fetchedAt DateTime @default(now())
+}
+
+/// 关注关系（**单向**）。
+///
+/// ## 为什么是单向而不是双向好友
+///
+/// 双向好友需要「申请 → 对方同意」，而本平台**没有通知系统** —— 申请只能
+/// 靠对方自己进好友页才发现，实际会被长期搁置。单向关注没有这个死角：
+/// 加了立刻能看，对方在「关注我的人」里能看到谁加了他。
+///
+/// ## 隐私
+///
+/// 关注**不等于**能看到全部内容：`Collection.isPrivate` 为真的收藏
+/// 仍然只有本人可见（与时光机、收藏短评同一套规则）。
+/// 关注只是解除了「你完全不认识这个人」的壁垒，不是内容授权。
+model UserFollow {
+  followerId String
+  followeeId String
+  createdAt  DateTime @default(now())
+
+  follower User @relation("follower", fields: [followerId], references: [id], onDelete: Cascade)
+  followee User @relation("followee", fields: [followeeId], references: [id], onDelete: Cascade)
+
+  /// 一人对一人只能有一条。
+  @@id([followerId, followeeId])
+  /// 「我关注的人」按时间倒序查
+  @@index([followerId, createdAt])
+  /// 「关注我的人」按时间倒序查
+  @@index([followeeId, createdAt])
 }
