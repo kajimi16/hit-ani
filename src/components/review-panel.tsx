@@ -14,6 +14,18 @@ export interface ReviewItem {
   createdAt: string;
 }
 
+/**
+ * 首屏只取几条。
+ *
+ * 原先这里一次拉 `limit=50` —— 与追番页那个「全量加载」是同一类问题：
+ * 评论多的条目要等 50 条一起回来才渲染，首屏白等；而且用户往往只看最新几条。
+ * 现在先取最新 `REVIEW_INITIAL_COUNT` 条，其余由「加载更多」按页取。
+ */
+const REVIEW_INITIAL_COUNT = 2;
+
+/** 「加载更多」每次追加的条数。 */
+const REVIEW_PAGE_SIZE = 10;
+
 interface Props {
   subjectId: number;
   canInteract: boolean;
@@ -33,37 +45,70 @@ export default function ReviewPanel({ subjectId, canInteract, schoolId }: Props)
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const url = new URL("/api/reviews", window.location.origin);
-      url.searchParams.set("subjectId", String(subjectId));
-      url.searchParams.set("limit", "50");
-      if (schoolOnly) url.searchParams.set("schoolOnly", "true");
+  /**
+   * 拉一页评论。
+   *
+   * `append` 为真时把结果接到已有列表后面（「加载更多」），否则替换
+   * （首次加载、切换「只看本校」时重置）。
+   */
+  const fetchPage = useCallback(
+    async (offset: number, append: boolean, overrideLimit?: number) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const url = new URL("/api/reviews", window.location.origin);
+        url.searchParams.set("subjectId", String(subjectId));
+        const limit = overrideLimit ?? (append ? REVIEW_PAGE_SIZE : REVIEW_INITIAL_COUNT);
+        url.searchParams.set("limit", String(limit));
+        url.searchParams.set("offset", String(offset));
+        if (schoolOnly) url.searchParams.set("schoolOnly", "true");
 
-      const response = await fetch(url, { cache: "no-store" });
-      const body = (await response.json()) as {
-        data?: ReviewItem[];
-        total?: number;
-        schoolTotal?: number;
-        error?: string;
-      };
-      if (!response.ok) throw new Error(body.error ?? "加载失败");
+        const response = await fetch(url, { cache: "no-store" });
+        const body = (await response.json()) as {
+          data?: ReviewItem[];
+          total?: number;
+          schoolTotal?: number;
+          error?: string;
+        };
+        if (!response.ok) throw new Error(body.error ?? "加载失败");
 
-      setReviews(body.data ?? []);
-      setTotal(body.total ?? 0);
-      setSchoolTotal(body.schoolTotal ?? 0);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
-  }, [subjectId, schoolOnly]);
+        setReviews((previous) => (append ? [...previous, ...(body.data ?? [])] : (body.data ?? [])));
+        setTotal(body.total ?? 0);
+        setSchoolTotal(body.schoolTotal ?? 0);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [subjectId, schoolOnly],
+  );
 
+  // 首次（以及切换「只看本校」时）只取最新几条 —— 见 REVIEW_INITIAL_COUNT 的说明
   useEffect(() => {
-    void load();
-  }, [load]);
+    void fetchPage(0, false);
+  }, [fetchPage]);
+
+  /**
+   * 当前筛选下的总条数。
+   *
+   * 必须跟着 `schoolOnly` 走 —— 否则开着「只看本校」时会拿全站总数去比，
+   * 「加载更多」永远显示还剩几百条，实际下一页是空的。
+   */
+  const visibleTotal = schoolOnly ? schoolTotal : total;
+
+  /** 「加载更多」：从当前已显示条数处继续取。 */
+  const loadMore = () => void fetchPage(reviews.length, true);
+
+  /**
+   * 重新加载，但**保留已展开的条数**。
+   *
+   * 发完一条评论后直接 `fetchPage(0, false)` 会把列表塌回首屏的两条 ——
+   * 用户刚写完评论，正看着下面十几条，结果一下子全没了。新评论在最前
+   * （按时间倒序），所以取「当前已显示条数」即可，既保住视野又能看到自己那条。
+   */
+  const reloadKeepingExpanded = () =>
+    void fetchPage(0, false, Math.max(REVIEW_INITIAL_COUNT, reviews.length));
 
   const submit = async () => {
     if (!content.trim()) return;
@@ -85,7 +130,7 @@ export default function ReviewPanel({ subjectId, canInteract, schoolId }: Props)
       setTitle("");
       setContent("");
       setRating("");
-      await load();
+      reloadKeepingExpanded();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -177,7 +222,9 @@ export default function ReviewPanel({ subjectId, canInteract, schoolId }: Props)
       )}
 
       <ul className="space-y-3">
-        {loading && <li className="text-sm text-on-surface-variant/70">加载中…</li>}
+        {loading && reviews.length === 0 && (
+          <li className="text-sm text-on-surface-variant/70">加载中…</li>
+        )}
         {!loading && reviews.length === 0 && (
           <li className="text-sm text-on-surface-variant/70">
             {schoolOnly ? "本校还没有人评论这部番。" : "还没有评论。"}
@@ -215,6 +262,23 @@ export default function ReviewPanel({ subjectId, canInteract, schoolId }: Props)
           </li>
         ))}
       </ul>
+
+      {/*
+        「加载更多」——首屏只取最新的 2 条，其余按页追加。
+        按钮上写明还剩多少，用户点之前就知道要付出什么。
+      */}
+      {reviews.length > 0 && reviews.length < visibleTotal && (
+        <button
+          type="button"
+          onClick={loadMore}
+          disabled={loading}
+          className="btn btn-ghost w-full"
+        >
+          {loading
+            ? "加载中…"
+            : `加载更多（已显示 ${reviews.length} / ${visibleTotal}）`}
+        </button>
+      )}
     </section>
   );
 }

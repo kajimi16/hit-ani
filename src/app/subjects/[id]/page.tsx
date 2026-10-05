@@ -169,6 +169,13 @@ export default async function SubjectPage({
           }}
           episodeCount={subject.episodes.length}
           stats={collectionStats}
+          bgmCounts={{
+            wish: subject.bgmWish,
+            doing: subject.bgmDoing,
+            done: subject.bgmDone,
+            onHold: subject.bgmOnHold,
+            dropped: subject.bgmDropped,
+          }}
           myStatus={(collection?.type as CollectionStatusValue | undefined) ?? null}
           canInteract={user !== null}
           bgmBound={user?.bgmBound ?? false}

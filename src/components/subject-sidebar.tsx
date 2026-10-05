@@ -16,8 +16,19 @@ interface Props {
     tags: string[];
   };
   episodeCount: number;
-  /** 全站收藏统计（不是当前用户的）—— 这就是「在看人数」的来源。 */
+  /** **本站**的收藏统计（不是当前用户的）。 */
   stats: { wish: number; doing: number; done: number };
+  /**
+   * **Bangumi 全站**的收藏人数。可空 —— BGM 没给这个数时不能显示成 0
+   * （那会让人以为没人看，而真相是我们没取到）。
+   */
+  bgmCounts: {
+    wish: number | null;
+    doing: number | null;
+    done: number | null;
+    onHold: number | null;
+    dropped: number | null;
+  };
   /** 当前用户的收藏状态 */
   myStatus: CollectionStatusValue | null;
   canInteract: boolean;
@@ -37,6 +48,7 @@ export default function SubjectSidebar({
   subject,
   episodeCount,
   stats,
+  bgmCounts,
   myStatus,
   canInteract,
   bgmBound,
@@ -81,24 +93,30 @@ export default function SubjectSidebar({
 
       {/* ---------------------------------------------------------- 收藏统计 */}
       <section className="panel">
-        <h2 className="detail-section-title">收藏情况</h2>
+        <h2 className="detail-section-title">
+          收藏情况
+          <span className="ml-auto text-xs font-normal text-on-surface-variant">Bangumi 全站</span>
+        </h2>
+        {/*
+          以 **Bangumi 全站**的人数为主：本站是校内小样本，个位数说明不了
+          「这部番有多热」，而全站的几万人正是决定要不要看的实际依据。
+          本站的数据降为下面一行小字 —— 它对校内用户仍有意义（同校多少人在看）。
+        */}
         <div className="stat-row">
-          <div>
-            <div className="stat-value">{stats.doing.toLocaleString("zh-CN")}</div>
-            <div className="stat-label">在看</div>
-          </div>
-          <div>
-            <div className="stat-value">{stats.wish.toLocaleString("zh-CN")}</div>
-            <div className="stat-label">想看</div>
-          </div>
-          <div>
-            <div className="stat-value">{stats.done.toLocaleString("zh-CN")}</div>
-            <div className="stat-label">看过</div>
-          </div>
+          <Stat value={bgmCounts.doing} label="在看" />
+          <Stat value={bgmCounts.wish} label="想看" />
+          <Stat value={bgmCounts.done} label="看过" />
         </div>
-        <p className="mt-2 text-[0.6875rem] text-on-surface-variant">
-          本站用户的数据，不含 Bangumi 全站。
-        </p>
+
+        <div className="mt-3 space-y-1 border-t border-outline-variant pt-2 text-[0.6875rem] text-on-surface-variant">
+          <p>
+            {/* 搁置/抛弃也给出，Animeko 的收藏统计同样收录这两项 */}
+            搁置 {fmtCount(bgmCounts.onHold)} · 抛弃 {fmtCount(bgmCounts.dropped)}
+          </p>
+          <p>
+            本站：{stats.doing} 人在看 · {stats.wish} 人想看 · {stats.done} 人看过
+          </p>
+        </div>
       </section>
 
       {/* ---------------------------------------------------------- 作品信息 */}
@@ -152,6 +170,21 @@ export default function SubjectSidebar({
           )}
         </section>
       )}
+    </div>
+  );
+}
+
+/** 人数格式化：null 显示 `—` 而不是 0 —— 「没取到」与「确实是 0」不是一回事。 */
+function fmtCount(value: number | null): string {
+  return value === null ? "—" : value.toLocaleString("zh-CN");
+}
+
+/** 一格统计数字。可空时显示 `—`。 */
+function Stat({ value, label }: { value: number | null; label: string }) {
+  return (
+    <div>
+      <div className="stat-value">{fmtCount(value)}</div>
+      <div className="stat-label">{label}</div>
     </div>
   );
 }

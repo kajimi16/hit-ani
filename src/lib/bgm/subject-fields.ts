@@ -38,6 +38,17 @@ export interface SubjectFields {
   rank: number | null;
   ratingTotal: number | null;
   ratingHistogram: Prisma.InputJsonValue | undefined;
+  /**
+   * Bangumi 全站的收藏人数。
+   *
+   * 可空：老响应可能没有 `collection` 字段；用 `null` 而不是 `0`，
+   * 才能区分「BGM 说没人收藏」与「我们没拿到这个数」。
+   */
+  bgmWish: number | null;
+  bgmDoing: number | null;
+  bgmDone: number | null;
+  bgmOnHold: number | null;
+  bgmDropped: number | null;
   tags: string[];
 }
 
@@ -66,6 +77,18 @@ export function subjectFieldsFromDetail(detail: Subject): SubjectFields {
     ratingTotal: detail.rating?.total ?? null,
     // 1–10 分分布。只为展示，且键固定，因此存 Json 而不单独建表。
     ratingHistogram: detail.rating?.count ?? undefined,
+    /*
+     * BGM 全站的收藏人数。
+     *
+     * `?? null` 而不是 `?? 0`：拿不到与「确实是 0 人」必须能区分 ——
+     * 显示成「0 人在看」会让人以为这部番没人看，而真相是我们没取到数据。
+     */
+    bgmWish: detail.collection?.wish ?? null,
+    bgmDoing: detail.collection?.doing ?? null,
+    // BGM 叫 `collect`，本项目统一叫「看过」（Done）
+    bgmDone: detail.collection?.collect ?? null,
+    bgmOnHold: detail.collection?.on_hold ?? null,
+    bgmDropped: detail.collection?.dropped ?? null,
     // 上游已按热度排序，前几个就是最相关的标签
     tags: (detail.tags ?? []).map((tag) => tag.name),
   };
@@ -90,12 +113,24 @@ export function subjectFieldsFromDetail(detail: Subject): SubjectFields {
  * 日期清空。因此 `airDate` 是一个**条件键** —— 只有真的解析出日期时才出现，
  * 否则整个键缺席，Prisma 便不会碰这一列。
  *
- * 同理，`ratingTotal` / `ratingHistogram` **永远不出现**：`SlimSubject` 里
- * 根本没有评分分布，带上它们等于每次导入都清空一次右栏的「N 人评分」与直方图。
+ * 同理，`ratingTotal` / `ratingHistogram` / `bgm*` 这些**永远不出现**：
+ * `SlimSubject` 里既没有评分分布也没有全站收藏人数，带上它们等于每次导入都
+ * 清空一次右栏的「N 人评分」、直方图与「在看人数」。
+ *
+ * 这条约束由类型强制：`SlimSubjectFields` 用 `Omit` 把这些键去掉，
+ * 漏掉一个就编译不过（实测确实因此报错过一次）。
  */
 export type SlimSubjectFields = Omit<
   SubjectFields,
-  "airDate" | "ratingTotal" | "ratingHistogram"
+  // `SlimSubject` 里没有这些 —— 详情接口才提供
+  | "airDate"
+  | "ratingTotal"
+  | "ratingHistogram"
+  | "bgmWish"
+  | "bgmDoing"
+  | "bgmDone"
+  | "bgmOnHold"
+  | "bgmDropped"
 > & {
   /** **条件键**：上游给了可解析的日期时才有，否则缺席（而不是 null）。 */
   airDate?: Date;

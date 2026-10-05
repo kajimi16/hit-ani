@@ -100,6 +100,25 @@ model Subject {
   /// 存下来是为了渲染详情页右栏的评分直方图 —— 那是 Animeko 详情页的标志性
   /// 元素，而每次访问都回上游拉一遍评分分布纯属浪费。
   ratingHistogram Json?
+
+  /*
+   * Bangumi 全站的收藏人数（`Subject.collection`）。
+   *
+   * 与本站自己的 `Collection` 计数是两回事：本站是校内小样本，而这里是
+   * 「这部番在全网有多热」—— 一个几万人的数字，是判断要不要看的实际依据。
+   * 用户明确要求导入它（此前详情页只显示本站的个位数，并附一句「不含
+   * Bangumi 全站」，等于没给出任何可参考的流行度）。
+   *
+   * 字段名对齐 Bangumi 的 `collect` / `doing` / `wish` / `on_hold` / `dropped`，
+   * 但用 `Done` 而不是 `Collect` —— 本项目的 `CollectionStatus.Done` 就是「看过」，
+   * 两套命名混用会让「3 是看过还是在看」这类映射错误再次发生
+   * （见 `src/lib/collection.ts` 开头的警告）。
+   */
+  bgmWish    Int?
+  bgmDoing   Int?
+  bgmDone    Int?
+  bgmOnHold  Int?
+  bgmDropped Int?
   /// 作品标签（BGM `tags` 的 name 列表）。
   ///
   /// 收藏导入时会从 `SlimSubject` 写入；但**直接打开一个未收藏的条目**时

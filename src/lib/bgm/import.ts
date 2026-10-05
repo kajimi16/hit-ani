@@ -357,9 +357,17 @@ async function syncSubjectPersons(subjectId: number): Promise<number> {
   }
 
   await prisma.$transaction([
-    // 先清后写：上游删掉某个职位时本地也要跟着消失，否则会留下幽灵人员。
-    // 同一个人担任多个职位不受影响 —— 主键是「条目 + 人员 + 职位」。
-
+    /*
+     * **先清后写**，顺序不能反，也不能省。
+     *
+     * 主键是 (subjectId, personId, relation)，所以上游把某个职位改名或删掉时，
+     * 旧行不会被 `createMany` 覆盖 —— `skipDuplicates` 只挡重复插入，不会清理
+     * 本地多出来的行。少了这一句，制作人员里会永久留着「幽灵职位」。
+     *
+     * （这一句曾被一次无关的编辑弄丢：删掉一个数组元素不是类型错误，
+     * tsc / eslint 都不会响；注释还在、调用没了，肉眼极易看漏。）
+     */
+    prisma.subjectPerson.deleteMany({ where: { subjectId } }),
     prisma.subjectPerson.createMany({
       data: persons.map((person, index) => ({
         subjectId,
