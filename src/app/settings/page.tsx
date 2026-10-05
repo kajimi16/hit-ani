@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import JellyfinManager from "@/components/jellyfin-manager";
 import SettingsClient from "@/components/settings-client";
+import ThemePicker from "@/components/theme-picker";
 import { isBgmOAuthConfigured } from "@/lib/auth/bgm-oauth";
 import { getSessionUser } from "@/lib/auth/session";
 
@@ -20,6 +21,9 @@ export default async function SettingsPage() {
           <span className="rounded bg-surface-container-high px-2 py-0.5 text-xs">{user.schoolId}</span>
         </p>
       </section>
+
+      {/* 外观是设备级偏好，与账号无关，因此放在最前 */}
+      <ThemePicker />
 
       <SettingsClient
         qqBound={user.qqBound}

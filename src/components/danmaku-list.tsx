@@ -100,24 +100,46 @@ export default function DanmakuList({
    *
    * 从渲染出来的 DOM 读，而不是在本文件里写死色值 —— 写死的那一份无法
    * 与 `globals.css` 保持同步，换主题后弹幕会悄悄变得不可读。
-   * 主题由 `prefers-color-scheme` 驱动，因此也要监听它的变化。
+   *
+   * 向上找第一个**不透明**的背景：`.danmaku-list` 自己带了表面色，但
+   * 万一以后那个类被挪走，靠祖先兜底比静默算错强。`parseCssColor` 对
+   * 全透明返回 `null`，所以这里不会把「没有背景」误当成黑色。
+   *
+   * 主题既可能是 `data-theme` 显式指定，也可能由系统偏好决定，两种变化
+   * 都要重算。
    */
   const listRef = useRef<HTMLUListElement>(null);
   const [backdrop, setBackdrop] = useState<Rgb | null>(null);
 
   useEffect(() => {
     const readBackdrop = () => {
-      const element = listRef.current;
-      if (!element) return;
-      const parsed = parseCssColor(getComputedStyle(element).backgroundColor);
-      if (parsed) setBackdrop(parsed);
+      let element: Element | null = listRef.current;
+      while (element) {
+        const parsed = parseCssColor(getComputedStyle(element).backgroundColor);
+        if (parsed) {
+          setBackdrop(parsed);
+          return;
+        }
+        element = element.parentElement;
+      }
     };
 
     readBackdrop();
 
     const scheme = window.matchMedia("(prefers-color-scheme: light)");
     scheme.addEventListener("change", readBackdrop);
-    return () => scheme.removeEventListener("change", readBackdrop);
+
+    // `data-theme` 由设置页切换，不触发上面那个媒体查询事件
+    const observer = new MutationObserver(readBackdrop);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+    });
+
+    return () => {
+      scheme.removeEventListener("change", readBackdrop);
+      observer.disconnect();
+    };
   }, []);
 
   useEffect(() => {

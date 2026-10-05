@@ -71,10 +71,28 @@ export function packRgb([r, g, b]: Rgb): number {
  *
  * 用于从真实 DOM 读背景色 —— 这样背景由 CSS 单一来源决定，
  * 本模块不再复制色值。
+ *
+ * **完全透明的颜色返回 `null`，不能当成黑色。** `rgba(0, 0, 0, 0)` 与
+ * `rgb(0, 0, 0)` 的前三个分量一模一样，但前者是「这里什么都没有」，
+ * 后者是「这里是黑的」。把前者当黑色会让算法朝错误方向调整 ——
+ * 浅色主题下弹幕会被「提亮」到白底上，直接看不见。返回 `null` 让调用方
+ * 退回「不调整」，这样最坏情况只是保持原色。
  */
 export function parseCssColor(value: string): Rgb | null {
-  const match = /rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/.exec(value);
+  // `(?<![a-z])` 是必需的：`color(srgb ...)` 里恰好含子串 `rgb(`，
+  // 不挡住的话会把 `srgb` 空间的三个小数当成分量读出来。
+  const match = /(?<![a-z])rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)\s*(?:[,/]\s*([\d.]+%?)\s*)?\)/.exec(value);
   if (!match) return null;
+
+  if (match[4] !== undefined) {
+    // 百分比与小数都要认：`50%` 与 `0.5` 是同一个值。
+    // 注意 `Number("50%")` 是 `NaN`（不是 50），必须先去掉 `%` 再解析 ——
+    // 否则 `NaN > 0` 为假，半透明背景会被误判为全透明而整条丢弃。
+    const alpha = match[4].endsWith("%")
+      ? Number(match[4].slice(0, -1)) / 100
+      : Number(match[4]);
+    if (!(alpha > 0)) return null;
+  }
   return [Number(match[1]), Number(match[2]), Number(match[3])];
 }
 

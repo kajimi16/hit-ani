@@ -314,15 +314,27 @@ test("parseCssColor 能解析浏览器实际给出的两种格式", () => {
 
 test("parseCssColor 对解析不出的值返回 null（而不是抛错或猜）", () => {
   // 解析失败必须能被调用方识别 —— 静默返回错误颜色比不处理更糟
-  for (const value of ["", "transparent", "color(srgb 0.1 0.2 0.3)", "var(--x)"]) {
+  for (const value of ["", "transparent", "var(--x)", "color(srgb 0.1 0.2 0.3)"]) {
     assert.equal(parseCssColor(value), null, `${JSON.stringify(value)} 应返回 null`);
   }
 });
 
-/* ---------------------------------------------------------------- *
- * CSS 输出
- * ---------------------------------------------------------------- */
+test("parseCssColor 认出 alpha 为零的颜色，不当成黑色", () => {
+  // `rgba(0, 0, 0, 0)` 与 `rgb(0, 0, 0)` 前三个分量一样，但前者是
+  // 「这里没有背景」。当成黑色会让浅色主题下的弹幕被「提亮」到白底上。
+  assert.equal(parseCssColor("rgba(0, 0, 0, 0)"), null);
+  assert.equal(parseCssColor("rgba(29, 27, 32, 0)"), null);
+  assert.equal(parseCssColor("rgba(29, 27, 32, 0.0)"), null);
+  assert.equal(parseCssColor("rgba(29, 27, 32, 0%)"), null);
+});
 
+test("parseCssColor 认半透明（取 RGB，忽略 alpha）与各类 alpha 写法", () => {
+  assert.deepEqual(parseCssColor("rgba(29, 27, 32, 0.5)"), [29, 27, 32]);
+  assert.deepEqual(parseCssColor("rgba(29, 27, 32, 50%)"), [29, 27, 32]);
+  assert.deepEqual(parseCssColor("rgb(29 27 32 / 0.85)"), [29, 27, 32]);
+  // 没有 alpha 就是完全不透明
+  assert.deepEqual(parseCssColor("rgb(29, 27, 32)"), [29, 27, 32]);
+});
 test("toCssColor 补齐前导零", () => {
   // 这个 bug 专门影响暗色弹幕：`0x0000ff` 若写成 `#ff`，
   // 浏览器解析为无效值，弹幕会变成继承色（而非蓝色）。

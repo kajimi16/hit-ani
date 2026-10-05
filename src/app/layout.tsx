@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import SideNav from "@/components/side-nav";
 import "./globals.css";
+import { THEME_BOOTSTRAP_SCRIPT } from "@/lib/theme";
 import { getSessionUser } from "@/lib/auth/session";
 
 export const metadata: Metadata = {
@@ -19,7 +20,14 @@ export default async function RootLayout({
   const user = await getSessionUser();
 
   return (
-    <html lang="zh-CN">
+    <html lang="zh-CN" suppressHydrationWarning>
+      <head>
+        {/*
+          主题引导脚本：必须在首次绘制**之前**跑完，否则会白闪一下。
+          见 `src/lib/theme.ts` —— 脚本是内联且无状态的。
+        */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP_SCRIPT }} />
+      </head>
       <body>
         {/*
           Animeko 桌面端的骨架：左侧 NavigationRail + 右侧内容区
