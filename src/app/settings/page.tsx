@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import AvatarSetting from "@/components/avatar-setting";
 import JellyfinManager from "@/components/jellyfin-manager";
+import NsfwSetting from "@/components/nsfw-setting";
 import OAuthNoticeBanner from "@/components/oauth-notice-banner";
 import SettingsClient from "@/components/settings-client";
 import ThemePicker from "@/components/theme-picker";
@@ -49,8 +50,9 @@ export default async function SettingsPage({
         </p>
       </section>
 
-      {/* 外观是设备级偏好，与账号无关，因此放在最前 */}
+      {/* 外观与内容偏好都是设备级设置，与账号无关，因此放在最前 */}
       <ThemePicker />
+      <NsfwSetting />
 
       <SettingsClient
         qqBound={user.qqBound}

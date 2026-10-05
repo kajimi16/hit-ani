@@ -143,7 +143,7 @@ export default function TimelineList({ events, scope }: Props) {
   if (events.length === 0) return <EmptyState scope={scope} />;
 
   return (
-    <ul className="panel p-0">
+    <ul className="animate-rise panel p-0">
       {events.map((event) => (
         <EventRow key={event.id} event={event} />
       ))}

@@ -1,13 +1,16 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import ScrollRow from "@/components/scroll-row";
 import SubjectCard from "@/components/subject-card";
 import { IconCalendar, IconSearch } from "@/components/icons";
 import { getSessionUser } from "@/lib/auth/session";
 import { CollectionStatus } from "@/lib/collection";
 import { prisma } from "@/lib/prisma";
 import { SubjectType, searchSubjects, withRetry } from "@/lib/bgm/client";
+import { cookies } from "next/headers";
 import { BGM_MAX_PAGE_SIZE, pageCount, pageOffset } from "@/lib/bgm/paging";
 import { recommendQuery } from "@/lib/bgm/recommend";
+import { NSFW_COOKIE, nsfwFilterValue, parseNsfwCookie } from "@/lib/nsfw";
 
 export const metadata: Metadata = {
   title: "探索",
@@ -80,6 +83,13 @@ export default async function HomePage({
   const isSearching = keyword.length > 0 || tags.length > 0;
   const user = await getSessionUser();
 
+  /*
+   * NSFW 过滤：偏好存在 cookie 里（设置页写入），因此服务端能直接读 ——
+   * 这个值决定**请求哪些条目**，不能等客户端再补。
+   * `nsfwFilterValue` 返回 undefined 时整个键都不传（见该函数说明）。
+   */
+  const nsfw = nsfwFilterValue(parseNsfwCookie((await cookies()).get(NSFW_COOKIE)?.value));
+
   /**
    * 三个分区并行取数。
    *
@@ -100,7 +110,7 @@ export default async function HomePage({
                 filter: {
                   type: [SubjectType.Anime] as never,
                   ...(tags.length ? { tag: tags } : {}),
-                  nsfw: false,
+                  ...(nsfw === undefined ? {} : { nsfw }),
                 },
               }
             : recommendQuery(),
@@ -140,7 +150,7 @@ export default async function HomePage({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="animate-rise space-y-6">
       <section className="space-y-4">
         {!isSearching && (
           <h1 className="text-2xl font-normal">探索</h1>
@@ -224,7 +234,8 @@ export default async function HomePage({
               </Link>
             </div>
           </div>
-          <div className="hero-carousel">
+          {/* 「每隔一段时间自动向左边挤压，右边进来一个」—— 6 秒一屏 */}
+          <ScrollRow className="hero-carousel" label="热门趋势" autoAdvanceMs={6000}>
             {hero.data.map((item, index) => (
               <SubjectCard
                 key={item.id}
@@ -241,7 +252,7 @@ export default async function HomePage({
                 sizes="(max-width: 600px) 80vw, 300px"
               />
             ))}
-          </div>
+          </ScrollRow>
         </section>
       )}
 
@@ -257,7 +268,7 @@ export default async function HomePage({
               </Link>
             </div>
           </div>
-          <div className="card-row">
+          <ScrollRow className="card-row" label="继续观看">
             {watching.map((row) => (
               <SubjectCard
                 key={row.id}
@@ -268,7 +279,7 @@ export default async function HomePage({
                 sizes="160px"
               />
             ))}
-          </div>
+          </ScrollRow>
         </section>
       )}
 

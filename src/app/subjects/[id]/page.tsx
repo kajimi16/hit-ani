@@ -154,7 +154,7 @@ export default async function SubjectPage({
         窄屏时退化为单列，顺序为 左 → 中 → 右 —— 因为左栏含封面与收藏按钮，
         那是最需要在首屏出现的东西。CSS Grid 的自动排布正好是这个顺序。
       */}
-      <div className="detail-layout relative">
+      <div className="detail-layout animate-rise relative">
         <SubjectSidebar
           subject={{
             id: subject.id,

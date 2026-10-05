@@ -142,11 +142,16 @@ function renderStaffItem({ person, relations }: { person: PersonRow; relations: 
             评分直方图（`RatingHistogram`）：柱高按**最大值**归一 ——
             按总数归一的话 10 分那根永远只有两三成高，看不出分布形状。
             每根柱子带 title，鼠标悬停能看到具体人数。
+
+            **显示顺序是 10 → 1（从高分到低分）**，与 Bangumi 站内一致：
+            读分布时注意力天然落在「多少人给了高分」上，把 10 放在最左边
+            才一眼看得到。数据本身仍是 1→10 升序（`histogramBars`），
+            这里只是渲染时反过来 —— 这样排序语义不会被显示需求污染。
           */}
           {hasHistogram && (
             <div className="mt-3 space-y-1">
-              <div className="histogram" role="img" aria-label="评分分布">
-                {bars.map((bar) => (
+              <div className="histogram" role="img" aria-label="评分分布（10 分到 1 分）">
+                {[...bars].reverse().map((bar) => (
                   <div
                     key={bar.score}
                     className="histogram__bar"
@@ -155,9 +160,10 @@ function renderStaffItem({ person, relations }: { person: PersonRow; relations: 
                   />
                 ))}
               </div>
+              {/* 轴标签跟着一起反过来，否则「10 在左」而刻度写 1 会自相矛盾 */}
               <div className="flex justify-between font-mono text-[0.625rem] text-on-surface-variant">
-                <span>1</span>
                 <span>10</span>
+                <span>1</span>
               </div>
             </div>
           )}

@@ -95,3 +95,20 @@ test("用真实数据跑一遍（条目 493016）", () => {
   // 分布峰值在 9 分，形状上应该是先增后减，9 分那根最高
   assert.equal(Math.max(...bars.map((bar) => bar.count)), 3111);
 });
+
+test("显示顺序是 10 → 1（页面渲染时反转，数据本身仍升序）", () => {
+  // 用户要求柱状图 10 在左、1 在右。数据层保持 1→10 升序（排序语义不该被
+  // 显示需求污染），由渲染层反转 —— 这里锁住「反转后确实从 10 开始」。
+  const bars = histogramBars({ "1": 21, "8": 2708, "9": 3111, "10": 982 });
+  const displayed = [...bars].reverse();
+  assert.equal(displayed[0].score, 10, "最左边应当是 10 分");
+  assert.equal(displayed[displayed.length - 1].score, 1, "最右边应当是 1 分");
+  // 反转不改变每根柱子的数据
+  assert.equal(displayed[0].count, 982);
+  assert.equal(displayed[0].percent, bars.find((b) => b.score === 10)!.percent);
+  // 反转结果覆盖全部 10 个分数，无重复无遗漏
+  assert.deepEqual(
+    [...new Set(displayed.map((b) => b.score))].sort((a, b) => a - b),
+    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+  );
+});

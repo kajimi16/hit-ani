@@ -1,6 +1,16 @@
 import Image from "next/image";
 import Link from "next/link";
 import { SubjectType, searchSubjects } from "@/lib/bgm/client";
+import { cookies } from "next/headers";
+import { getSessionUser } from "@/lib/auth/session";
+import {
+  DEFAULT_LEADERBOARD_SORT,
+  LEADERBOARD_SORTS,
+  isLeaderboardSort,
+  rankLeaderboard,
+} from "@/lib/schedule-leaderboard";
+import { buildLeaderboard } from "@/lib/schedule-leaderboard-query";
+import { NSFW_COOKIE, nsfwFilterValue, parseNsfwCookie } from "@/lib/nsfw";
 import { isoDate, parseIsoDate, weekRange, weekdayLabel } from "@/lib/schedule";
 
 export const dynamic = "force-dynamic";
@@ -21,13 +31,17 @@ export const metadata = { title: "新番时间表" };
 export default async function SchedulePage({
   searchParams,
 }: {
-  searchParams: Promise<{ weekOffset?: string }>;
+  searchParams: Promise<{ weekOffset?: string; rank?: string }>;
 }) {
   const params = await searchParams;
+  const rankSort = isLeaderboardSort(params.rank) ? params.rank : DEFAULT_LEADERBOARD_SORT;
+  const user = await getSessionUser();
   const raw = Number(params.weekOffset ?? 0);
   const weekOffset = Number.isFinite(raw) ? Math.min(Math.max(Math.trunc(raw), -8), 8) : 0;
 
   const { start, end } = weekRange(new Date(), weekOffset);
+  // NSFW 偏好与探索页同源（cookie），两处的过滤口径必须一致
+  const nsfw = nsfwFilterValue(parseNsfwCookie((await cookies()).get(NSFW_COOKIE)?.value));
 
   const page = await searchSubjects(
     {
@@ -36,7 +50,7 @@ export default async function SchedulePage({
       filter: {
         type: [SubjectType.Anime] as never,
         air_date: [`>=${isoDate(start)}`, `<=${isoDate(end)}`],
-        nsfw: false,
+        ...(nsfw === undefined ? {} : { nsfw }),
       },
     },
     { limit: 50 },
@@ -64,8 +78,20 @@ export default async function SchedulePage({
     };
   });
 
+  /*
+   * 排行榜：只看**本周这几十部**（与时间表同一批条目），因此校内统计的
+   * 样本量本来就小 —— 界面上会写明「本校 N 人评分」，避免把 1 人打的分
+   * 当成有代表性的平均分。
+   */
+  const leaderboard = user
+    ? rankLeaderboard(
+        await buildLeaderboard({ subjects: page?.data ?? [], schoolId: user.schoolId }),
+        rankSort,
+      )
+    : [];
+
   return (
-    <div className="space-y-6">
+    <div className="animate-rise space-y-6">
       <section className="space-y-3">
         <h1 className="text-2xl font-normal">新番时间表</h1>
         <p className="text-sm text-on-surface-variant">
@@ -86,6 +112,110 @@ export default async function SchedulePage({
 
       {page === null && (
         <p className="alert alert-danger">获取时间表失败，请稍后重试。</p>
+      )}
+
+      {/*
+        新番排行榜 —— 与时间表同一批条目（本周开播），两个板块的数据天然一致，
+        不会出现「时间表里有、榜单里没有」的困惑。
+
+        排序做成链接（`rank=` 查询参数）而不是客户端状态：这是服务端组件，
+        排序在服务端完成，客户端只负责导航 —— 与追番页的排序同一套做法。
+      */}
+      {leaderboard.length > 0 && (
+        <section className="space-y-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <h2 className="text-lg font-medium">新番排行榜</h2>
+            <span className="text-xs text-on-surface-variant">本周开播 {leaderboard.length} 部</span>
+            <div className="ml-auto flex flex-wrap items-center gap-2">
+              {LEADERBOARD_SORTS.map((option) => (
+                <a
+                  key={option.value}
+                  href={`/schedule?weekOffset=${weekOffset}&rank=${option.value}`}
+                  aria-current={rankSort === option.value ? "true" : undefined}
+                  className={`btn btn-sm ${rankSort === option.value ? "btn-primary" : "btn-ghost"}`}
+                >
+                  {option.label}
+                </a>
+              ))}
+            </div>
+          </div>
+
+          <ol className="panel p-0">
+            {leaderboard.map((entry, index) => (
+              <li
+                key={entry.subjectId}
+                className="stagger-item border-b border-outline-variant last:border-b-0"
+                // 逐项延迟，形成轻微瀑布感；上限 8 项（再多最后一项要等半秒）
+                style={{ "--stagger": `${Math.min(index, 8) * 40}ms` } as React.CSSProperties}
+              >
+                <Link
+                  href={`/subjects/${entry.subjectId}`}
+                  className="flex items-center gap-3 p-2 transition-colors hover:bg-surface-container"
+                >
+                  {/* 名次：前三名用强调色，其余保持低调 —— 一眼看出头部 */}
+                  <span
+                    className={`w-6 shrink-0 text-center font-mono text-sm ${
+                      index < 3 ? "font-semibold text-primary" : "text-on-surface-variant"
+                    }`}
+                  >
+                    {index + 1}
+                  </span>
+
+                  {entry.coverUrl ? (
+                    <Image
+                      src={entry.coverUrl}
+                      alt=""
+                      width={72}
+                      height={96}
+                      sizes="36px"
+                      className="w-9 shrink-0 rounded object-cover"
+                      style={{ aspectRatio: "3 / 4" }}
+                    />
+                  ) : (
+                    <span
+                      className="w-9 shrink-0 rounded bg-surface-container-high"
+                      style={{ aspectRatio: "3 / 4" }}
+                      aria-hidden
+                    />
+                  )}
+
+                  <span className="min-w-0 flex-1 truncate text-sm">{entry.title}</span>
+
+                  {/*
+                    四列指标。`—` 表示「没取到」而不是 0 —— BGM 人数只有在
+                    该条目已进本地缓存时才有；本校人数与平均分是站内真实统计。
+                  */}
+                  <span className="hidden shrink-0 gap-4 text-xs sm:flex">
+                    <span className="w-20 text-right">
+                      <span className="text-on-surface-variant">BGM 在看 </span>
+                      <span className="font-mono">{fmt(entry.bgmDoing)}</span>
+                    </span>
+                    <span className="w-16 text-right">
+                      <span className="text-on-surface-variant">评分 </span>
+                      <span className="font-mono">{entry.bgmScore?.toFixed(1) ?? "—"}</span>
+                    </span>
+                    <span className="w-20 text-right">
+                      <span className="text-on-surface-variant">校内在看 </span>
+                      <span className="font-mono">{entry.schoolDoing}</span>
+                    </span>
+                    <span className="w-28 text-right">
+                      <span className="text-on-surface-variant">校内均分 </span>
+                      <span className="font-mono">{entry.schoolAvgRating?.toFixed(1) ?? "—"}</span>
+                      {entry.schoolRatedCount > 0 && (
+                        <span className="text-on-surface-variant"> ({entry.schoolRatedCount})</span>
+                      )}
+                    </span>
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ol>
+
+          <p className="text-xs text-on-surface-variant">
+            「—」表示该数据尚不可用（BGM 人数需先打开过该条目才会缓存）。
+            括号内是参与评分的本校人数 —— 样本很小时平均分的参考价值有限。
+          </p>
+        </section>
       )}
 
       <div className="schedule-board">
@@ -135,4 +265,9 @@ export default async function SchedulePage({
       </div>
     </div>
   );
+}
+
+/** 人数格式化：null 显示 `—` 而不是 0 —— 「没取到」与「确实是 0」不是一回事。 */
+function fmt(value: number | null): string {
+  return value === null ? "—" : value.toLocaleString("zh-CN");
 }

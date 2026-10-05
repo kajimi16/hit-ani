@@ -701,19 +701,26 @@
     scroll-snap-type: x mandatory;
     padding-bottom: 0.5rem;
   }
+  /*
+   * Hero 卡片。
+   *
+   * 用户要求「封面压扁一点」—— 从 Animeko 的 9:16 改为 **3:4**。
+   * 9:16 的竖长条在轮播里一屏只放得下三张，而热门趋势是「扫一眼有什么」，
+   * 压扁后能同时看到更多张，标题文字区也更宽。圆角保持 `extraLarge`（28px）。
+   */
   .hero-card {
     position: relative;
     flex: 0 0 auto;
-    width: 15rem;
-    aspect-ratio: 9 / 16;
+    width: 13rem;
+    aspect-ratio: 3 / 4;
     overflow: hidden;
     border-radius: var(--radius-xl);
     background-color: var(--color-surface-container);
-    scroll-snap-align: center;
+    scroll-snap-align: start;
   }
   @media (min-width: 600px) {
     .hero-card {
-      width: 18.75rem;
+      width: 16rem;
     }
   }
   /* Hero 上的标题用 titleMedium 且允许 2 行；内边距 16px */
@@ -1344,5 +1351,197 @@
     overflow: hidden;
     font-size: 0.8125rem;
     line-height: 1.55;
+  }
+}
+
+/* ================================================================== *
+ * 横向滚动行：左右半透明箭头
+ * (`ScrollRow`)
+ * ================================================================== */
+@layer components {
+  .scroll-row {
+    position: relative;
+    /* 箭头要盖在卡片上，因此需要一个定位上下文 */
+  }
+
+  /*
+   * 箭头压在行内内容的左右边缘。
+   *
+   * 半透明 + 模糊底：既能在任意封面（可能很亮也可能很暗）上保持可见，
+   * 又不会像实心按钮那样在视觉上「切断」这一行。
+   * 用 `fade` 渐变做边缘的柔和过渡，避免卡片被硬生生切掉一半。
+   */
+  .scroll-row__arrow {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.5rem;
+    color: var(--color-on-surface);
+    transition: opacity var(--duration-accelerate) var(--ease-standard);
+  }
+  .scroll-row__arrow--left {
+    left: 0;
+    background-image: linear-gradient(
+      to right,
+      color-mix(in oklab, var(--color-surface-container-lowest) 88%, transparent),
+      transparent
+    );
+  }
+  .scroll-row__arrow--right {
+    right: 0;
+    background-image: linear-gradient(
+      to left,
+      color-mix(in oklab, var(--color-surface-container-lowest) 88%, transparent),
+      transparent
+    );
+  }
+  .scroll-row__arrow:hover {
+    color: var(--color-primary);
+  }
+  /* 箭头里的圆形底 —— 让它在深色封面上也有边界 */
+  .scroll-row__arrow > svg {
+    border-radius: 999px;
+    background-color: color-mix(in oklab, var(--color-surface-container-highest) 82%, transparent);
+    box-shadow: 0 1px 4px 1px color-mix(in oklab, var(--color-scrim) 28%, transparent);
+    padding: 2px;
+    backdrop-filter: blur(4px);
+  }
+
+  /* 触摸设备上隐藏箭头：那里本来就是横滑，箭头只会挡住卡片并占掉点击区 */
+  @media (hover: none) {
+    .scroll-row__arrow {
+      display: none;
+    }
+  }
+}
+
+/* ================================================================== *
+ * 动效
+ *
+ * 统一在这里定义，而不是散落到各组件 —— 动效最容易出现的问题不是
+ * 「不好看」，而是**同一类交互在不同页面快慢不一**，那会让界面显得杂。
+ *
+ * 三条约束：
+ * 1. 时长沿用 Animeko 的 `EasingDurations`（已在 `:root` 定义），不引入新值。
+ * 2. **只动 `transform` / `opacity`** —— 它们能走合成层，不触发重排重绘；
+ *    `width`/`height`/`top`/`left` 的过渡在长列表上会明显掉帧。
+ * 3. **必须尊重 `prefers-reduced-motion`**（见文件末尾）—— 前庭敏感的用户
+ *    会因为持续的位移与缩放感到不适，这是无障碍要求而非可选项。
+ * ================================================================== */
+@layer components {
+  /* ---------------------------------------------------------------- 入场
+   * 页面主内容轻微上浮淡入。幅度很小（6px）：大幅位移在每次导航时都会
+   * 明显拖慢「已经到位了」的感觉。 */
+  @keyframes rise-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  .animate-rise {
+    animation: rise-in var(--duration-decelerate) var(--ease-emphasized-decelerate) both;
+  }
+
+  /* ---------------------------------------------------------------- 卡片
+   * hover 时轻微抬起。`translateY(-2px)` 配一层更深的阴影 —— 两者要**同时**
+   * 变，只改一个会让卡片看起来像「浮在半空」。
+   *
+   * 注意 `SubjectCard` 里刻意没做抬起（密集网格里会很脏），
+   * 这里只给列表行与面板用。 */
+  .lift {
+    transition:
+      transform var(--duration-accelerate) var(--ease-standard),
+      box-shadow var(--duration-accelerate) var(--ease-standard);
+  }
+  .lift:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px 2px color-mix(in oklab, var(--color-scrim) 26%, transparent);
+  }
+
+  /* ---------------------------------------------------------------- 按下反馈
+   * 轻微缩小。触摸设备上这是唯一的「我点到了」信号（没有 hover）。 */
+  .press {
+    transition: transform var(--duration-accelerate) var(--ease-standard);
+  }
+  .press:active {
+    transform: scale(0.98);
+  }
+
+  /* ---------------------------------------------------------------- 列表项入场
+   * 逐项延迟，形成轻微的瀑布感。延迟由内联样式给（`--stagger`），
+   * 上限 8 项 —— 再多会让最后一项等半秒，反而显得卡。 */
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  .stagger-item {
+    animation: fade-in var(--duration-decelerate) var(--ease-standard) both;
+    animation-delay: var(--stagger, 0ms);
+  }
+
+  /* ---------------------------------------------------------------- 骨架微光
+   * 与 `skeleton-fade` 不同：这里让高光**横向扫过**，比整块明暗呼吸
+   * 更像「正在加载」。仍只用 opacity/transform。 */
+  @keyframes shimmer {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(100%);
+    }
+  }
+  .shimmer::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in oklab, var(--color-on-surface) 8%, transparent),
+      transparent
+    );
+    animation: shimmer 1.6s var(--ease-standard) infinite;
+  }
+}
+
+/* ---------------------------------------------------------------- 减少动效
+ *
+ * 系统开启「减少动态效果」时，把上面所有装饰性动效关掉。
+ *
+ * 保留 `opacity` 过渡（淡入淡出不会引起前庭不适），去掉所有**位移与缩放** ——
+ * 后者才是问题所在。另外把时长压到接近 0，让状态切换仍然是「即时」的，
+ * 而不是变得迟钝。
+ */
+@media (prefers-reduced-motion: reduce) {
+  .animate-rise,
+  .stagger-item {
+    animation: none;
+  }
+  .lift:hover,
+  .press:active {
+    transform: none;
+  }
+  .shimmer::after {
+    animation: none;
+    /* 关掉扫光后留一层静态微光，避免骨架完全看不出在加载 */
+    background-image: linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in oklab, var(--color-on-surface) 6%, transparent),
+      transparent
+    );
+    opacity: 0.5;
   }
 }

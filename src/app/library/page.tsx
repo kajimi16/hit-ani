@@ -172,7 +172,7 @@ export default async function LibraryPage({
   const View = query.view === "list" ? "list" : "grid";
 
   return (
-    <div className="space-y-6">
+    <div className="animate-rise space-y-6">
       <h1 className="text-2xl font-normal">我的追番</h1>
 
       {/* ---------------------------------------------------------- 状态分组导航 */}

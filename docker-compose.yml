@@ -131,6 +131,16 @@ services:
       NEXT_PUBLIC_DANMAKU_WS_PORT: ${DANMAKU_GATEWAY_PORT:-3102}
       # 仅反向代理等特殊场景需要显式覆盖；留空即走自动推导
       NEXT_PUBLIC_DANMAKU_WS_URL: ${NEXT_PUBLIC_DANMAKU_WS_URL:-}
+    volumes:
+      # ---------------------------------------------------------------- 图片缓存
+      # Next 的图片优化器把抓到的封面写在 `.next/cache/images`（实测 160MB）。
+      # 此前**没有任何卷**，也就是说这些字节存在容器的可写层里 ——
+      # 每次 `docker compose up --build` 重建容器就全部丢失，
+      # 之后每张封面都要重新回源拉一遍。校内带宽本就紧张，这是纯浪费。
+      #
+      # 挂成命名卷而不是绑定挂载：命名卷由 docker 管理属主，避免
+      # 「宿主目录属主是 root → 容器内 nextjs 用户写不进去」这类问题。
+      - next-image-cache:/app/.next/cache/images
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -234,6 +244,9 @@ services:
       start_period: 40s
 
 volumes:
+  # 图片优化器缓存 —— 见 web 服务里的说明
+  next-image-cache:
+    driver: local
   pgdata:
     driver: local
   jellyfin-config:

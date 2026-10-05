@@ -80,7 +80,7 @@ export function LibraryListRow({ item }: { item: LibraryItem }) {
     <li className="border-b border-outline-variant last:border-b-0">
       <Link
         href={`/subjects/${item.subjectId}`}
-        className="flex gap-4 rounded-md p-2 transition-colors hover:bg-surface-container"
+        className="lift flex gap-4 rounded-md p-2 hover:bg-surface-container"
       >
         <div className="relative w-14 shrink-0 overflow-hidden rounded" style={{ aspectRatio: "9 / 16" }}>
           {item.coverUrl ? (

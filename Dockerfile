@@ -100,6 +100,14 @@ COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
 COPY --from=builder --chown=nextjs:nodejs /app/next.config.ts ./next.config.ts
 
+# 图片优化器的缓存目录必须**在镜像里就存在且属主正确**。
+#
+# 它会被挂成命名卷（见 docker-compose.yml）：docker 首次创建命名卷时，
+# 会把镜像中该路径的内容与属主复制进卷里。若镜像里这个目录不存在，
+# 卷会以 root 属主被创建，而容器以 `nextjs` 运行 —— 结果是每张封面都
+# 优化失败（EACCES），且只表现为「封面裂了」，很难联想到权限。
+RUN mkdir -p .next/cache/images && chown -R nextjs:nodejs .next
+
 USER nextjs
 
 # 3100 = Next.js（页面 + API）；3102 = 弹幕 WebSocket 网关
