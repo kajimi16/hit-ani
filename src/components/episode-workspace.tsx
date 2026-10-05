@@ -100,7 +100,7 @@ export default function EpisodeWorkspace({
 
   if (!selected) {
     return (
-      <p className="panel text-sm text-ink-faint">
+      <p className="panel text-sm text-on-surface-variant/70">
         该条目暂无章节数据。
       </p>
     );
@@ -113,7 +113,7 @@ export default function EpisodeWorkspace({
       <section className="space-y-3">
         <div className="flex flex-wrap items-baseline gap-3">
           <h2 className="text-lg font-semibold">章节</h2>
-          <span className="text-xs text-ink-faint">
+          <span className="text-xs text-on-surface-variant/70">
             {canInteract
               ? bgmBound
                 ? "标记后同步写入 Bangumi"
@@ -128,41 +128,56 @@ export default function EpisodeWorkspace({
           </p>
         )}
 
-        <ul className="flex flex-wrap gap-2">
+        {/*
+          章节格（`EpisodeGridCell`）：网格而非长条列表 —— Animeko 的选集
+          界面就是格子，扫视时比逐行读标题快得多。
+          「看过」状态直接做进格子底色/文字，不必再逐条展开下拉。
+        */}
+        <ul className="episode-grid">
           {episodes.map((episode) => {
             const active = episode.id === selected.id;
             const state = progress[episode.id] ?? 0;
             return (
               <li key={episode.id}>
                 <div
-                  className={`flex items-center gap-2 rounded border px-3 py-1.5 text-sm transition ${
-                    active
-                      ? "border-accent bg-accent-dim text-accent"
-                      : "border-line bg-surface hover:border-line-strong"
-                  }`}
+                  aria-current={active ? "true" : undefined}
+                  data-watched={state === 2 ? "true" : undefined}
+                  className="episode-cell h-full"
                 >
+                  {/*
+                    主按钮铺满整格 —— 点格子＝选中该集。
+                    （曾经把进度下拉做成铺满的透明层，结果点格子只会打开状态
+                    菜单、再也选不中集数。两个动作必须各自有自己的命中区。）
+                  */}
                   <button
                     type="button"
                     onClick={() => setSelectedId(episode.id)}
                     title={episode.nameCn || episode.name}
-                    className="text-left"
+                    className="flex h-full w-full flex-col text-left"
                   >
-                    <span className="font-mono text-xs opacity-70">
+                    <span className="episode-cell__number">
                       EP{episode.ep ?? episode.sort}
                     </span>
-                    <span className="ml-2">{episode.nameCn || episode.name}</span>
-                    <span className="ml-2 text-xs text-ink-faint">
+                    <span className="episode-cell__title">
+                      {episode.nameCn || episode.name}
+                    </span>
+                    <span className="episode-cell__meta">
                       弹幕 {episode.danmakuCount}
-                      {schoolId ? ` / 本校 ${episode.schoolDanmakuCount}` : ""}
+                      {schoolId ? ` · 本校 ${episode.schoolDanmakuCount}` : ""}
                     </span>
                   </button>
 
+                  {/*
+                    进度标记：只占右下角一小块，且**可见** ——
+                    不可见的控件等于没有这个功能。
+                  */}
                   <select
                     value={state}
                     disabled={!canInteract || pending === episode.id}
                     onChange={(event) => void markEpisode(episode.id, Number(event.target.value))}
+                    aria-label={`第 ${episode.ep ?? episode.sort} 集观看状态`}
                     title="观看状态"
-                    className="input w-auto py-0.5 text-xs"
+                    className="mt-2 w-full rounded border border-outline-variant bg-surface-container-lowest px-1 py-0.5 text-[0.6875rem] text-on-surface-variant"
                   >
                     {Object.entries(PROGRESS_LABELS).map(([value, text]) => (
                       <option key={value} value={value}>
