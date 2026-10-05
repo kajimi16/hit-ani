@@ -16,36 +16,10 @@
  * 新增列时漏写会立刻失败。
  */
 
+import { parseIsoDate } from "@/lib/date";
 import type { Subject } from "@/lib/bgm/client";
 import type { Prisma } from "@prisma/client";
 
-/**
- * `YYYY-MM-DD` → Date；BGM 对未定档条目会返回空串。
- *
- * 这里是**独立实现**而不是复用 `import.ts` 的 `parseAirDate`：那个模块依赖
- * `prisma` 与整个导入链路，而这个映射要被路由与测试直接引用。为一个三行函数
- * 引入那串依赖不划算。
- */
-export function parseAirDate(raw: string | undefined | null): Date | null {
-  if (!raw) return null;
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw.trim());
-  if (!match) return null;
-
-  const [, y, m, d] = match;
-  const date = new Date(Date.UTC(Number(y), Number(m) - 1, Number(d)));
-  if (Number.isNaN(date.getTime())) return null;
-
-  /*
-   * `Date.UTC` 会**静默进位**：`2026-13-45` 不会报错，而是变成 2027-02-14。
-   * 正则只保证「4 位-2 位-2 位」，挡不住 13 月、45 日这类值。
-   * 回读一遍确认没被进位 —— 否则上游的一个坏日期会被我们悄悄存成另一个日期，
-   * 用户看到的是「首播 2027-02-14」这种凭空捏造的信息。
-   */
-  if (date.getUTCFullYear() !== Number(y)) return null;
-  if (date.getUTCMonth() !== Number(m) - 1) return null;
-  if (date.getUTCDate() !== Number(d)) return null;
-  return date;
-}
 
 /**
  * 详情接口能提供的全部 `Subject` 字段。
@@ -85,7 +59,7 @@ export function subjectFieldsFromDetail(detail: Subject): SubjectFields {
     nameCn: detail.name_cn || null,
     summary: detail.summary || null,
     coverUrl: detail.images?.large ?? detail.images?.common ?? null,
-    airDate: parseAirDate(detail.date),
+    airDate: parseIsoDate(detail.date),
     score: detail.rating?.score ?? null,
     rank: detail.rating?.rank ?? null,
     // 右栏「N 人评分」与左栏作品信息都要用

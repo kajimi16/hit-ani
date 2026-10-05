@@ -17,7 +17,8 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseAirDate, subjectFieldsFromDetail } from "@/lib/bgm/subject-fields";
+import { subjectFieldsFromDetail, subjectFieldsFromSlim } from "@/lib/bgm/subject-fields";
+import { parseIsoDate } from "@/lib/date";
 import type { Subject } from "@/lib/bgm/client";
 
 /** 与真实响应同形状的最小条目（字段值取自条目 493016）。 */
@@ -89,19 +90,87 @@ test("空的 rating.count 不会被当成 undefined 丢掉", () => {
   assert.deepEqual(fields.ratingHistogram, {});
 });
 
-test("parseAirDate 只接受严格的 YYYY-MM-DD", () => {
-  assert.equal(parseAirDate("2026-01-04")!.toISOString().slice(0, 10), "2026-01-04");
+test("parseIsoDate 只接受严格的 YYYY-MM-DD", () => {
+  assert.equal(parseIsoDate("2026-01-04")!.toISOString().slice(0, 10), "2026-01-04");
   // BGM 对未定档条目会返回空串
   for (const bad of ["", "  ", "2026-1-4", "2026/01/04", "2026-13-45", "未定档", null, undefined]) {
-    assert.equal(parseAirDate(bad as string), null, `${JSON.stringify(bad)} 应解析为 null`);
+    assert.equal(parseIsoDate(bad as string), null, `${JSON.stringify(bad)} 应解析为 null`);
   }
 });
 
-test("parseAirDate 用 UTC，不受本地时区影响", () => {
+test("parseIsoDate 用 UTC，不受本地时区影响", () => {
   // 用本地时间构造会让 UTC+8 的机器把 2026-01-04 存成 2026-01-03。
-  const date = parseAirDate("2026-01-04")!;
+  const date = parseIsoDate("2026-01-04")!;
   assert.equal(date.getUTCFullYear(), 2026);
   assert.equal(date.getUTCMonth(), 0);
   assert.equal(date.getUTCDate(), 4);
   assert.equal(date.getUTCHours(), 0);
+});
+
+/* ---------------------------------------------------------------- *
+ * 轻量映射：**键集**本身就是不变量
+ * ---------------------------------------------------------------- */
+
+/**
+ * `subjectFieldsFromSlim` 的返回值会被当作 `update: fields` 在**每次重新导入
+ * 收藏时**整体写入 —— 因此它多带一个键，就意味着一列被清空。
+ *
+ * `SlimSubject` 里没有评分人数与评分分布，若哪天有人「顺手补齐」把这两个键
+ * 加上（或把实现改成复用 `subjectFieldsFromDetail`），那么每次重跑导入都会把
+ * 已存的 `ratingTotal` / `ratingHistogram` 覆盖成 `null` —— 详情页右栏的
+ * 「N 人评分」与直方图会**在全站范围内**消失，而没有任何测试会失败。
+ *
+ * 所以这里断言的是**键集**，不是取值：漏键与多键都要能被抓住。
+ * 用 `Object.keys` 而不是逐项取值，因为「多了一个不该有的键」正是要防的形态。
+ */
+test("轻量映射绝不携带评分人数与评分直方图", () => {
+  const fields = subjectFieldsFromSlim({
+    name: "异国日记",
+    name_cn: "异国日记",
+    short_summary: "截短简介",
+    images: { common: "https://lain.bgm.tv/c.jpg" },
+    score: 8.4,
+    rank: 66,
+    tags: [{ name: "治愈" }],
+  });
+
+  const keys = Object.keys(fields);
+  assert.equal(
+    keys.includes("ratingTotal"),
+    false,
+    "带上 ratingTotal 会在每次重新导入收藏时把它清空",
+  );
+  assert.equal(
+    keys.includes("ratingHistogram"),
+    false,
+    "带上 ratingHistogram 会在每次重新导入收藏时把它清空",
+  );
+  // 同理：`airDate` 也不该出现在轻量路径 —— SlimSubject 没有日期字段，
+  // 带上它只会把已有的首播日期写成 null。
+  assert.equal(keys.includes("airDate"), false, "SlimSubject 没有日期，不该带 airDate");
+});
+
+test("轻量映射的键集与「不覆盖」的承诺一致", () => {
+  // 把允许的键写死，任何人新增键都要先想清楚「这会不会清空已有数据」。
+  const allowed = ["type", "name", "nameCn", "summary", "coverUrl", "score", "rank", "tags"];
+  const keys = Object.keys(subjectFieldsFromSlim({ name: "x" })).sort();
+  assert.deepEqual(keys, [...allowed].sort());
+});
+
+test("轻量映射对缺失的可选字段给 null / 空数组，不抛错", () => {
+  const fields = subjectFieldsFromSlim({ name: "只有名字" });
+  assert.equal(fields.nameCn, null);
+  assert.equal(fields.summary, null);
+  assert.equal(fields.coverUrl, null);
+  assert.equal(fields.score, null);
+  assert.equal(fields.rank, null);
+  assert.deepEqual(fields.tags, []);
+});
+
+test("轻量映射优先用大图，退化到 common", () => {
+  assert.equal(
+    subjectFieldsFromSlim({ name: "x", images: { large: "L", common: "C" } }).coverUrl,
+    "L",
+  );
+  assert.equal(subjectFieldsFromSlim({ name: "x", images: { common: "C" } }).coverUrl, "C");
 });

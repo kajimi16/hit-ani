@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth/session";
 import { countByEpisodeIds } from "@/lib/danmaku/repository";
-import { parseAirDate, subjectFieldsFromDetail } from "@/lib/bgm/subject-fields";
+import { subjectFieldsFromDetail } from "@/lib/bgm/subject-fields";
+import { parseIsoDate } from "@/lib/date";
 import { getSubject, getSubjectEpisodes } from "@/lib/bgm/client";
 import { prisma } from "@/lib/prisma";
 
@@ -58,7 +59,7 @@ export async function GET(
           ep: episode.ep ?? null,
           name: episode.name,
           nameCn: episode.name_cn || null,
-          airdate: parseAirDate(episode.airdate),
+          airdate: parseIsoDate(episode.airdate),
           duration: episode.duration || null,
         };
         await prisma.episode.upsert({

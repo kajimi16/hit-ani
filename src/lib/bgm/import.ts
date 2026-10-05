@@ -24,11 +24,8 @@
  */
 
 import { prisma } from "@/lib/prisma";
-import {
-  parseAirDate,
-  subjectFieldsFromDetail,
-  subjectFieldsFromSlim,
-} from "@/lib/bgm/subject-fields";
+import { subjectFieldsFromDetail, subjectFieldsFromSlim } from "@/lib/bgm/subject-fields";
+import { parseIsoDate } from "@/lib/date";
 import {
   getSubject,
   getSubjectEpisodes,
@@ -277,7 +274,7 @@ export async function enrichSubject(
       ep: episode.ep ?? null,
       name: episode.name,
       nameCn: episode.name_cn || null,
-      airdate: parseAirDate(episode.airdate),
+      airdate: parseIsoDate(episode.airdate),
       duration: episode.duration || null,
     };
     await prisma.episode.upsert({

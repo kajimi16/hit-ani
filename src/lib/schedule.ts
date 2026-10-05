@@ -21,18 +21,12 @@ export function weekRange(now: Date, weekOffset = 0): { start: Date; end: Date }
   return { start, end };
 }
 
-/** `YYYY-MM-DD`。 */
-export function isoDate(date: Date): string {
-  return date.toISOString().slice(0, 10);
-}
-
-/** 把 `YYYY-MM-DD` 解析为 UTC 零点；非法输入返回 null。 */
-export function parseIsoDate(raw: string): Date | null {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw.trim());
-  if (!match) return null;
-  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
-  return Number.isNaN(date.getTime()) ? null : date;
-}
+/*
+ * 日期解析与格式化统一用 `@/lib/date`（全局唯一实现，带进位校验）。
+ * 这里转发是为了保持 `@/lib/schedule` 既有的导入路径可用 ——
+ * 时间表的调用方关心的是「周区间」，不该被迫记住日期工具在哪个模块。
+ */
+export { isoDate, parseIsoDate } from "@/lib/date";
 
 export const WEEKDAY_LABELS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"] as const;
 
