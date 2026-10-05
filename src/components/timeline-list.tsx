@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { IconStar } from "@/components/icons";
+import UserAvatar from "@/components/user-avatar";
 import type { TimelineEvent } from "@/lib/timeline/types";
 
 /** 事件类型 → 展示用的动词短语。 */
@@ -46,23 +47,7 @@ function relativeTime(at: Date, now = Date.now()): string {
 function EventRow({ event }: { event: TimelineEvent }) {
   return (
     <li className="flex gap-3 border-b border-outline-variant py-3 last:border-b-0">
-      {event.avatarUrl ? (
-        <Image
-          src={event.avatarUrl}
-          alt=""
-          width={80}
-          height={80}
-          sizes="36px"
-          className="size-9 shrink-0 rounded-full object-cover"
-        />
-      ) : (
-        <span
-          aria-hidden
-          className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary-container text-xs text-on-primary-container"
-        >
-          {([...event.nickname.trim()][0] ?? "?").toUpperCase()}
-        </span>
-      )}
+      <UserAvatar url={event.avatarUrl} nickname={event.nickname} size={36} />
 
       <div className="min-w-0 flex-1 space-y-1">
         <p className="text-sm">

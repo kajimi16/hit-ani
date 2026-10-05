@@ -359,15 +359,20 @@ async function syncSubjectPersons(subjectId: number): Promise<number> {
   await prisma.$transaction([
     // 先清后写：上游删掉某个职位时本地也要跟着消失，否则会留下幽灵人员。
     // 同一个人担任多个职位不受影响 —— 主键是「条目 + 人员 + 职位」。
-    prisma.subjectPerson.deleteMany({ where: { subjectId } }),
+
     prisma.subjectPerson.createMany({
       data: persons.map((person, index) => ({
         subjectId,
         personId: person.id,
         relation: person.relation,
         name: person.name,
-        career: person.career ?? [],
-        imageUrl: person.images?.medium ?? person.images?.small ?? null,
+        /*
+         * `||` 而不是 `??`：BGM 有时返回**空字符串**而不是缺字段（实测库里
+         * 有 591 行落成了 `""`）。`??` 只挡 null/undefined、接不住空串，
+         * 于是「有没有头像」的判据被迫退化成 falsy 判断 —— 哪天有人改成
+         * `!== null` 就是一片裂图。
+         */
+        imageUrl: person.images?.medium || person.images?.small || null,
         // 上游已按重要度排好序，照它的顺序存
         sort: index,
       })),

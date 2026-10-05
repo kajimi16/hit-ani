@@ -1,8 +1,8 @@
 "use client";
 
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import UserAvatar from "@/components/user-avatar";
 
 interface Props {
   /** 当前头像地址；null 表示用首字母占位。 */
@@ -10,12 +10,6 @@ interface Props {
   nickname: string;
   /** 已绑定 Bangumi 才提供「导入」；未绑定时不显示那个按钮。 */
   bgmBound: boolean;
-}
-
-/** 昵称首字母占位。中文取第一个字，英文取首字母大写。 */
-function initialOf(nickname: string): string {
-  const first = [...nickname.trim()][0] ?? "?";
-  return first.toUpperCase();
 }
 
 /**
@@ -56,23 +50,7 @@ export default function AvatarSetting({ currentUrl, nickname, bgmBound }: Props)
       <h2 className="font-medium">头像</h2>
 
       <div className="flex flex-wrap items-center gap-4">
-        {currentUrl ? (
-          <Image
-            src={currentUrl}
-            alt=""
-            width={128}
-            height={128}
-            sizes="64px"
-            className="size-16 shrink-0 rounded-full object-cover"
-          />
-        ) : (
-          <span
-            aria-hidden
-            className="flex size-16 shrink-0 items-center justify-center rounded-full bg-primary-container text-2xl text-on-primary-container"
-          >
-            {initialOf(nickname)}
-          </span>
-        )}
+        <UserAvatar url={currentUrl} nickname={nickname} size={64} />
 
         <div className="flex flex-wrap gap-2">
           {bgmBound && (

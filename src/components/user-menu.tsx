@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import Image from "next/image";
+import UserAvatar from "@/components/user-avatar";
 
 interface Props {
   nickname: string;
@@ -46,31 +46,12 @@ export default function UserMenu({
     }
   };
 
-  /** 昵称首字占位 —— 中文取首字，英文取首字母大写。 */
-  const initial = ([...nickname.trim()][0] ?? "?").toUpperCase();
   const title = `${nickname} · ${schoolId}${isAdmin ? " · 管理员" : ""}`;
 
   if (compact) {
     return (
       <div className="flex flex-col items-center gap-1 px-1">
-        {avatarUrl ? (
-          <Image
-            src={avatarUrl}
-            alt=""
-            width={64}
-            height={64}
-            sizes="32px"
-            className="size-8 rounded-full object-cover"
-            title={title}
-          />
-        ) : (
-          <span
-            className="flex size-8 items-center justify-center rounded-full bg-primary-container text-xs text-on-primary-container"
-            title={title}
-          >
-            {initial}
-          </span>
-        )}
+        <UserAvatar url={avatarUrl} nickname={nickname} size={32} title={title} />
         <button
           type="button"
           onClick={() => void logout()}
@@ -92,23 +73,7 @@ export default function UserMenu({
       */}
       <div className="flex flex-col gap-1.5 rounded-md bg-surface-container-high px-2.5 py-2">
         <span className="flex items-center gap-2">
-          {avatarUrl ? (
-            <Image
-              src={avatarUrl}
-              alt=""
-              width={64}
-              height={64}
-              sizes="24px"
-              className="size-6 shrink-0 rounded-full object-cover"
-            />
-          ) : (
-            <span
-              aria-hidden
-              className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary-container text-[0.625rem] text-on-primary-container"
-            >
-              {initial}
-            </span>
-          )}
+          <UserAvatar url={avatarUrl} nickname={nickname} size={24} />
           <span className="truncate text-sm text-on-surface" title={nickname}>
             {nickname}
           </span>
