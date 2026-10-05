@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { bindQqAccount, readQqOAuthConfig } from "@/lib/auth/qq-oauth";
+import { QqAccountTakenError, bindQqAccount, readQqOAuthConfig } from "@/lib/auth/qq-oauth";
 import { OAUTH_STATE_COOKIE, requireSessionUser } from "@/lib/auth/session";
 
 export const runtime = "nodejs";
@@ -37,11 +37,12 @@ export async function GET(request: Request) {
       new URL(`/settings?qq=ok&openid=${encodeURIComponent(openId)}`, url.origin),
     );
   } catch (error) {
+    // 冲突单独标出来，设置页才能显示「已被另一个账号绑定」而不是含糊的失败
+    const taken = error instanceof QqAccountTakenError;
+    const reason = error instanceof Error ? error.message : String(error);
     return NextResponse.redirect(
       new URL(
-        `/settings?qq=failed&reason=${encodeURIComponent(
-          error instanceof Error ? error.message : String(error),
-        )}`,
+        `/settings?qq=${taken ? "taken" : "failed"}&reason=${encodeURIComponent(reason)}`,
         url.origin,
       ),
     );

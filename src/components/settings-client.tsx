@@ -41,6 +41,11 @@ export default function SettingsClient({
   const [token, setToken] = useState("");
   const [binding, setBinding] = useState(false);
 
+  /** 待确认的绑定迁移 —— 非 null 时展示内联确认面板。 */
+  const [conflict, setConflict] = useState<{ token: string; bgmUsername: string | null } | null>(
+    null,
+  );
+
   const loadSyncState = useCallback(async () => {
     try {
       const response = await fetch("/api/library/import", { cache: "no-store" });
@@ -104,17 +109,38 @@ export default function SettingsClient({
     }
   };
 
-  const bindToken = async () => {
+  /**
+   * 绑定个人令牌。
+   *
+   * `takeOver` 只在用户**明确确认**后传 true：该 BGM 账号可能已绑定到本站
+   * 另一个账号，静默迁移会让那边无声失去绑定，因此先让服务端回 409，
+   * 界面再把决定权交给用户（内联确认面板，不用 `window.confirm` —— 后者
+   * 样式不可控、移动端表现差，也无法承载「另一方会失去绑定」这种需要
+   * 说清楚的后果）。
+   */
+  const bindToken = async (tokenToUse: string, takeOver = false) => {
     setBinding(true);
     setError(null);
     try {
       const response = await fetch("/api/auth/bgm/token", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: token.trim() }),
+        body: JSON.stringify({ token: tokenToUse, takeOver }),
       });
-      const body = (await response.json()) as { error?: string };
+      const body = (await response.json()) as {
+        error?: string;
+        code?: string;
+        bgmUsername?: string | null;
+      };
+
+      // 已被另一个账号绑定：说明情况，由用户决定是否迁移
+      if (response.status === 409 && body.code === "BGM_ACCOUNT_TAKEN") {
+        setConflict({ token: tokenToUse, bgmUsername: body.bgmUsername ?? null });
+        return;
+      }
+
       if (!response.ok) throw new Error(body.error ?? "绑定失败");
+      setConflict(null);
       setToken("");
       router.refresh();
     } catch (e) {
@@ -228,13 +254,52 @@ export default function SettingsClient({
                   />
                   <button
                     type="button"
-                    onClick={() => void bindToken()}
+                    onClick={() => void bindToken(token.trim())}
                     disabled={binding || token.trim().length < 8}
-                    className="rounded bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary disabled:opacity-40"
+                    className="btn btn-primary"
                   >
                     {binding ? "校验中…" : "绑定"}
                   </button>
                 </div>
+
+                {/*
+                  冲突确认：该 BGM 账号已被另一个本地账号绑定。
+                  内联面板而不是 `window.confirm` —— 需要说清「另一方会失去绑定」
+                  这个后果，而系统弹窗样式不可控、移动端表现也差。
+                */}
+                {conflict && (
+                  <div className="alert alert-warn space-y-2">
+                    <p>
+                      {conflict.bgmUsername
+                        ? `Bangumi 账号「${conflict.bgmUsername}」`
+                        : "这个 Bangumi 账号"}
+                      已经绑定到本站的另一个账号。
+                    </p>
+                    <p className="text-xs">
+                      如果你就是该 Bangumi 账号的主人（你能提供它的令牌），可以把绑定
+                      <strong>迁移</strong>到当前账号。迁移后，原来那个本地账号将不再
+                      关联这个 Bangumi 账号。
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void bindToken(conflict.token, true)}
+                        disabled={binding}
+                        className="btn btn-primary btn-sm"
+                      >
+                        {binding ? "迁移中…" : "迁移到当前账号"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConflict(null)}
+                        disabled={binding}
+                        className="btn btn-ghost btn-sm"
+                      >
+                        取消
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 <p className="text-xs text-secondary">
                   该令牌等同于你的 Bangumi 账号密码，仅保存在本站服务端。请勿分享给他人；

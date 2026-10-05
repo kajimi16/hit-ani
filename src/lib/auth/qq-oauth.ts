@@ -8,6 +8,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
+import { isUniqueViolation } from "@/lib/prisma-errors";
 
 const QQ_AUTHORIZE_URL = "https://graph.qq.com/oauth2.0/authorize";
 const QQ_TOKEN_URL = "https://graph.qq.com/oauth2.0/token";
@@ -124,6 +125,26 @@ export async function fetchQqUserInfo(
   };
 }
 
+/**
+ * 该 QQ 已经被本站另一个账号绑定。
+ *
+ * 与 Bangumi 那边同源的问题：`QqBinding.userId` 是主键、`openId` 是唯一键，
+ * 而 `upsert({ where: { userId } })` **只按主键判断**。当同一个 QQ 被第二个
+ * 本地账号绑定时，它会走 `create` 分支撞上 `openId` 的唯一约束，把
+ * `Unique constraint failed on the fields: (openId)` 这类 Prisma 原文
+ * 直接甩给用户。
+ *
+ * QQ 这条路径**不做迁移**：它是跳转式 OAuth，回调里没有地方让用户确认，
+ * 而静默解除另一账号的绑定不可接受（BGM 那条能确认，所以有 takeOver）。
+ * 这里只把失败说清楚。
+ */
+export class QqAccountTakenError extends Error {
+  constructor(readonly openId: string) {
+    super("这个 QQ 已经绑定到本站的另一个账号了。请先在那个账号里解除绑定，再试。");
+    this.name = "QqAccountTakenError";
+  }
+}
+
 /** 绑定 QQ 到指定平台账号。 */
 export async function bindQqAccount(
   userId: string,
@@ -134,11 +155,16 @@ export async function bindQqAccount(
   const { openId, unionId } = await fetchOpenId(accessToken);
   const info = await fetchQqUserInfo(config, accessToken, openId);
 
-  await prisma.qqBinding.upsert({
-    where: { userId },
-    create: { userId, openId, unionId: unionId ?? null },
-    update: { openId, unionId: unionId ?? null },
-  });
+  try {
+    await prisma.qqBinding.upsert({
+      where: { userId },
+      create: { userId, openId, unionId: unionId ?? null },
+      update: { openId, unionId: unionId ?? null },
+    });
+  } catch (error) {
+    if (isUniqueViolation(error)) throw new QqAccountTakenError(openId);
+    throw error;
+  }
 
   return { openId, nickname: info.nickname };
 }

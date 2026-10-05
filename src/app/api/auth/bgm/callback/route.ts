@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { bindBgmAccount, readBgmOAuthConfig } from "@/lib/auth/bgm-oauth";
+import {
+  BgmAccountTakenError,
+  bindBgmAccount,
+  readBgmOAuthConfig,
+} from "@/lib/auth/bgm-oauth";
 import { OAUTH_STATE_COOKIE, requireSessionUser } from "@/lib/auth/session";
 
 export const runtime = "nodejs";
@@ -47,11 +51,17 @@ export async function GET(request: Request) {
       new URL(`/settings?bgm=ok&uid=${bgmUserId}`, url.origin),
     );
   } catch (error) {
+    /*
+     * 冲突单独标出来，让设置页显示「已绑定到另一个账号」而不是一句含糊的失败。
+     * 这里**不**自动迁移 —— 跳转回来的路径上没法让用户确认，而静默解除另一
+     * 账号的绑定不可接受（见 `saveBinding`）。迁移入口在设置页的「个人访问
+     * 令牌」那一路，那里能弹确认。
+     */
+    const taken = error instanceof BgmAccountTakenError;
+    const reason = error instanceof Error ? error.message : String(error);
     return NextResponse.redirect(
       new URL(
-        `/settings?bgm=failed&reason=${encodeURIComponent(
-          error instanceof Error ? error.message : String(error),
-        )}`,
+        `/settings?bgm=${taken ? "taken" : "failed"}&reason=${encodeURIComponent(reason)}`,
         url.origin,
       ),
     );

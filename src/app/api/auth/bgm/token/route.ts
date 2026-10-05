@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { bindBgmPersonalToken } from "@/lib/auth/bgm-oauth";
+import { bindingErrorResponse } from "@/lib/auth/binding-response";
 import { requireSessionUser } from "@/lib/auth/session";
 
 export const runtime = "nodejs";
@@ -9,6 +10,14 @@ export const dynamic = "force-dynamic";
 const schema = z.object({
   /** Bangumi 个人访问令牌。视为密码，不落日志、不回显。 */
   token: z.string().min(8).max(512),
+  /**
+   * 该 Bangumi 账号已绑定到另一个本地账号时，是否迁移到当前账号。
+   *
+   * 默认 false：先回 409 让界面确认。令牌本身就是所有权的证明，
+   * 所以迁移是安全的 —— 但**不能静默做**，否则与之关联的另一个账号会
+   * 无声失去绑定。
+   */
+  takeOver: z.boolean().optional(),
 });
 
 /**
@@ -44,6 +53,7 @@ export async function POST(request: Request) {
     const { bgmUserId, username, expiresAt } = await bindBgmPersonalToken(
       user.id,
       body.token.trim(),
+      { takeOver: body.takeOver },
     );
 
     // 只回显非敏感字段；token 本身绝不出现在响应里
@@ -54,7 +64,9 @@ export async function POST(request: Request) {
       expiresAt: expiresAt.toISOString(),
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: message }, { status: 400 });
+    // 冲突 → 409 + 机器可读的 code，界面据此弹「是否迁移」的确认。
+    // 映射逻辑在 `@/lib/auth/binding-response`（无框架依赖，可直接单测）。
+    const { status, body } = bindingErrorResponse(error);
+    return NextResponse.json(body, { status });
   }
 }

@@ -15,6 +15,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
+import { isUniqueViolation } from "@/lib/prisma-errors";
 import {
   BGM_OAUTH_BASE,
   buildAuthorizeUrl,
@@ -88,11 +89,128 @@ export async function fetchBgmIdentity(accessToken: string): Promise<BgmIdentity
   return { userId: data.id, username: data.username };
 }
 
+/**
+ * 该 Bangumi 账号已经绑定到本站的**另一个**本地账号。
+ *
+ * 为什么不默默覆盖：一个 BGM 账号可能被两个本地账号关联（例如两人共用一个
+ * BGM 账号），静默迁移会让另一边无声失去绑定。因此把决定权交给用户 ——
+ * 见 `takeOver`。
+ */
+export class BgmAccountTakenError extends Error {
+  constructor(
+    readonly bgmUserId: number,
+    /** 已持有该绑定的 BGM 用户名，用于把提示说得具体些。 */
+    readonly bgmUsername: string | null,
+  ) {
+    super(
+      `这个 Bangumi 账号${bgmUsername ? `（${bgmUsername}）` : ""}已经绑定到本站的另一个账号了。`,
+    );
+    this.name = "BgmAccountTakenError";
+  }
+}
+
+interface BindingFields {
+  bgmUserId: number;
+  bgmUsername: string;
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: Date;
+  personalToken: boolean;
+}
+
+/**
+ * 由「该 BGM 账号当前的持有人」决定这次绑定该怎么做。
+ *
+ * 抽成纯函数是因为这里的分支正是出过问题的地方：`bgmUserId` 上有唯一约束，
+ * 而原来的 `upsert({ where: { userId } })` 只按主键判断，于是「另一个本地账号
+ * 已持有该 BGM 账号」时走 `create` 分支、直接撞唯一约束，把 Prisma 原文抛给用户。
+ *
+ * - `write`：无人持有，或持有人就是自己 —— 正常写入（自己重复绑定走 update）
+ * - `conflict`：他人持有且未获授权 —— 交给调用方提示用户
+ * - `take-over`：他人持有且用户已确认 —— 迁移到当前账号
+ */
+export function planBinding(
+  holder: { userId: string } | null,
+  userId: string,
+  takeOver: boolean,
+): "write" | "conflict" | "take-over" {
+  if (!holder || holder.userId === userId) return "write";
+  return takeOver ? "take-over" : "conflict";
+}
+
+/**
+ * 写入绑定关系。
+ *
+ * 冲突的两种方向见 `planBinding`。原始表现是一条 Prisma 报错：
+ *
+ *     Invalid `prisma.bgmBinding.upsert()` invocation:
+ *     Unique constraint failed on the fields: (`bgmUserId`)
+ *
+ * 把这句话甩给用户毫无意义（既是内部实现细节，也没告诉用户能做什么）。
+ * 现在翻译成可操作的提示，并在 `takeOver` 为真时**显式迁移**。
+ *
+ * `takeOver` 是安全的：能提供该 BGM 账号的有效令牌，本身就是所有权的证明
+ * （令牌等同于密码），因此「迁移到自己名下」不是越权。但它仍需要用户确认 ——
+ * 静默迁移会让原来那个本地账号无声失去绑定。
+ *
+ * 删除旧行与写入新行放在同一个事务里 —— 否则迁移中途失败会让双方都失去绑定。
+ */
+async function saveBinding(
+  userId: string,
+  fields: BindingFields,
+  takeOver: boolean,
+): Promise<void> {
+  const holder = await prisma.bgmBinding.findUnique({
+    where: { bgmUserId: fields.bgmUserId },
+    select: { userId: true, bgmUsername: true },
+  });
+
+  const plan = planBinding(holder, userId, takeOver);
+
+  if (plan === "conflict") {
+    throw new BgmAccountTakenError(fields.bgmUserId, holder?.bgmUsername ?? null);
+  }
+
+  if (plan === "take-over") {
+    await prisma.$transaction([
+      prisma.bgmBinding.deleteMany({
+        where: { bgmUserId: fields.bgmUserId, userId: { not: userId } },
+      }),
+      prisma.bgmBinding.upsert({
+        where: { userId },
+        create: { userId, ...fields },
+        update: fields,
+      }),
+    ]);
+    return;
+  }
+
+  try {
+    await prisma.bgmBinding.upsert({
+      where: { userId },
+      create: { userId, ...fields },
+      update: fields,
+    });
+  } catch (error) {
+    // 上面的检查与这里的写入之间可能有并发绑定插入 —— 兜住这种情况，
+    // 返回同样的可识别错误让调用方决定是否迁移，而不是漏出 Prisma 原文。
+    if (isUniqueViolation(error)) {
+      const nowHeldBy = await prisma.bgmBinding.findUnique({
+        where: { bgmUserId: fields.bgmUserId },
+        select: { bgmUsername: true },
+      });
+      throw new BgmAccountTakenError(fields.bgmUserId, nowHeldBy?.bgmUsername ?? null);
+    }
+    throw error;
+  }
+}
+
 /** 用 code 换 token 并落库绑定（OAuth 路径）。 */
 export async function bindBgmAccount(
   userId: string,
   config: BgmOAuthConfig,
   code: string,
+  options: { takeOver?: boolean } = {},
 ): Promise<{ bgmUserId: number }> {
   const token = await exchangeAuthorizationCode({
     clientId: config.clientId,
@@ -102,22 +220,19 @@ export async function bindBgmAccount(
   });
 
   const identity = await fetchBgmIdentity(token.access_token);
-  const expiresAt = new Date(Date.now() + token.expires_in * 1000);
 
-  const fields = {
-    bgmUserId: identity.userId,
-    bgmUsername: identity.username,
-    accessToken: token.access_token,
-    refreshToken: token.refresh_token,
-    expiresAt,
-    personalToken: false,
-  };
-
-  await prisma.bgmBinding.upsert({
-    where: { userId },
-    create: { userId, ...fields },
-    update: fields,
-  });
+  await saveBinding(
+    userId,
+    {
+      bgmUserId: identity.userId,
+      bgmUsername: identity.username,
+      accessToken: token.access_token,
+      refreshToken: token.refresh_token,
+      expiresAt: new Date(Date.now() + token.expires_in * 1000),
+      personalToken: false,
+    },
+    options.takeOver ?? false,
+  );
 
   return { bgmUserId: identity.userId };
 }
@@ -159,27 +274,26 @@ const PERSONAL_TOKEN_ASSUMED_LIFETIME_MS = 365 * 24 * 60 * 60 * 1000;
 export async function bindBgmPersonalToken(
   userId: string,
   token: string,
+  options: { takeOver?: boolean } = {},
 ): Promise<{ bgmUserId: number; username: string; expiresAt: Date }> {
   const identity = await fetchBgmIdentity(token);
   const expiresAt =
     (await fetchTokenExpiry(token)) ??
     new Date(Date.now() + PERSONAL_TOKEN_ASSUMED_LIFETIME_MS);
 
-  const fields = {
-    bgmUserId: identity.userId,
-    bgmUsername: identity.username,
-    accessToken: token,
-    // 个人令牌没有 refresh_token；留空字符串以便复用同一列而不改可空性
-    refreshToken: "",
-    expiresAt,
-    personalToken: true,
-  };
-
-  await prisma.bgmBinding.upsert({
-    where: { userId },
-    create: { userId, ...fields },
-    update: fields,
-  });
+  await saveBinding(
+    userId,
+    {
+      bgmUserId: identity.userId,
+      bgmUsername: identity.username,
+      accessToken: token,
+      // 个人令牌没有 refresh_token；留空字符串以便复用同一列而不改可空性
+      refreshToken: "",
+      expiresAt,
+      personalToken: true,
+    },
+    options.takeOver ?? false,
+  );
 
   return { bgmUserId: identity.userId, username: identity.username, expiresAt };
 }
