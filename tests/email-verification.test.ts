@@ -24,6 +24,7 @@ import {
   generateCode,
   issueCode,
   normalizeEmail,
+  verificationEmailSubject,
   verifyCode,
 } from "@/lib/email/verification";
 
@@ -221,4 +222,54 @@ test("randomInt 的范围不会产生超出位数的值", () => {
   // `10 ** CODE_LENGTH` 作为上界是**开区间**，取值最大 999999 —— 不会出现
   // 1000000 这种 7 位数（那会让 padStart 变成 no-op 且长度校验失败）
   assert.ok(randomInt(0, 10 ** CODE_LENGTH) < 10 ** CODE_LENGTH);
+});
+
+/* ---------------------------------------------------------------- *
+ * 邮件主题：必须每次唯一
+ * ---------------------------------------------------------------- */
+
+test("主题带时间戳 —— 固定主题会让邮件被折叠成一条会话", () => {
+  // 这是用户报「验证码不正确」的直接成因：QQ 邮箱按**主题**归并会话，
+  // 用户连点几次后打开会话看到的是**最早那封**，而只有最新那封有效 ——
+  // 正文里那句「只有最新这一封有效」他根本滚不到。
+  const subject = verificationEmailSubject(new Date(2026, 9, 6, 16, 25));
+  assert.match(subject, /16:25/, "主题里应能看出这次发送的时刻");
+  assert.match(subject, /注册验证码/);
+});
+
+test("不同分钟产生不同主题（拆开会话的前提）", () => {
+  const a = verificationEmailSubject(new Date(2026, 9, 6, 16, 25));
+  const b = verificationEmailSubject(new Date(2026, 9, 6, 16, 26));
+  assert.notEqual(a, b, "相隔一分钟的主题必须不同，否则仍会被折叠");
+});
+
+test("同一分钟内的多次调用主题相同（时间戳是唯一变量）", () => {
+  // 反向确认：唯一性来自时间而不是随机数 —— 它是可解释的。
+  const at = new Date(2026, 9, 6, 16, 25, 30);
+  assert.equal(verificationEmailSubject(at), verificationEmailSubject(at));
+});
+
+test("跨天、跨月也唯一", () => {
+  assert.notEqual(
+    verificationEmailSubject(new Date(2026, 9, 6, 23, 59)),
+    verificationEmailSubject(new Date(2026, 9, 7, 0, 0)),
+  );
+  assert.notEqual(
+    verificationEmailSubject(new Date(2026, 8, 30, 10, 0)),
+    verificationEmailSubject(new Date(2026, 9, 1, 10, 0)),
+  );
+});
+
+test("主题里**不含验证码** —— 它不该进通知栏与日志", () => {
+  // 验证码是短凭据。放进主题会出现在锁屏预览、通知栏、以及服务端日志里。
+  const subject = verificationEmailSubject(new Date(2026, 9, 6, 16, 25));
+  const code = generateCode();
+  assert.equal(subject.includes(code), false);
+  // 主题里唯一的数字应是月-日 时:分 那四个
+  assert.match(subject, /\d{2}-\d{2} \d{2}:\d{2}/);
+});
+
+test("分钟与月份都补零（16:05 不能写成 16:5）", () => {
+  const subject = verificationEmailSubject(new Date(2026, 0, 3, 9, 5));
+  assert.match(subject, /01-03 09:05/);
 });

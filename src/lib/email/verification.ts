@@ -58,6 +58,33 @@ export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
+/**
+ * 验证码邮件的**主题**。
+ *
+ * ## 为什么必须每次唯一
+ *
+ * 邮件客户端（QQ 邮箱尤其）按**主题**归并会话。主题固定时，用户连点几次
+ * 「发送验证码」得到的几封会被折叠成**一条会话**，而打开会话看到的是
+ * **最早那封** —— 但只有最新那封有效。
+ *
+ * 于是即使用正文写了「只有最新这一封有效」，用户也**滚不到那句话**，
+ * 仍然照着旧码填，得到「验证码不正确」而看不出原因。
+ * 这个提示**救不了**那个失败模式 —— 拆开会话才能救。
+ *
+ * 带上「月-日 时:分」后每封都是独立会话，最新那封自然在最上面。
+ *
+ * ## 为什么不用验证码本身当标记
+ *
+ * 验证码出现在主题里会进入通知栏、锁屏预览、以及服务端日志 ——
+ * 那是一个短凭据不该去的地方。时间戳同样能唯一化，且不泄露任何东西。
+ *
+ * 分钟粒度足够：重发有 60 秒节流，两次发送必然跨分钟。
+ */
+export function verificationEmailSubject(now: Date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `hit-ani 注册验证码 ${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+}
+
 export type VerifyOutcome =
   | "ok"
   | "invalid"

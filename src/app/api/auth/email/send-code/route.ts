@@ -3,7 +3,12 @@ import { z } from "zod";
 import { resolveSchoolByEmail } from "@/lib/auth/school";
 import { announceCapabilities, checkCapabilities } from "@/lib/email/capabilities";
 import { createTransport } from "@/lib/email/transport";
-import { RESEND_INTERVAL_MS, issueCode, normalizeEmail } from "@/lib/email/verification";
+import {
+  RESEND_INTERVAL_MS,
+  issueCode,
+  normalizeEmail,
+  verificationEmailSubject,
+} from "@/lib/email/verification";
 import { TokenBucketLimiter } from "@/lib/danmaku/rate-limit";
 import { clientIp } from "@/lib/net/client-ip";
 import { consumeSendQuota, quotaMessage } from "@/lib/net/send-quota";
@@ -141,7 +146,14 @@ export async function POST(request: Request) {
   try {
     await transport.send({
       to: email,
-      subject: "hit-ani 注册验证码",
+      /*
+       * 主题带时间戳 —— 见 `verificationEmailSubject` 的说明。
+       *
+       * 固定主题会让「连点几次」的多封邮件在 QQ 邮箱里**折叠成一条会话**，
+       * 用户打开看到的是**最早那封**，而只有最新那封有效 ——
+       * 于是正文里那句提示他根本滚不到。拆开会话才能让「最新」一眼可辨。
+       */
+      subject: verificationEmailSubject(),
       text: [
         /*
          * 正文里必须点明「只有最新一封有效」。
