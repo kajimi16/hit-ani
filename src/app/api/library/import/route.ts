@@ -9,7 +9,7 @@ import {
 import { unbindQqAccount } from "@/lib/auth/qq-oauth";
 import { requireSessionUser } from "@/lib/auth/session";
 import { importUserLibrary } from "@/lib/bgm/import";
-import { browserOrigin, hostHeadersFrom } from "@/lib/auth/request-origin";
+import { hostHeadersFrom, resolvePublicOrigin } from "@/lib/auth/request-origin";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -47,7 +47,7 @@ export async function POST(request: Request) {
   try {
     ({ accessToken, bgmUsername } = await getFreshBgmAccessToken(
       user.id,
-      browserOrigin(hostHeadersFrom(await headers())) ?? new URL(request.url).origin,
+      resolvePublicOrigin(hostHeadersFrom(await headers()), new URL(request.url).origin).origin,
     ));
   } catch (error) {
     if (error instanceof BgmTokenExpiredError || error instanceof BgmNotBoundError) {

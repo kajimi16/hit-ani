@@ -4,7 +4,7 @@ import { randomBytes } from "node:crypto";
 import { bgmAuthorizeUrl, readBgmOAuthConfig } from "@/lib/auth/bgm-oauth";
 import { resolveSecureCookie } from "@/lib/auth/cookie-policy";
 import { checkRedirectHost } from "@/lib/auth/redirect-host";
-import { browserHost, browserOrigin, hostHeadersFrom } from "@/lib/auth/request-origin";
+import { browserHost, hostHeadersFrom, resolvePublicOrigin } from "@/lib/auth/request-origin";
 import { OAUTH_STATE_COOKIE, requireSessionUser } from "@/lib/auth/session";
 
 export const runtime = "nodejs";
@@ -32,7 +32,7 @@ export async function GET(request: Request) {
    */
   const requestHeaders = await headers();
   const hostParts = hostHeadersFrom(requestHeaders);
-  const origin = browserOrigin(hostParts) ?? new URL(request.url).origin;
+  const origin = resolvePublicOrigin(hostParts, new URL(request.url).origin).origin;
   let config;
   try {
     config = readBgmOAuthConfig(origin);

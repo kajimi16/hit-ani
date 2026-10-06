@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies, headers } from "next/headers";
 import { randomBytes } from "node:crypto";
+import { hostHeadersFrom, resolvePublicOrigin } from "@/lib/auth/request-origin";
 import { readQqOAuthConfig, qqAuthorizeUrl } from "@/lib/auth/qq-oauth";
 import { resolveSecureCookie } from "@/lib/auth/cookie-policy";
 import { OAUTH_STATE_COOKIE, requireSessionUser } from "@/lib/auth/session";
@@ -16,7 +17,11 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "请先登录后再绑定 QQ" }, { status: 401 });
   }
 
-  const origin = new URL(request.url).origin;
+  // 与 BGM 的 start 同一处：优先 APP_BASE_URL，其次请求头 —— 见 request-origin.ts
+  const origin = resolvePublicOrigin(
+    hostHeadersFrom(await headers()),
+    new URL(request.url).origin,
+  ).origin;
   let config;
   try {
     config = readQqOAuthConfig(origin);

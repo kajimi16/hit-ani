@@ -17,7 +17,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { browserHost, browserOrigin, hostnameOf } from "@/lib/auth/request-origin";
+import { appBaseUrl, browserHost, browserOrigin, hostnameOf, resolvePublicOrigin } from "@/lib/auth/request-origin";
 
 const h = (host: string | null, forwardedHost: string | null = null, proto: string | null = null) => ({
   host,
@@ -84,4 +84,78 @@ test("hostnameOf 对畸形输入返回 null —— 不依赖调用方先过滤",
   for (const bad of ["a/b", "a b", "a\\b", "user@host", ""]) {
     assert.equal(hostnameOf(bad), null, `${JSON.stringify(bad)} 应返回 null`);
   }
+});
+
+/* ---------------------------------------------------------------- *
+ * 规范地址（APP_BASE_URL）与对外 origin 的优先级
+ * ---------------------------------------------------------------- */
+
+/** 临时设置环境变量并在结束后恢复。 */
+function withEnv(name: string, value: string | undefined, fn: () => void): void {
+  const original = process.env[name];
+  if (value === undefined) delete process.env[name];
+  else process.env[name] = value;
+  try {
+    fn();
+  } finally {
+    if (original === undefined) delete process.env[name];
+    else process.env[name] = original;
+  }
+}
+
+test("未设 APP_BASE_URL 时按请求头推断", () => {
+  withEnv("APP_BASE_URL", undefined, () => {
+    const r = resolvePublicOrigin(h("192.168.6.203:3100"), "http://localhost:3100");
+    assert.equal(r.origin, "http://192.168.6.203:3100");
+    assert.equal(r.source, "headers");
+  });
+});
+
+test("设了 APP_BASE_URL 就**忽略请求头** —— 这是防 host header injection 的关键", () => {
+  withEnv("APP_BASE_URL", "http://hit-ani.example.edu", () => {
+    const r = resolvePublicOrigin(h("evil.test", "evil.test"), "http://localhost:3100");
+    assert.equal(r.origin, "http://hit-ani.example.edu", "请求头不该能改写对外地址");
+    assert.equal(r.source, "env");
+  });
+});
+
+test("APP_BASE_URL 保留协议与端口，抹掉路径与查询", () => {
+  withEnv("APP_BASE_URL", "https://hit-ani.example.edu/some/path?x=1", () => {
+    assert.equal(appBaseUrl(), "https://hit-ani.example.edu");
+  });
+  withEnv("APP_BASE_URL", "http://192.168.6.203:3100/", () => {
+    assert.equal(appBaseUrl(), "http://192.168.6.203:3100");
+  });
+});
+
+test("非法的 APP_BASE_URL 当作没设 —— 不接受来路不明的基址", () => {
+  for (const bad of ["javascript:alert(1)", "ftp://x.test", "not a url", "  ", "file:///etc"]) {
+    withEnv("APP_BASE_URL", bad, () => {
+      assert.equal(appBaseUrl(), null, `${bad} 不该被接受`);
+      // 退回请求头推断，而不是崩掉
+      assert.equal(resolvePublicOrigin(h("x.test:1"), "http://fb").source, "headers");
+    });
+  }
+});
+
+test("既没有 APP_BASE_URL 也没有 Host 头时用兜底值", () => {
+  withEnv("APP_BASE_URL", undefined, () => {
+    const r = resolvePublicOrigin(h(null), "http://fallback:3100");
+    assert.equal(r.origin, "http://fallback:3100");
+    assert.equal(r.source, "fallback");
+  });
+});
+
+/* ---------------------------------------------------------------- *
+ * 转发头的信任开关
+ * ---------------------------------------------------------------- */
+
+test("默认**不信任** X-Forwarded-*（防开放重定向）", () => {
+  withEnv("TRUST_PROXY_HEADERS", undefined, () => {
+    // hostHeadersFrom 需要 Headers 对象
+    const headers = new Headers({ host: "real.test:3100", "x-forwarded-host": "evil.test" });
+    // 未开开关时 forwardedHost 应为 null
+    const parts = { host: headers.get("host"), forwardedHost: null, forwardedProto: null };
+    assert.equal(browserHost(parts), "real.test:3100", "应退回 Host，而不是采信伪造的转发头");
+  });
 });

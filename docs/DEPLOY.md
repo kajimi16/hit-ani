@@ -462,3 +462,46 @@ UUID=<你的UUID>  /media/kajimi/kajimi  ntfs3  rw,nosuid,nodev,uid=1000,gid=100
 
 切换方式：`npx prisma migrate dev --name init` 生成初始迁移，之后 compose 里的
 `migrate` 服务改用 `npx prisma migrate deploy`。
+
+---
+
+## 反向代理：两条硬要求
+
+如果在本服务前面加**自己的**反向代理（nginx / Caddy / 校园网网关），必须做到：
+
+### 1. 必须**剥掉**入站的 `X-Forwarded-*`，再由代理自己设置
+
+```
+proxy_set_header X-Forwarded-Host  $host;    # 先覆盖（不是 pass 透传）
+proxy_set_header X-Forwarded-Proto $scheme;
+```
+
+**为什么**：本服务在需要推断对外地址时会读 `X-Forwarded-Host`（仅当
+`TRUST_PROXY_HEADERS=1`）。若反代直接透传客户端的同名头，任何能到达该端口的
+请求就能伪造它，从而**改写重定向目标**（开放重定向）。
+
+代码侧的默认是**不信任**这两个头（`TRUST_PROXY_HEADERS` 未设即关闭），
+但「默认关」只保护没开代理的部署 —— 一旦你开了代理并设了
+`TRUST_PROXY_HEADERS=1`，剥除入站头的责任就在配置里。
+
+### 2. 更省事的做法：设 `APP_BASE_URL`
+
+```
+APP_BASE_URL="http://hit-ani.example.edu"
+```
+
+设了它，服务**完全忽略请求头**，所有重定向都用这个地址 —— 既没有伪造面，
+也不受「用户从哪个地址访问」影响。
+
+对 OAuth 尤其重要：`redirect_uri` 必须在 bgm.tv 上登记成**唯一固定值**，
+按访问地址推断必然时对时错。设了 `APP_BASE_URL` 后，`BGM_REDIRECT_URI`
+不填也能正确推导。
+
+### 排查：外部地址相关的问题
+
+```
+npm run check:credentials -- --bgm      # 会打印当前生效的 redirect_uri
+```
+
+服务端日志里搜 `[request-origin]`（若后续加了日志）或直接用不同 `Host`
+头 curl 一下，看重定向的 `Location` 指向哪里。

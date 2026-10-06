@@ -5,7 +5,7 @@ import { getFreshBgmAccessToken } from "@/lib/auth/bgm-oauth";
 import { requireSessionUser } from "@/lib/auth/session";
 import { EpisodeCollectionType, getEpisode, putEpisodeCollection } from "@/lib/bgm/client";
 import { decideMirror, logMirrorWrite, type MirrorSkipCode } from "@/lib/bgm/mirror-guard";
-import { browserOrigin, hostHeadersFrom } from "@/lib/auth/request-origin";
+import { hostHeadersFrom, resolvePublicOrigin } from "@/lib/auth/request-origin";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -95,7 +95,7 @@ export async function PUT(request: Request) {
     try {
       const { accessToken } = await getFreshBgmAccessToken(
         user.id,
-        browserOrigin(hostHeadersFrom(await headers())) ?? new URL(request.url).origin,
+        resolvePublicOrigin(hostHeadersFrom(await headers()), new URL(request.url).origin).origin,
       );
 
       // 写之前先核对「这个 episode 在上游确实属于这个条目」。

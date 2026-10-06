@@ -5,7 +5,7 @@ import {
   bindBgmAccount,
   readBgmOAuthConfig,
 } from "@/lib/auth/bgm-oauth";
-import { browserOrigin, hostHeadersFrom } from "@/lib/auth/request-origin";
+import { hostHeadersFrom, resolvePublicOrigin } from "@/lib/auth/request-origin";
 import { OAUTH_STATE_COOKIE, requireSessionUser } from "@/lib/auth/session";
 
 export const runtime = "nodejs";
@@ -27,7 +27,7 @@ export async function GET(request: Request) {
    * 除非他恰好就在跑这个服务的那台机器上，否则必然打不开。
    * 这正是「授权会报错」的成因之一。
    */
-  const origin = browserOrigin(hostHeadersFrom(await headers())) ?? url.origin;
+  const origin = resolvePublicOrigin(hostHeadersFrom(await headers()), url.origin).origin;
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
   const oauthError = url.searchParams.get("error");

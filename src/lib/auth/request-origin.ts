@@ -32,12 +32,37 @@ export interface HostHeaders {
   forwardedProto: string | null;
 }
 
-/** 从 `Headers` 取出本模块关心的三项。 */
+/**
+ * 是否信任 `X-Forwarded-*` 头。**默认不信任。**
+ *
+ * ## 为什么默认关
+ *
+ * `X-Forwarded-Host` 是客户端可以自己发的头。若它被当成重定向目标的来源，
+ * 任何能到达该端口的请求都能改写 `Location` —— 即**开放重定向**。
+ * 浏览器不会自发发这个头，所以它只应该来自**我们自己的**反向代理；
+ * 而只要反代没有剥掉入站同名头，攻击者的值就会一路透传过来。
+ *
+ * 所以「我在可信反代之后」必须是一个**显式声明**，而不是默认假定。
+ * 设 `TRUST_PROXY_HEADERS=1` 才读这两个头。
+ *
+ * 更省事的做法是直接设 `APP_BASE_URL` —— 那样连推断都不需要。
+ */
+function trustProxyHeaders(): boolean {
+  return process.env.TRUST_PROXY_HEADERS?.trim() === "1";
+}
+
+/**
+ * 从 `Headers` 取出本模块关心的三项。
+ *
+ * 不信任反代时**不读** `x-forwarded-*`（返回 null），于是下游自然退回
+ * 只看 `Host` —— 这样各调用点不必各自判断。
+ */
 export function hostHeadersFrom(headers: Headers): HostHeaders {
+  const trust = trustProxyHeaders();
   return {
     host: headers.get("host"),
-    forwardedHost: headers.get("x-forwarded-host"),
-    forwardedProto: headers.get("x-forwarded-proto"),
+    forwardedHost: trust ? headers.get("x-forwarded-host") : null,
+    forwardedProto: trust ? headers.get("x-forwarded-proto") : null,
   };
 }
 
@@ -58,6 +83,61 @@ export function browserHost(h: HostHeaders): string | null {
     return first.toLowerCase();
   }
   return null;
+}
+
+/**
+ * 站点对外暴露的**规范地址**（`APP_BASE_URL`）。
+ *
+ * ## 为什么必须有这个开关
+ *
+ * 只靠请求头推断 origin 有两个问题：
+ *
+ * 1. **不可信**：`Host` / `X-Forwarded-Host` 是客户端可控的（host header
+ *    injection）。攻击者若能构造这两个头，就能让我们的重定向指向任意站点。
+ *    本项目虽不上公网，但校内网同样有他人可控的主机。
+ * 2. **不稳定**：用户可能从多个地址访问（局域网 IP、主机名、localhost），
+ *    而 OAuth 的 `redirect_uri` 必须在 bgm.tv 上登记成**唯一固定值**。
+ *    按访问地址推导必然时对时错 —— 这正是「授权会报错」的成因之一。
+ *
+ * 因此设了 `APP_BASE_URL` 就**优先用它**，忽略请求头。没设时才退回头推断
+ * （开发时最方便），并保留原有的 `request.url` 兜底。
+ *
+ * 非法值（协议不是 http/https、解析失败）当作没设 —— 宁可退回推断，
+ * 也不接受一个来路不明的基址。
+ */
+export function appBaseUrl(): string | null {
+  const raw = process.env.APP_BASE_URL?.trim();
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    if (!isHostShaped(url.host)) return null;
+    // 抹掉路径与查询 —— 基址只应是 scheme + host（+ 端口）
+    return `${url.protocol}//${url.host}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 解析本次请求应该使用的对外 origin。
+ *
+ * 优先级：`APP_BASE_URL`（规范值）→ 请求头 → `request.url`。
+ *
+ * 第三档是**兜底而非正确**：`request.url` 的 host 是服务器自己的监听地址
+ * （实测无视 `Host` 头），只有在拿不到任何头时才该用到它。
+ */
+export function resolvePublicOrigin(
+  headers: HostHeaders,
+  fallback: string,
+): { origin: string; source: "env" | "headers" | "fallback" } {
+  const configured = appBaseUrl();
+  if (configured) return { origin: configured, source: "env" };
+
+  const fromHeaders = browserOrigin(headers);
+  if (fromHeaders) return { origin: fromHeaders, source: "headers" };
+
+  return { origin: fallback, source: "fallback" };
 }
 
 /**

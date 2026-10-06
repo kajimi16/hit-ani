@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies, headers } from "next/headers";
 import { QqAccountTakenError, bindQqAccount, readQqOAuthConfig } from "@/lib/auth/qq-oauth";
-import { browserOrigin, hostHeadersFrom } from "@/lib/auth/request-origin";
+import { hostHeadersFrom, resolvePublicOrigin } from "@/lib/auth/request-origin";
 import { OAUTH_STATE_COOKIE, requireSessionUser } from "@/lib/auth/session";
 
 export const runtime = "nodejs";
@@ -14,7 +14,7 @@ export async function GET(request: Request) {
    * 与 BGM 回调同一处坑：`url.origin` 是服务器自己的监听地址（实测无视
    * `Host` 头），用它拼 Location 会把用户送到他自己那台机器。
    */
-  const origin = browserOrigin(hostHeadersFrom(await headers())) ?? url.origin;
+  const origin = resolvePublicOrigin(hostHeadersFrom(await headers()), url.origin).origin;
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
 
