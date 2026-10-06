@@ -78,6 +78,14 @@ export async function PUT(request: Request) {
    */
   const mirror = decideMirror({ email: user.email, mirrorToBgm: user.mirrorToBgm });
   if (user.bgmBound && !mirror.allowed) {
+    /*
+     * `bgmSynced = false` 而不是留 null —— 与 `collection-actions` 保持一致。
+     *
+     * 三态的语义：`null` = 未绑定（没有可同步的目标）、`false` = 绑定了但没同步成功、
+     * `true` = 同步成功。若这里留 null，界面就得靠 `!bgmSynced` 这种真假判断，
+     * 而哪天有人改成 `=== false` 就会**静默失效**（提示不再出现）。
+     */
+    bgmSynced = false;
     bgmError = mirror.reason;
     bgmSkip = mirror.code;
     console.warn(`[bgm-mirror] 已阻止进度写入：${mirror.reason}`);

@@ -84,10 +84,17 @@ export default function EpisodeWorkspace({
       };
       if (!response.ok) throw new Error(body.error ?? "保存失败");
       /*
-       * 只在**真的失败**时报错。用户没开同步（默认）或管理员临时关闭时，
-       * 进度已经正确保存在本站 —— 那不是错误，不该弹红字。
+       * 只在**真的失败**时报错，且与收藏选择器的口径一致：
+       * - 用户没开同步 → 静默（进度已正确保存在本站，没什么可说的）
+       * - 管理员临时关闭 → 提示（他开了却不见效，需要知道）
        */
-      if (body.bgmBound && !body.bgmSynced && body.bgmSkip !== "user-disabled" && body.bgmSkip !== "ops-disabled") {
+      if (body.bgmBound && !body.bgmSynced && body.bgmSkip === "ops-disabled") {
+        setSaveError("已保存在本站。Bangumi 同步被管理员临时关闭。");
+      } else if (
+        body.bgmBound &&
+        !body.bgmSynced &&
+        body.bgmSkip !== "user-disabled"
+      ) {
         setSaveError(`已保存在本站，但同步到 Bangumi 失败：${body.bgmError}`);
       }
     } catch (error) {

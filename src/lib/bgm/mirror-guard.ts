@@ -62,8 +62,24 @@ export interface MirrorDecision {
 /**
  * 判断该账号的上游写入是否被允许。
  *
- * 顺序有讲究：**先看显式开关，再看测试账号模式** ——
- * 前者是运维意图（明确要求关闭），后者是安全兜底。
+ * ## 决策顺序（安全优先）
+ *
+ * 1. 运维硬闸 → 2. 测试账号 → 3. 用户偏好。
+ * 硬闸必须在最前：跑写库测试时不能被用户设置绕过。
+ *
+ * ## 但**上报的原因码**按另一种顺序
+ *
+ * 原因码是给界面用的，要挑「对这个用户最相关」的那条：
+ *
+ * - 用户**没开同步** → 报 `user-disabled`（哪怕同时还有硬闸）。
+ *   这时对用户来说就是「我没开这个功能」，界面**静默处理**——
+ *   告诉一个从没开过同步的人「同步被管理员关闭」既莫名其妙，
+ *   还会在他每次操作时重复出现（实测这条提示是常驻的，不会自动消失）。
+ * - 用户**开了同步**却被硬闸挡住 → 报 `ops-disabled`。这时他确实需要知道
+ *   「我开了，但暂时不生效」，否则会以为同步坏了。
+ *
+ * 实测教训：硬闸开着时 `ops-disabled` 会遮蔽 `user-disabled`，
+ * 于是**所有人的每次操作**都看到「被管理员临时关闭」。
  */
 export function decideMirror(input: {
   email: string | null | undefined;
@@ -75,22 +91,35 @@ export function decideMirror(input: {
    */
   mirrorToBgm: boolean;
 }): MirrorDecision {
-  // 1. 运维硬闸：压过一切，包括用户自己的选择
-  if (process.env.BGM_MIRROR_ENABLED === "0") {
-    return { allowed: false, reason: "ops kill switch (BGM_MIRROR_ENABLED=0)", code: "ops-disabled" };
-  }
-
-  // 2. 安全兜底：测试账号一律不写上游
   const email = input.email ?? "";
-  for (const pattern of TEST_ACCOUNT_PATTERNS) {
-    if (pattern.test(email)) {
-      return { allowed: false, reason: `test account pattern matched: ${email}`, code: "test-account" };
-    }
-  }
+  const opsDisabled = process.env.BGM_MIRROR_ENABLED === "0";
+  const isTestAccount = TEST_ACCOUNT_PATTERNS.some((pattern) => pattern.test(email));
 
-  // 3. 用户偏好（默认关闭）
-  if (!input.mirrorToBgm) {
-    return { allowed: false, reason: "user has not enabled Bangumi sync", code: "user-disabled" };
+  if (opsDisabled || isTestAccount || !input.mirrorToBgm) {
+    /*
+     * 挑最相关的原因码 —— 见上方说明。顺序：用户没开 > 运维硬闸 > 测试账号。
+     *
+     * 用户没开时**先返回**，因此不会被硬闸遮蔽。
+     */
+    if (!input.mirrorToBgm) {
+      return {
+        allowed: false,
+        reason: "user has not enabled Bangumi sync",
+        code: "user-disabled",
+      };
+    }
+    if (opsDisabled) {
+      return {
+        allowed: false,
+        reason: "ops kill switch (BGM_MIRROR_ENABLED=0)",
+        code: "ops-disabled",
+      };
+    }
+    return {
+      allowed: false,
+      reason: `test account pattern matched: ${email}`,
+      code: "test-account",
+    };
   }
 
   return { allowed: true, reason: null, code: null };

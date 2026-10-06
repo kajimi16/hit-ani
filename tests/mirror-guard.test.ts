@@ -98,8 +98,31 @@ test("BGM_MIRROR_ENABLED=0 时全部拒绝（含普通账号）", () => {
   withMirrorEnv("0", () => {
     const decision = decideMirror({ email: "alice@hit.edu.cn", mirrorToBgm: true });
     assert.equal(decision.allowed, false);
-    assert.equal(decision.code, "ops-disabled", "应报告「运维硬闸」而非账号原因");
+    assert.equal(decision.code, "ops-disabled", "用户开了同步却失效 → 要告诉他");
     assert.ok(decision.reason, "仍要给出可写进日志的原因");
+  });
+});
+
+test("用户没开同步时，硬闸开不开都报 user-disabled（界面据此静默）", () => {
+  // 这是「不要让所有人的每次操作都看到管理员提示」的关键：
+  // 原因码要挑对**这个用户**最相关的那条，而不是决策顺序里的第一条。
+  for (const env of ["0", undefined, "1"]) {
+    withMirrorEnv(env, () => {
+      const decision = decideMirror({ email: "alice@hit.edu.cn", mirrorToBgm: false });
+      assert.equal(decision.allowed, false);
+      assert.equal(
+        decision.code,
+        "user-disabled",
+        `BGM_MIRROR_ENABLED=${JSON.stringify(env)} 时应报「用户没开」而非硬闸`,
+      );
+    });
+  }
+});
+
+test("测试账号 + 用户已开启 → 报 test-account（安全兜底才是主因）", () => {
+  withMirrorEnv(undefined, () => {
+    const decision = decideMirror({ email: "smoke-1@hit.edu.cn", mirrorToBgm: true });
+    assert.equal(decision.code, "test-account");
   });
 });
 

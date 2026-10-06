@@ -55,19 +55,23 @@ export default function CollectionPicker({
       if (!response.ok) throw new Error(body.error ?? "保存失败");
 
       /*
-       * 区分三种情况，而不是一律说「同步失败」：
-       * - `user-disabled`：用户没开同步（**默认状态**）—— 不是错误，
-       *   给一个去设置页的入口就行；
-       * - `ops-disabled`：管理员临时关了全部写入；
-       * - 其它：真的写失败了，那时才该把原因显示出来。
+       * 三种情况分开处理，而不是一律说「同步失败」。
+       *
+       * - `user-disabled`：用户没开同步（**默认状态**）→ **什么都不说**。
+       *   设置页的同步开关就在 BGM 绑定旁边（发现性足够），而这条提示是
+       *   **常驻**的 —— 对一个从没开过同步的人，每次改状态都重复一遍
+       *   「未同步」纯属唠叨。
+       * - `ops-disabled`：用户**开了**同步却被管理员挡住 → 要告诉他，
+       *   否则他会以为同步坏了。
+       * - 其它：真的写失败 → 报错。
        *
        * 早先只有一句 `mirror.reason`，于是 `BGM_MIRROR_ENABLED=0` 这句内部
        * 术语直接漏到界面上，还把「未开启」说成「失败」。
        */
-      if (body.bgmSynced === false && body.bgmSkip === "user-disabled") {
-        setNotice(`已在站内标记为「${body.statusLabel}」。未同步到 Bangumi（可在设置里开启）。`);
-      } else if (body.bgmSynced === false && body.bgmSkip === "ops-disabled") {
+      if (body.bgmSynced === false && body.bgmSkip === "ops-disabled") {
         setNotice(`已在站内标记为「${body.statusLabel}」。Bangumi 同步被管理员临时关闭。`);
+      } else if (body.bgmSynced === false && body.bgmSkip === "user-disabled") {
+        setNotice(`已在站内标记为「${body.statusLabel}」。`);
       } else if (body.bgmSynced === false) {
         setNotice(`已在站内标记为「${body.statusLabel}」，但同步到 Bangumi 失败：${body.bgmError}`);
       }
