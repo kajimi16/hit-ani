@@ -3,6 +3,7 @@ import { cookies, headers } from "next/headers";
 import { randomBytes } from "node:crypto";
 import { bgmAuthorizeUrl, readBgmOAuthConfig } from "@/lib/auth/bgm-oauth";
 import { resolveSecureCookie } from "@/lib/auth/cookie-policy";
+import { checkRedirectHost } from "@/lib/auth/redirect-host";
 import { OAUTH_STATE_COOKIE, requireSessionUser } from "@/lib/auth/session";
 
 export const runtime = "nodejs";
@@ -39,6 +40,20 @@ export async function GET(request: Request) {
         )}`,
         origin,
       ),
+    );
+  }
+
+  /*
+   * 先查「访问 host」与「登记的回调 host」是否一致 —— 见 `redirect-host.ts`。
+   *
+   * 不一致时 state Cookie 在回调请求里带不过去，校验必然失败。与其让用户去
+   * bgm.tv 绕一圈再回来撞一个含糊的「状态校验失败」，不如当场说清。
+   * 那个提示原先把原因归结为「停留太久 / Cookie 没保留」，完全没说到点子上。
+   */
+  const verdict = checkRedirectHost(origin, config.redirectUri);
+  if (!verdict.ok) {
+    return NextResponse.redirect(
+      new URL(`/settings?bgm=failed&reason=${encodeURIComponent(verdict.message)}`, origin),
     );
   }
 
