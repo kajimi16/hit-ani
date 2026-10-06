@@ -37,7 +37,7 @@ function withMirrorEnv<T>(value: string | undefined, fn: () => T): T {
 
 test("普通账号允许写入上游（功能本身要能用）", () => {
   withMirrorEnv(undefined, () => {
-    const decision = decideMirror({ email: "alice@hit.edu.cn" });
+    const decision = decideMirror({ email: "alice@hit.edu.cn" , mirrorToBgm: true });
     assert.equal(decision.allowed, true);
     assert.equal(decision.reason, null);
   });
@@ -54,7 +54,7 @@ test("冒烟账号被自动拒绝（事故的直接原因就是用了真实账�
       "smoke-other-1790178399963@example.edu",
       "smoke@hit.edu.cn",
     ]) {
-      const decision = decideMirror({ email });
+      const decision = decideMirror({ email, mirrorToBgm: true });
       assert.equal(decision.allowed, false, `${email} 应被拒绝`);
       assert.ok(decision.reason, "拒绝时必须给出原因");
     }
@@ -70,23 +70,23 @@ test("test / e2e 前缀或 +test 后缀的账号被拒绝", () => {
       "alice+test@hit.edu.cn",
       "alice-test@hit.edu.cn",
     ]) {
-      assert.equal(decideMirror({ email }).allowed, false, `${email} 应被拒绝`);
+      assert.equal(decideMirror({ email, mirrorToBgm: true }).allowed, false, `${email} 应被拒绝`);
     }
   });
 });
 
 test("拒绝原因里包含账号邮箱（便于排查为什么没同步）", () => {
   withMirrorEnv(undefined, () => {
-    const decision = decideMirror({ email: "smoke-123@hit.edu.cn" });
+    const decision = decideMirror({ email: "smoke-123@hit.edu.cn" , mirrorToBgm: true });
     assert.match(decision.reason ?? "", /smoke-123@hit\.edu\.cn/);
   });
 });
 
 test("缺少邮箱时不误判为测试账号（不阻断正常功能）", () => {
   withMirrorEnv(undefined, () => {
-    assert.equal(decideMirror({ email: null }).allowed, true);
-    assert.equal(decideMirror({ email: undefined }).allowed, true);
-    assert.equal(decideMirror({ email: "" }).allowed, true);
+    assert.equal(decideMirror({ email: null , mirrorToBgm: true }).allowed, true);
+    assert.equal(decideMirror({ email: undefined , mirrorToBgm: true }).allowed, true);
+    assert.equal(decideMirror({ email: "" , mirrorToBgm: true }).allowed, true);
   });
 });
 
@@ -96,9 +96,10 @@ test("缺少邮箱时不误判为测试账号（不阻断正常功能）", () =>
 
 test("BGM_MIRROR_ENABLED=0 时全部拒绝（含普通账号）", () => {
   withMirrorEnv("0", () => {
-    const decision = decideMirror({ email: "alice@hit.edu.cn" });
+    const decision = decideMirror({ email: "alice@hit.edu.cn", mirrorToBgm: true });
     assert.equal(decision.allowed, false);
-    assert.match(decision.reason ?? "", /BGM_MIRROR_ENABLED/);
+    assert.equal(decision.code, "ops-disabled", "应报告「运维硬闸」而非账号原因");
+    assert.ok(decision.reason, "仍要给出可写进日志的原因");
   });
 });
 
@@ -106,7 +107,7 @@ test("开关只有恰好为 '0' 时才关闭（避免误配 true/false 造成意
   for (const value of ["1", "true", "false", "", "yes"]) {
     withMirrorEnv(value, () => {
       assert.equal(
-        decideMirror({ email: "alice@hit.edu.cn" }).allowed,
+        decideMirror({ email: "alice@hit.edu.cn" , mirrorToBgm: true }).allowed,
         true,
         `BGM_MIRROR_ENABLED=${JSON.stringify(value)} 不应关闭镜像`,
       );
@@ -116,9 +117,66 @@ test("开关只有恰好为 '0' 时才关闭（避免误配 true/false 造成意
 
 test("全局开关优先于测试账号判定（运维意图优先）", () => {
   withMirrorEnv("0", () => {
-    const decision = decideMirror({ email: "smoke-123@hit.edu.cn" });
-    assert.match(decision.reason ?? "", /BGM_MIRROR_ENABLED/, "应报告开关原因而非账号原因");
+    const decision = decideMirror({ email: "smoke-123@hit.edu.cn", mirrorToBgm: true });
+    assert.equal(decision.code, "ops-disabled", "应报告开关原因而非账号原因");
   });
+});
+
+/* ---------------------------------------------------------------- *
+ * 用户偏好 —— 默认关闭
+ * ---------------------------------------------------------------- */
+
+test("用户没开同步时不做镜像（默认状态）", () => {
+  withMirrorEnv(undefined, () => {
+    const decision = decideMirror({ email: "alice@hit.edu.cn", mirrorToBgm: false });
+    assert.equal(decision.allowed, false);
+    assert.equal(
+      decision.code,
+      "user-disabled",
+      "「没开这个功能」必须与「真失败」可区分 —— 界面据此决定说法",
+    );
+  });
+});
+
+test("用户开了同步才放行", () => {
+  withMirrorEnv(undefined, () => {
+    assert.equal(decideMirror({ email: "alice@hit.edu.cn", mirrorToBgm: true }).allowed, true);
+  });
+});
+
+test("运维硬闸压过用户偏好（避免跑写库测试时被用户设置绕过）", () => {
+  withMirrorEnv("0", () => {
+    const decision = decideMirror({ email: "alice@hit.edu.cn", mirrorToBgm: true });
+    assert.equal(decision.allowed, false, "用户开了同步也不能绕过运维硬闸");
+    assert.equal(decision.code, "ops-disabled");
+  });
+});
+
+test("测试账号即使开了同步也拒绝（安全兜底优先于用户偏好）", () => {
+  withMirrorEnv(undefined, () => {
+    const decision = decideMirror({ email: "smoke-1@hit.edu.cn", mirrorToBgm: true });
+    assert.equal(decision.allowed, false);
+    assert.equal(decision.code, "test-account");
+  });
+});
+
+test("原因码只有三种，且放行时为 null", () => {
+  // 界面按 code 分支，多一种取值就会掉进「真失败」的文案里。
+  const codes = new Set<string | null>();
+  withMirrorEnv(undefined, () => {
+    for (const email of ["alice@hit.edu.cn", "smoke-1@hit.edu.cn"]) {
+      for (const mirrorToBgm of [true, false]) {
+        codes.add(decideMirror({ email, mirrorToBgm }).code);
+      }
+    }
+  });
+  withMirrorEnv("0", () => {
+    codes.add(decideMirror({ email: "alice@hit.edu.cn", mirrorToBgm: true }).code);
+  });
+  assert.deepEqual(
+    [...codes].sort(),
+    ["ops-disabled", "test-account", "user-disabled", null].sort(),
+  );
 });
 
 /* ---------------------------------------------------------------- *

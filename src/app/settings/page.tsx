@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import AvatarSetting from "@/components/avatar-setting";
 import JellyfinManager from "@/components/jellyfin-manager";
+import MirrorSetting from "@/components/mirror-setting";
 import NsfwSetting from "@/components/nsfw-setting";
 import OAuthNoticeBanner from "@/components/oauth-notice-banner";
 import SettingsClient from "@/components/settings-client";
@@ -53,6 +54,13 @@ export default async function SettingsPage({
       {/* 外观与内容偏好都是设备级设置，与账号无关，因此放在最前 */}
       <ThemePicker />
       <NsfwSetting />
+
+      {/* 同步开关是账号级设置，放在账号相关区块附近 */}
+      <MirrorSetting
+        initialEnabled={user.mirrorToBgm}
+        bgmBound={user.bgmBound}
+        opsDisabled={process.env.BGM_MIRROR_ENABLED === "0"}
+      />
 
       <SettingsClient
         qqBound={user.qqBound}

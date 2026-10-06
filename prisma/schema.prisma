@@ -34,6 +34,17 @@ model User {
   schoolId     String
   nickname     String
   avatarUrl    String?
+  /**
+   * 是否把站内操作（收藏状态 / 评分 / 短评 / 单集进度）同步写回 Bangumi。
+   *
+   * **默认关闭**。理由：写上游是**不可撤销**的（会覆盖用户在 Bangumi 上
+   * 已有的内容），而用户并不知道本站会替他写。默认开启等于替他做了决定。
+   *
+   * 用户可以在设置里显式打开 —— 那时他才是在知情的前提下选择同步。
+   * 打开前界面会说明「会覆盖你在 Bangumi 上的对应内容」。
+   */
+  mirrorToBgm Boolean @default(false)
+
   /// 管理员：可修改共享的抓取源配置。
   /// 通过 `ADMIN_EMAILS` 环境变量在登录时自动授予（见 session.ts）。
   isAdmin      Boolean  @default(false)

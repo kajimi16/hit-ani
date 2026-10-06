@@ -12,7 +12,7 @@
 
 import { statusLabel, type CollectionStatusValue } from "@/lib/collection";
 import { postUserCollection } from "@/lib/bgm/client";
-import { decideMirror, logMirrorWrite } from "@/lib/bgm/mirror-guard";
+import { decideMirror, logMirrorWrite, type MirrorSkipCode } from "@/lib/bgm/mirror-guard";
 import { getFreshBgmAccessToken } from "@/lib/auth/bgm-oauth";
 import { prisma } from "@/lib/prisma";
 
@@ -22,8 +22,16 @@ export interface SetCollectionStatusResult {
   statusLabel: string;
   /** 上游镜像结果；未绑定 BGM 时为 null。 */
   bgmSynced: boolean | null;
-  /** 镜像失败原因；成功或未绑定时为 null。 */
+  /** 镜像失败原因（给日志与排查）；成功或未绑定时为 null。 */
   bgmError: string | null;
+  /**
+   * 未镜像的原因码；已镜像或未绑定时为 null。
+   *
+   * **界面据此决定说法**：`user-disabled` 是「没开这个功能」（要引导去设置页），
+   * 而不是「失败」。早先只有一句中文原因，导致内部术语漏到界面上、
+   * 还把「未开启」说成「失败」。
+   */
+  bgmSkip: MirrorSkipCode | null;
   /** 本地是否新建了收藏记录（false = 更新已有）。 */
   created: boolean;
 }
@@ -38,6 +46,13 @@ export interface SetCollectionStatusOptions {
   comment?: string | null;
   /** 是否绑定 BGM（由调用方从会话取，避免这里多查一次库）。 */
   bgmBound: boolean;
+  /**
+   * 用户是否开启了 Bangumi 同步（`User.mirrorToBgm`，**默认 false**）。
+   *
+   * 与 `bgmBound` 一样由调用方从会话取。**必填** —— 「忘了传」若退化成
+   * 「允许写入」就糟了，那是不可撤销的上游写操作。
+   */
+  mirrorToBgm: boolean;
   /**
    * 账号邮箱。用于判断是否允许写上游 ——
    * 测试账号（`smoke-*` / `test-*`）一律不写，见 `mirror-guard.ts`。
@@ -67,7 +82,8 @@ export async function getCollectionStatus(
 export async function setCollectionStatus(
   options: SetCollectionStatusOptions,
 ): Promise<SetCollectionStatusResult> {
-  const { userId, subjectId, status, rating, comment, bgmBound, origin, userEmail } = options;
+  const { userId, subjectId, status, rating, comment, bgmBound, mirrorToBgm, origin, userEmail } =
+    options;
 
   // 条目必须先在本地存在 —— `Collection.subjectId` 是外键。
   const subject = await prisma.subject.findUnique({
@@ -97,15 +113,18 @@ export async function setCollectionStatus(
 
   let bgmSynced: boolean | null = null;
   let bgmError: string | null = null;
+  /** 未镜像的原因码 —— 界面据此区分「未开启」与「真失败」。 */
+  let bgmSkip: MirrorSkipCode | null = null;
 
   /*
    * 闸门在发送**之前** —— 见 `mirror-guard.ts` 记录的真实事故：
    * 拿绑定了真实 Bangumi 的账号做接口测试，测试文案被写进了用户的账号。
    */
-  const mirror = decideMirror({ email: userEmail });
+  const mirror = decideMirror({ email: userEmail, mirrorToBgm });
   if (bgmBound && !mirror.allowed) {
     bgmSynced = false;
     bgmError = mirror.reason;
+    bgmSkip = mirror.code;
     console.warn(`[bgm-mirror] 已阻止写入：${mirror.reason}`);
   } else if (bgmBound) {
     try {
@@ -136,6 +155,7 @@ export async function setCollectionStatus(
     statusLabel: statusLabel(status),
     bgmSynced,
     bgmError,
+    bgmSkip,
     created: existing === null,
   };
 }

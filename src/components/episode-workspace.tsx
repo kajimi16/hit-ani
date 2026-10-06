@@ -80,9 +80,14 @@ export default function EpisodeWorkspace({
         bgmBound?: boolean;
         bgmSynced?: boolean | null;
         bgmError?: string | null;
+        bgmSkip?: "user-disabled" | "ops-disabled" | "test-account" | null;
       };
       if (!response.ok) throw new Error(body.error ?? "保存失败");
-      if (body.bgmBound && !body.bgmSynced && body.bgmError) {
+      /*
+       * 只在**真的失败**时报错。用户没开同步（默认）或管理员临时关闭时，
+       * 进度已经正确保存在本站 —— 那不是错误，不该弹红字。
+       */
+      if (body.bgmBound && !body.bgmSynced && body.bgmSkip !== "user-disabled" && body.bgmSkip !== "ops-disabled") {
         setSaveError(`已保存在本站，但同步到 Bangumi 失败：${body.bgmError}`);
       }
     } catch (error) {

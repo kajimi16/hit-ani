@@ -48,11 +48,27 @@ export default function CollectionPicker({
         error?: string;
         bgmSynced?: boolean | null;
         bgmError?: string | null;
+        /** 未镜像的原因码 —— 用来区分「没开这个功能」与「真失败」。 */
+        bgmSkip?: "user-disabled" | "ops-disabled" | "test-account" | null;
         statusLabel?: string;
       };
       if (!response.ok) throw new Error(body.error ?? "保存失败");
 
-      if (body.bgmSynced === false) {
+      /*
+       * 区分三种情况，而不是一律说「同步失败」：
+       * - `user-disabled`：用户没开同步（**默认状态**）—— 不是错误，
+       *   给一个去设置页的入口就行；
+       * - `ops-disabled`：管理员临时关了全部写入；
+       * - 其它：真的写失败了，那时才该把原因显示出来。
+       *
+       * 早先只有一句 `mirror.reason`，于是 `BGM_MIRROR_ENABLED=0` 这句内部
+       * 术语直接漏到界面上，还把「未开启」说成「失败」。
+       */
+      if (body.bgmSynced === false && body.bgmSkip === "user-disabled") {
+        setNotice(`已在站内标记为「${body.statusLabel}」。未同步到 Bangumi（可在设置里开启）。`);
+      } else if (body.bgmSynced === false && body.bgmSkip === "ops-disabled") {
+        setNotice(`已在站内标记为「${body.statusLabel}」。Bangumi 同步被管理员临时关闭。`);
+      } else if (body.bgmSynced === false) {
         setNotice(`已在站内标记为「${body.statusLabel}」，但同步到 Bangumi 失败：${body.bgmError}`);
       }
     } catch (e) {

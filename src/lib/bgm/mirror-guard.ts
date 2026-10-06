@@ -9,15 +9,24 @@
  *
  * 根因是设计缺陷，不是疏忽：
  * `collection-actions.ts` 里 `if (bgmBound)` 就直接发请求，**没有任何闸门**。
- * 于是「拿真实账号做接口冒烟」必然污染真实数据，而且事后无法从代码看出发生过什么。
  *
- * ## 两道防护
+ * ## 三道判定（按顺序）
  *
- * 1. **测试账号自动拒绝镜像**：邮箱匹配测试模式的账号一律不写上游。
- *    这是自动的、不依赖记忆，因此能真正防住「下次又忘了」。
- * 2. **`BGM_MIRROR_ENABLED=0` 显式总开关**：需要整批跑写库测试时用它。
+ * 1. **`BGM_MIRROR_ENABLED=0`** —— 运维硬闸。整批跑写库测试时用它，
+ *    压过一切（包括用户自己的选择）。
+ * 2. **测试账号模式** —— 安全兜底。邮箱匹配测试模式的账号一律不写上游，
+ *    自动生效、不依赖记忆。
+ * 3. **用户偏好**（`User.mirrorToBgm`，**默认关闭**）—— 写上游是不可撤销的，
+ *    会覆盖用户在 Bangumi 上已有的内容。默认替他打开等于替他做决定，
+ *    因此必须由用户显式开启。
  *
- * 另外每次成功的上游写入都记一行日志 —— 出事时能查「写过什么」。
+ * ## 为什么返回「原因码」而不只是文案
+ *
+ * 早先只返回一句中文原因，于是 **`BGM_MIRROR_ENABLED=0` 这句内部术语直接
+ * 漏到了用户界面上**，而界面还把它显示成「同步失败」—— 但用户根本没开过
+ * 这个功能，不存在「失败」。
+ *
+ * 现在返回 `code`，由界面决定说法：未开启 ≠ 被管理员关闭 ≠ 真的写失败了。
  */
 
 /**
@@ -32,11 +41,22 @@ const TEST_ACCOUNT_PATTERNS: readonly RegExp[] = [
   /[-._+](smoke|test|e2e)@/i,
 ];
 
+/**
+ * 不做镜像的原因码。
+ *
+ * - `user-disabled`：用户自己没开（**默认状态**）—— 不是错误，界面应引导去设置页
+ * - `ops-disabled`：运维硬闸关闭（跑写库测试时）
+ * - `test-account`：测试账号，安全兜底
+ */
+export type MirrorSkipCode = "user-disabled" | "ops-disabled" | "test-account";
+
 export interface MirrorDecision {
   /** 是否允许写上游 */
   allowed: boolean;
-  /** 拒绝原因（allowed 为 false 时必有） */
+  /** 拒绝原因（英文短句，给日志与排查用；界面用 `code` 决定文案） */
   reason: string | null;
+  /** 不做镜像的原因码；`allowed` 为 true 时为 null */
+  code: MirrorSkipCode | null;
 }
 
 /**
@@ -45,22 +65,35 @@ export interface MirrorDecision {
  * 顺序有讲究：**先看显式开关，再看测试账号模式** ——
  * 前者是运维意图（明确要求关闭），后者是安全兜底。
  */
-export function decideMirror(input: { email: string | null | undefined }): MirrorDecision {
+export function decideMirror(input: {
+  email: string | null | undefined;
+  /**
+   * 用户是否在设置里开启了同步（`User.mirrorToBgm`，默认 false）。
+   *
+   * **必填**（不是可选）—— 否则「忘了传」会静默退化成「允许写入」，
+   * 而这是不可撤销的写操作。必填让编译器替我们挡住这种遗漏。
+   */
+  mirrorToBgm: boolean;
+}): MirrorDecision {
+  // 1. 运维硬闸：压过一切，包括用户自己的选择
   if (process.env.BGM_MIRROR_ENABLED === "0") {
-    return { allowed: false, reason: "BGM_MIRROR_ENABLED=0，已全局关闭上游镜像" };
+    return { allowed: false, reason: "ops kill switch (BGM_MIRROR_ENABLED=0)", code: "ops-disabled" };
   }
 
+  // 2. 安全兜底：测试账号一律不写上游
   const email = input.email ?? "";
   for (const pattern of TEST_ACCOUNT_PATTERNS) {
     if (pattern.test(email)) {
-      return {
-        allowed: false,
-        reason: `账号 ${email} 匹配测试模式，拒绝对 Bangumi 发起写入`,
-      };
+      return { allowed: false, reason: `test account pattern matched: ${email}`, code: "test-account" };
     }
   }
 
-  return { allowed: true, reason: null };
+  // 3. 用户偏好（默认关闭）
+  if (!input.mirrorToBgm) {
+    return { allowed: false, reason: "user has not enabled Bangumi sync", code: "user-disabled" };
+  }
+
+  return { allowed: true, reason: null, code: null };
 }
 
 /**

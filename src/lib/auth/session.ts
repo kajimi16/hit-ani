@@ -43,6 +43,11 @@ export interface SessionUser {
   qqBound: boolean;
   bgmBound: boolean;
   bgmUsername: string | null;
+  /**
+   * 是否把站内操作同步写回 Bangumi。**默认 false** —— 见
+   * `prisma/schema.prisma` 里 `User.mirrorToBgm` 的说明。
+   */
+  mirrorToBgm: boolean;
   /** 是否已连接至少一台 Jellyfin/Emby —— 决定条目页是否显示播放面板。 */
   jellyfinConnected: boolean;
   /** 管理员：可修改共享的抓取源配置。 */
@@ -67,6 +72,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
       qqBinding: { select: { userId: true } },
       bgmBinding: { select: { bgmUsername: true } },
       jellyfinConnections: { select: { id: true }, take: 1 },
+      mirrorToBgm: true,
       isAdmin: true,
     },
   });
@@ -88,6 +94,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     qqBound: user.qqBinding !== null,
     bgmBound: user.bgmBinding !== null,
     bgmUsername: user.bgmBinding?.bgmUsername ?? null,
+    mirrorToBgm: user.mirrorToBgm,
     jellyfinConnected: user.jellyfinConnections.length > 0,
     isAdmin: shouldBeAdmin,
   };
