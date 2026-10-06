@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { browserOrigin, hostHeadersFrom } from "@/lib/auth/request-origin";
+import { headers } from "next/headers";
 import { z } from "zod";
 import { requireSessionUser } from "@/lib/auth/session";
 import { COLLECTION_STATUSES, statusLabel } from "@/lib/collection";
@@ -104,7 +106,7 @@ export async function PUT(request: Request) {
       bgmBound: user.bgmBound,
       mirrorToBgm: user.mirrorToBgm,
       userEmail: user.email,
-      origin: new URL(request.url).origin,
+      origin: browserOrigin(hostHeadersFrom(await headers())) ?? new URL(request.url).origin,
     });
 
     return NextResponse.json(result);

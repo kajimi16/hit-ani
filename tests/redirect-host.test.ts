@@ -20,53 +20,57 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { checkRedirectHost } from "@/lib/auth/redirect-host";
 
-test("host 相同时放行", () => {
+test("主机名相同时放行", () => {
   assert.equal(
-    checkRedirectHost("http://192.168.6.203:3100", "http://192.168.6.203:3100/api/auth/bgm/callback")
-      .ok,
+    checkRedirectHost("192.168.6.203:3100", "http://192.168.6.203:3100/api/auth/bgm/callback").ok,
     true,
   );
 });
 
-test("协议不同但 host 相同 → 放行", () => {
-  // host-only Cookie 不看协议：http 与 https 共用同一个 host 的 Cookie 域。
-  // 本项目在明文 HTTP 上跑，而回调可能被登记成 https —— 拦下它会让功能
-  // 彻底不可用，而实际是能工作的。
-  assert.equal(
-    checkRedirectHost("http://example.com", "https://example.com/api/auth/bgm/callback").ok,
-    true,
-  );
-});
-
-test("host 不同 → 拦下，并说清两个 host 各是什么", () => {
-  const verdict = checkRedirectHost(
-    "http://192.168.6.203:3100",
-    "http://localhost:3100/api/auth/bgm/callback",
-  );
+test("主机名不同 → 拦下（实测确认 Cookie 只发给签发它的主机名）", () => {
+  const verdict = checkRedirectHost("192.168.6.203:3100", "http://localhost:3100/api/auth/bgm/callback");
   assert.equal(verdict.ok, false);
   if (verdict.ok) return;
   assert.equal(verdict.browsing, "192.168.6.203:3100");
   assert.equal(verdict.registered, "localhost:3100");
-  // 说明里必须同时出现两个 host，用户才能自己判断该改哪一边
+});
+
+test("传入 null（拿不到 Host 头）时放行 —— 辅助检查不该把功能锁死", () => {
+  assert.equal(checkRedirectHost(null, "http://anything.test/cb").ok, true);
+});
+
+test("协议不同但主机名相同 → 放行（Cookie 不看协议）", () => {
+  assert.equal(checkRedirectHost("example.com:443", "https://example.com/cb").ok, true);
+});
+
+test("说明里同时给出两个地址，用户才能判断该改哪一边", () => {
+  const verdict = checkRedirectHost(
+    "192.168.6.203:3100",
+    "http://localhost:3100/api/auth/bgm/callback",
+  );
+  assert.equal(verdict.ok, false);
+  if (verdict.ok) return;
   assert.match(verdict.message, /192\.168\.6\.203:3100/);
   assert.match(verdict.message, /localhost:3100/);
 });
 
-test("端口不同也算不同 host —— 这正是本项目最容易踩的形态", () => {
-  // 同一台机器上换端口访问（3100 vs 3000）也会让 Cookie 带不过去
-  const verdict = checkRedirectHost("http://192.168.6.203:3000", "http://192.168.6.203:3100/cb");
-  assert.equal(verdict.ok, false);
+test("端口不同**不**算不匹配 —— Cookie 作用域只看主机名", () => {
+  // 这条是被实测纠正的：上一版比较 host:port，会误拦能用的配置。
+  // RFC 6265 里 Cookie 的作用域不含端口，实测确认：
+  // 在 localhost:3100 设置的 Cookie，访问 localhost:3210 时照样发送。
+  assert.equal(
+    checkRedirectHost("192.168.6.203:3000", "http://192.168.6.203:3100/cb").ok,
+    true,
+  );
+  assert.equal(checkRedirectHost("localhost:3199", "http://localhost:3100/cb").ok, true);
 });
 
 test("大小写不敏感", () => {
-  assert.equal(
-    checkRedirectHost("http://EXAMPLE.com:3100", "http://example.com:3100/cb").ok,
-    true,
-  );
+  assert.equal(checkRedirectHost("EXAMPLE.com:3100", "http://example.com:3100/cb").ok, true);
 });
 
 test("说明里给出可执行的两种解决办法，而不是只说「不一致」", () => {
-  const verdict = checkRedirectHost("http://a.test:1", "http://b.test:2/cb");
+  const verdict = checkRedirectHost("a.test:1", "http://b.test:2/cb");
   assert.equal(verdict.ok, false);
   if (verdict.ok) return;
   assert.match(verdict.message, /改用/, "应提示换个地址访问");
@@ -74,16 +78,15 @@ test("说明里给出可执行的两种解决办法，而不是只说「不一�
   assert.match(verdict.message, /逐字符/, "应提醒两处必须完全一致");
 });
 
-test("解析不出 host 时放行（辅助检查不该把功能锁死）", () => {
-  // 真正的一致性最终由 bgm.tv 与浏览器 Cookie 语义兜底；
-  // 这里因为意外输入而拦下，会把可用功能变成不可用。
-  for (const bad of ["", "not-a-url", "://missing-scheme"]) {
+test("解析不出地址时放行（辅助检查不该把功能锁死）", () => {
+  for (const bad of ["", "not a url", "://x", "a/b"]) {
     assert.equal(checkRedirectHost(bad, "http://x.test/cb").ok, true, `browsing=${bad}`);
-    assert.equal(checkRedirectHost("http://x.test", bad).ok, true, `redirect=${bad}`);
+    assert.equal(checkRedirectHost("x.test", bad).ok, true, `redirect=${bad}`);
   }
 });
 
-test("IPv6 与带端口的 host 都能正确比较", () => {
-  assert.equal(checkRedirectHost("http://[::1]:3100", "http://[::1]:3100/cb").ok, true);
-  assert.equal(checkRedirectHost("http://[::1]:3100", "http://[::1]:3101/cb").ok, false);
+test("IPv6 字面量能正确解析（端口不参与比较）", () => {
+  assert.equal(checkRedirectHost("[::1]:3100", "http://[::1]:3100/cb").ok, true);
+  assert.equal(checkRedirectHost("[::1]:3199", "http://[::1]:3100/cb").ok, true);
+  assert.equal(checkRedirectHost("[::1]:3100", "http://[::2]:3100/cb").ok, false);
 });

@@ -4,6 +4,7 @@ import { randomBytes } from "node:crypto";
 import { bgmAuthorizeUrl, readBgmOAuthConfig } from "@/lib/auth/bgm-oauth";
 import { resolveSecureCookie } from "@/lib/auth/cookie-policy";
 import { checkRedirectHost } from "@/lib/auth/redirect-host";
+import { browserHost, browserOrigin, hostHeadersFrom } from "@/lib/auth/request-origin";
 import { OAUTH_STATE_COOKIE, requireSessionUser } from "@/lib/auth/session";
 
 export const runtime = "nodejs";
@@ -22,7 +23,16 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "请先登录后再绑定 Bangumi" }, { status: 401 });
   }
 
-  const origin = new URL(request.url).origin;
+  /*
+   * ⚠️ 用**浏览器侧**的 origin，而不是 `new URL(request.url).origin`。
+   *
+   * 实测：`request.url` 的 host 是服务器自己的监听地址，完全无视 `Host` 头
+   * （`Host: 192.168.6.203:3100` 也会解析成 `http://localhost:3100`）。
+   * 用它拼重定向会把用户送到**他自己那台机器**。
+   */
+  const requestHeaders = await headers();
+  const hostParts = hostHeadersFrom(requestHeaders);
+  const origin = browserOrigin(hostParts) ?? new URL(request.url).origin;
   let config;
   try {
     config = readBgmOAuthConfig(origin);
@@ -50,7 +60,7 @@ export async function GET(request: Request) {
    * bgm.tv 绕一圈再回来撞一个含糊的「状态校验失败」，不如当场说清。
    * 那个提示原先把原因归结为「停留太久 / Cookie 没保留」，完全没说到点子上。
    */
-  const verdict = checkRedirectHost(origin, config.redirectUri);
+  const verdict = checkRedirectHost(browserHost(hostParts), config.redirectUri);
   if (!verdict.ok) {
     return NextResponse.redirect(
       new URL(`/settings?bgm=failed&reason=${encodeURIComponent(verdict.message)}`, origin),
@@ -63,7 +73,7 @@ export async function GET(request: Request) {
     httpOnly: true,
     sameSite: "lax",
     // 与会话 Cookie 同一套判定（详见 cookie-policy.ts）
-    secure: resolveSecureCookie(await headers()),
+    secure: resolveSecureCookie(requestHeaders),
     path: "/",
     maxAge: 600,
   });

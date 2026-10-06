@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import {
   BgmAccountTakenError,
   bindBgmAccount,
   readBgmOAuthConfig,
 } from "@/lib/auth/bgm-oauth";
+import { browserOrigin, hostHeadersFrom } from "@/lib/auth/request-origin";
 import { OAUTH_STATE_COOKIE, requireSessionUser } from "@/lib/auth/session";
 
 export const runtime = "nodejs";
@@ -17,13 +18,23 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(request: Request) {
   const url = new URL(request.url);
+  /*
+   * ⚠️ 重定向必须用**浏览器侧**的 origin。
+   *
+   * `url.origin` 是服务器自己的监听地址（实测无视 `Host` 头：即便收到
+   * `Host: 192.168.6.203:3100` 也解析成 `http://localhost:3100`）。
+   * 用它拼 Location 会把用户的浏览器送到**他自己那台机器**的 3100 端口 ——
+   * 除非他恰好就在跑这个服务的那台机器上，否则必然打不开。
+   * 这正是「授权会报错」的成因之一。
+   */
+  const origin = browserOrigin(hostHeadersFrom(await headers())) ?? url.origin;
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
   const oauthError = url.searchParams.get("error");
 
   if (oauthError) {
     return NextResponse.redirect(
-      new URL(`/settings?bgm=denied&reason=${encodeURIComponent(oauthError)}`, url.origin),
+      new URL(`/settings?bgm=denied&reason=${encodeURIComponent(oauthError)}`, origin),
     );
   }
   if (!code || !state) {
@@ -32,7 +43,7 @@ export async function GET(request: Request) {
     return NextResponse.redirect(
       new URL(
         `/settings?bgm=failed&reason=${encodeURIComponent("Bangumi 未返回授权码（code / state 缺失）。请重新发起绑定。")}`,
-        url.origin,
+        origin,
       ),
     );
   }
@@ -53,7 +64,7 @@ export async function GET(request: Request) {
         `/settings?bgm=failed&reason=${encodeURIComponent(
           "授权状态校验失败（state 不匹配或已过期）。常见原因：授权页停留超过 10 分钟、或浏览器未保留 Cookie。请重新发起绑定。",
         )}`,
-        url.origin,
+        origin,
       ),
     );
   }
@@ -62,14 +73,14 @@ export async function GET(request: Request) {
   try {
     user = await requireSessionUser();
   } catch {
-    return NextResponse.redirect(new URL("/login?next=/settings", url.origin));
+    return NextResponse.redirect(new URL("/login?next=/settings", origin));
   }
 
   try {
-    const config = readBgmOAuthConfig(url.origin);
+    const config = readBgmOAuthConfig(origin);
     const { bgmUserId } = await bindBgmAccount(user.id, config, code);
     return NextResponse.redirect(
-      new URL(`/settings?bgm=ok&uid=${bgmUserId}`, url.origin),
+      new URL(`/settings?bgm=ok&uid=${bgmUserId}`, origin),
     );
   } catch (error) {
     /*
@@ -83,7 +94,7 @@ export async function GET(request: Request) {
     return NextResponse.redirect(
       new URL(
         `/settings?bgm=${taken ? "taken" : "failed"}&reason=${encodeURIComponent(reason)}`,
-        url.origin,
+        origin,
       ),
     );
   }
