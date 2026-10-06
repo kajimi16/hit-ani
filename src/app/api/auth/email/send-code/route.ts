@@ -6,6 +6,7 @@ import { createTransport } from "@/lib/email/transport";
 import { RESEND_INTERVAL_MS, issueCode, normalizeEmail } from "@/lib/email/verification";
 import { TokenBucketLimiter } from "@/lib/danmaku/rate-limit";
 import { clientIp } from "@/lib/net/client-ip";
+import { consumeSendQuota, quotaMessage } from "@/lib/net/send-quota";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -87,22 +88,15 @@ export async function POST(request: Request) {
   /*
    * 限流先于一切 —— 包括「邮箱是否合法」的判断。
    *
-   * **先查全局那道**：它不可伪造，是主防线。ipaly 那道只作补充。
+   * 顺序（全局先于 IP）是一条**安全不变量**，见 `send-quota.ts` 的说明：
+   * 它的判定必须集中在纯函数里，否则改错时没有任何外在表现。
    */
-  const global = globalLimiter.consume("all");
-  if (!global.allowed) {
-    return NextResponse.json(
-      { error: `发送过于频繁，请 ${Math.ceil(global.retryAfterMs / 1000)} 秒后再试` },
-      { status: 429 },
-    );
-  }
-
-  const perIp = ipLimiter.consume(clientIp(request.headers));
-  if (!perIp.allowed) {
-    return NextResponse.json(
-      { error: `请求过于频繁，请 ${Math.ceil(perIp.retryAfterMs / 1000)} 秒后再试` },
-      { status: 429 },
-    );
+  const quota = consumeSendQuota(
+    { global: globalLimiter, perIp: ipLimiter },
+    clientIp(request.headers),
+  );
+  if (!quota.allowed) {
+    return NextResponse.json({ error: quotaMessage(quota) }, { status: 429 });
   }
 
   /*
