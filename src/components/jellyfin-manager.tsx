@@ -285,7 +285,7 @@ export default function JellyfinManager() {
           </button>
 
           <p className="text-xs text-on-surface-variant/70">
-            密码仅用于换取访问令牌，**不会保存**；保存的是令牌本身，且只存在服务端。
+            密码仅用于换取访问令牌，<strong>不会保存</strong>；保存的是令牌本身，且只存在服务端。
           </p>
         </div>
       </section>

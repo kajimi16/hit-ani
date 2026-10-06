@@ -195,7 +195,7 @@ export default function SettingsClient({
                   本地缓存 {sync.subjectCount} 个条目
                   <br />
                   <span className="text-on-surface-variant/70">
-                    条目的简介与章节在**首次打开时**才从 Bangumi 拉取并缓存，
+                    条目的简介与章节在<strong>首次打开时</strong>才从 Bangumi 拉取并缓存，
                     因此导入很快，也不会为几百个收藏打出上千次请求。
                   </span>
                 </p>
