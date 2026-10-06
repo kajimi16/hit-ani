@@ -19,14 +19,35 @@ export async function GET(request: Request) {
   const state = url.searchParams.get("state");
 
   if (!code || !state) {
-    return NextResponse.json({ error: "缺少 code 或 state" }, { status: 400 });
+    /*
+     * 跳回设置页给可操作的原因，而不是裸 JSON —— 与 BGM 回调同一取舍。
+     * 用户是被 QQ 重定向过来的，一页 JSON 报错没有出路。
+     */
+    return NextResponse.redirect(
+      new URL(
+        `/settings?qq=failed&reason=${encodeURIComponent("QQ 未返回授权码（code / state 缺失）。请重新发起绑定。")}`,
+        origin,
+      ),
+    );
   }
 
   const store = await cookies();
   const expected = store.get(OAUTH_STATE_COOKIE)?.value;
   store.delete(OAUTH_STATE_COOKIE);
   if (!expected || expected !== `qq:${state}`) {
-    return NextResponse.json({ error: "state 校验失败，请重新发起绑定" }, { status: 400 });
+    /*
+     * 与 BGM 回调同一段说明：state 失败最常见的原因是 **Cookie 没带回来**，
+     * 而不一定是攻击（停留超时、Cookie 未保留、跨主机跳转）。
+     * 把可能原因说清楚，用户才知道下一步做什么。
+     */
+    return NextResponse.redirect(
+      new URL(
+        `/settings?qq=failed&reason=${encodeURIComponent(
+          "授权状态校验失败（state 不匹配或已过期）。常见原因：授权页停留超过 10 分钟、或浏览器未保留 Cookie。请重新发起绑定。",
+        )}`,
+        origin,
+      ),
+    );
   }
 
   let user;
