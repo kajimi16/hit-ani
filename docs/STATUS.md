@@ -66,23 +66,66 @@ docker compose start jellyfin
 
 ---
 
-## ⚠️ 同步开关当前是关的
+## Bangumi 同步：分两层，别混淆
 
-`.env` 里有一行：
+**用户开关**在设置的「同步到 Bangumi」，存 `User.mirrorToBgm`，**默认关闭**
+（写上游不可撤销，会覆盖你在 Bangumi 上的对应内容，默认替用户打开等于替他
+做决定）。
+
+**运维硬闸**在 `.env`：
 
 ```
 BGM_MIRROR_ENABLED=0
 ```
 
-**含义：站内标记收藏 / 进度，不会同步到你的 Bangumi 账号。**
+设成 `0` 时**压过用户开关** —— 无论谁开了同步都一律拒绝写 Bangumi。
+当前是关着的（为跑写库测试）。
 
-我为安全测试临时加的（此前发生过测试数据被写进真实 BGM 账号的事故）。
-自动闸门只能拦住 `smoke-*` 这类测试账号，拦不住手工 curl。
+判定顺序：硬闸 → 测试账号模式 → 用户偏好。
+界面会区分「你没开这个功能」（静默）与「开了但被管理员挡住」（提示），
+不会再把 `BGM_MIRROR_ENABLED` 这种内部术语显示给用户。
 
-**恢复同步**：删掉那一行，然后
+**恢复同步**：把上面那行改成 `1`（或删掉），然后
 ```bash
 docker compose up -d --force-recreate web gateway
 ```
+
+---
+
+## ⚠️ 待部署：邮箱验证码（需要凭据）
+
+注册现在**强制**要求学校邮箱验证码。代码已实现并推送，但**尚未部署** ——
+因为 `.env` 里没有任何邮件配置，而验证码是必填的：
+
+> **此刻跑 `docker compose up -d web` 会让注册整体不可用。**
+
+（新镜像已经构建好放在本地，`latest` 指向它。这是有意的：若把标签回退到旧镜像，
+`up -d` 会**静默**跑回旧代码、验证码消失，而响亮失败比静默失败好。）
+
+### 部署前先自检
+
+```bash
+npm run check:credentials -- --send 你的邮箱 --bgm
+```
+
+它会真正连一次 SMTP、并用假 code 打 BGM 的 token 端点来区分
+「凭据无效」与「授权码无效」（BGM 恰好分开报这两种错）。
+
+### 需要填的凭据
+
+```bash
+# 邮件（必需）—— SMTP 或 HTTP API 二选一
+SMTP_HOST=""  SMTP_PORT="587"  SMTP_USER=""  SMTP_PASS=""  EMAIL_FROM=""
+# 或 EMAIL_API_URL=""  EMAIL_API_KEY=""
+
+# Bangumi OAuth（可选，没有仍可用「个人访问令牌」）
+BGM_CLIENT_ID=""  BGM_CLIENT_SECRET=""
+# ⚠️ 必须写死并与 bgm.tv 应用里登记的值**逐字符一致**（含端口）：
+BGM_REDIRECT_URI="http://192.168.6.203:3100/api/auth/bgm/callback"
+```
+
+配好后 `docker compose up -d --build web` 即可；启动日志会打印能力检查结果，
+`docker compose logs web | head -20` 能直接看出注册能不能用。
 
 ---
 
