@@ -33,10 +33,16 @@ const ROUTES = [
   "src/app/api/auth/qq/callback/route.ts",
 ];
 
-/** 去掉注释后的源码 —— 注释里提到 `NextResponse.json` 不该算违规。 */
+/**
+ * 去掉注释，避免注释里的 `fetch(` / `NextResponse.json` 被误判。
+ *
+ * **必须保留换行** —— 行号是按这个结果算的。第一版把块注释整段压成一个
+ * 空格，换行随之消失，于是报出的行号整体偏小（实测：实际第 78 行报了第 58 行）。
+ * 一个指向错误位置的报错比不报还费时间。
+ */
 function withoutComments(source: string): string {
   return source
-    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/\/\*[\s\S]*?\*\//g, (block) => block.replace(/[^\n]/g, " "))
     .split("\n")
     .map((line) => line.replace(/\/\/.*$/, ""))
     .join("\n");

@@ -15,8 +15,15 @@ export const BGM_API_BASE = "https://api.bgm.tv";
 export const BGM_OAUTH_BASE = "https://bgm.tv/oauth";
 
 /** Bangumi 要求可识别的 UA 并附带联系方式。 */
+/**
+ * 上游请求的 User-Agent。
+ *
+ * `||` 而不是 `??`：`.env` 里写 `BGM_USER_AGENT=""` 时 `??` 会把这个**空串**
+ * 送上去，而 Bangumi 对空 UA 会直接拒绝（403）。空串与「未设置」在这里
+ * 应当是同一个意思。
+ */
 export const BGM_USER_AGENT =
-  process.env.BGM_USER_AGENT ?? "hit-ani/0.1 (https://github.com/hit-ani)";
+  process.env.BGM_USER_AGENT?.trim() || "hit-ani/0.1 (https://github.com/hit-ani)";
 
 /** 条目类型，对齐 `SubjectType`。 */
 export const SubjectType = {
@@ -542,6 +549,15 @@ async function postToken(form: Record<string, string>): Promise<BgmTokenResponse
     },
     body: new URLSearchParams(form),
     cache: "no-store",
+    /*
+     * ⚠️ 必须有超时。这个 fetch **没有**走 `request()`（它在下面，用的是
+     * api.bgm.tv 而不是 bgm.tv），因此不会自动继承那边的超时。
+     *
+     * 而它在 OAuth 的**关键路径**上：bgm.tv 挂住时，回调请求会一直悬着 ——
+     * 用户看着浏览器转圈，服务端也一直占着一个连接。
+     * 项目规则「所有上游请求必须有内置超时」在这里曾被漏掉。
+     */
+    signal: AbortSignal.timeout(BGM_REQUEST_TIMEOUT_MS),
   });
   if (!response.ok) {
     throw new BgmApiError(

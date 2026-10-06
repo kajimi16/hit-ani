@@ -18,6 +18,8 @@ import { prisma } from "@/lib/prisma";
 import { isUniqueViolation } from "@/lib/prisma-errors";
 import {
   BGM_OAUTH_BASE,
+  BGM_REQUEST_TIMEOUT_MS,
+  BGM_USER_AGENT,
   buildAuthorizeUrl,
   exchangeAuthorizationCode,
   refreshAccessToken,
@@ -76,10 +78,12 @@ export async function fetchBgmIdentity(accessToken: string): Promise<BgmIdentity
   const response = await fetch("https://api.bgm.tv/v0/me", {
     headers: {
       Authorization: `Bearer ${accessToken}`,
-      "User-Agent": process.env.BGM_USER_AGENT ?? "hit-ani/0.1 (https://github.com/hit-ani)",
+      "User-Agent": BGM_USER_AGENT,
       Accept: "application/json",
     },
     cache: "no-store",
+    // 与 postToken 同样必须有超时 —— 见那边的说明
+    signal: AbortSignal.timeout(BGM_REQUEST_TIMEOUT_MS),
   });
 
   if (response.status === 401) {
@@ -271,10 +275,12 @@ async function fetchTokenExpiry(accessToken: string): Promise<Date | null> {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
-        "User-Agent": process.env.BGM_USER_AGENT ?? "hit-ani/0.1 (https://github.com/hit-ani)",
+        "User-Agent": BGM_USER_AGENT,
       },
       body: new URLSearchParams({ access_token: accessToken }),
       cache: "no-store",
+      // 三处裸 fetch 里最后一处 —— 同属 OAuth 关键路径，见 postToken 的说明
+      signal: AbortSignal.timeout(BGM_REQUEST_TIMEOUT_MS),
     });
     if (!response.ok) return null;
 
