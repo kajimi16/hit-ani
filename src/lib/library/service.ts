@@ -15,7 +15,7 @@
 
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { COLLECTION_STATUSES, type CollectionStatusValue } from "@/lib/collection";
+import { COLLECTION_STATUSES, statusLabel, type CollectionStatusValue } from "@/lib/collection";
 import {
   LIBRARY_GROUP_PREVIEW,
   LIBRARY_PAGE_SIZE,
@@ -169,11 +169,6 @@ export function toLibraryItem(
     watchedEpisodes: watchedBySubject.get(row.subjectId) ?? 0,
     totalEpisodes: row.subject._count.episodes,
     collectedAt: row.collectedAt?.toISOString() ?? null,
-    statusLabel: STATUS_LABELS[row.type] ?? "未知",
+    statusLabel: statusLabel(row.type),
   };
 }
-
-/** 状态值 → 中文标签。收敛到一处，避免各处再建一份映射表。 */
-export const STATUS_LABELS: Record<number, string> = Object.fromEntries(
-  COLLECTION_STATUSES.map((meta) => [meta.value, meta.label]),
-);
