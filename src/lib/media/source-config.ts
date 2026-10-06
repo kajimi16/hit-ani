@@ -288,7 +288,7 @@ export const SOURCE_PRESETS: readonly SourcePreset[] = [
   {
     id: "bahamut-anime",
     name: "巴哈姆特動畫瘋（正版流媒体）",
-    description: "台湾正版授权流媒体，免费含广告。给的是**播放页链接，点开就能看**",
+    description: "台湾正版授权流媒体，免费含广告。给的是播放页链接，点开就能看。",
     factory: SourceFactory.WebSelector,
     config: {
       // 必须带 ajax=1 —— 不带时搜索结果是 JS 渲染的，抓不到

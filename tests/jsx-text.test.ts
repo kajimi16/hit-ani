@@ -72,6 +72,58 @@ function stripComments(source: string): string[] {
   return out.join("").split("\n");
 }
 
+/**
+ * 与 `stripComments` 相同，但**保留字符串字面量**（只去掉注释）。
+ *
+ * 为什么需要第二个版本：`stripComments` 把字符串字面量也抹成空白 —— 那是
+ * JSX 检查需要的（它只关心文本节点），但对 `.ts` 的检查恰恰相反：
+ * **要看的就是字符串里的内容**。
+ *
+ * 第一版我复用了 `stripComments`，结果新加的断言**永远通过** ——
+ * 待检查的字符串已经被抹掉了。反向验证时发现的（注入 `**` 后测试不响）。
+ */
+function stripCommentsKeepStrings(source: string): string[] {
+  const out: string[] = [];
+  const n = source.length;
+  let i = 0;
+
+  const blank = (chunk: string) =>
+    out.push([...chunk].map((c) => (c === "\n" ? "\n" : " ")).join(""));
+
+  while (i < n) {
+    if (source.startsWith("/*", i)) {
+      const end = source.indexOf("*/", i + 2);
+      const stop = end === -1 ? n : end + 2;
+      blank(source.slice(i, stop));
+      i = stop;
+      continue;
+    }
+    if (source.startsWith("//", i)) {
+      const end = source.indexOf("\n", i);
+      const stop = end === -1 ? n : end;
+      out.push(" ".repeat(stop - i));
+      i = stop;
+      continue;
+    }
+    const ch = source[i]!;
+    if (ch === '"' || ch === "'" || ch === "`") {
+      // 字符串**原样保留**（这正是要检查的内容），只跳过它以避开其中的 `//`
+      let j = i + 1;
+      while (j < n && source[j] !== ch) {
+        j += source[j] === "\\" ? 2 : 1;
+      }
+      const stop = Math.min(j + 1, n);
+      out.push(source.slice(i, stop));
+      i = stop;
+      continue;
+    }
+    out.push(ch);
+    i += 1;
+  }
+
+  return out.join("").split("\n");
+}
+
 function tsxFiles(dir = "src"): string[] {
   const out: string[] = [];
   const walk = (current: string) => {
@@ -80,6 +132,30 @@ function tsxFiles(dir = "src"): string[] {
       const path = join(current, entry.name);
       if (entry.isDirectory()) walk(path);
       else if (path.endsWith(".tsx")) out.push(path);
+    }
+  };
+  walk(dir);
+  return out;
+}
+
+/**
+ * 纯文本的去向 —— `.ts` 文件里的**字符串字面量**。
+ *
+ * `.ts` 不会渲染 JSX，但字符串同样会到用户眼前：邮件正文、媒体源描述、
+ * 错误提示。在这些地方写 `**加粗**` 会**原样显示星号**（纯文本没有 Markdown）。
+ *
+ * 实测踩过两次：邮件正文里我刚写下 `**只有最新这一封有效**`，
+ * 而 `source-config.ts` 的媒体源描述里的 `**播放页链接**` 一直显示在
+ * 源管理界面上（`source-manager.tsx:250`）。
+ */
+function textBearingTsFiles(dir = "src"): string[] {
+  const out: string[] = [];
+  const walk = (current: string) => {
+    for (const entry of readdirSync(current, { withFileTypes: true })) {
+      if (entry.name === "node_modules" || entry.name.startsWith(".")) continue;
+      const path = join(current, entry.name);
+      if (entry.isDirectory()) walk(path);
+      else if (path.endsWith(".ts")) out.push(path);
     }
   };
   walk(dir);
@@ -133,6 +209,28 @@ export function f() {
 
   assert.equal(hits.length, 1, `应只命中文本节点那一处，实际 ${hits.length} 处`);
   assert.match(hits[0]!.line, /这个/);
+});
+
+test("`.ts` 里会展示给用户的字符串也不得含 `**`", () => {
+  // 只看**中文夹在 `**` 之间**的形态 —— 那是「Markdown 加粗」而不是代码。
+  // 正则字面量里的 `**`（如 `\*\*`）、注释、以及运算符都不会命中。
+  const offenders: string[] = [];
+
+  for (const file of textBearingTsFiles()) {
+    // 必须用**保留字符串**的版本 —— 待检查的内容就在字符串里
+    const lines: string[] = stripCommentsKeepStrings(readFileSync(file, "utf8"));
+    lines.forEach((line: string, index: number) => {
+      for (const match of line.matchAll(/["`]([^"`]*\*\*[\u4e00-\u9fff][^"`]*)["`]/g)) {
+        offenders.push(`${file}:${index + 1}  ${match[1]?.slice(0, 60)}`);
+      }
+    });
+  }
+
+  assert.deepEqual(
+    offenders,
+    [],
+    `这些字符串会原样显示星号给用户（邮件 / 源描述 / 提示），请去掉 \`**\`：\n  ${offenders.join("\n  ")}`,
+  );
 });
 
 test("扫描确实覆盖到源码（不是扫了空集）", () => {
