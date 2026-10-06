@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies, headers } from "next/headers";
 import { randomBytes } from "node:crypto";
-import { readBgmOAuthConfig } from "@/lib/auth/bgm-oauth";
+import { bgmAuthorizeUrl, readBgmOAuthConfig } from "@/lib/auth/bgm-oauth";
 import { resolveSecureCookie } from "@/lib/auth/cookie-policy";
 import { OAUTH_STATE_COOKIE, requireSessionUser } from "@/lib/auth/session";
 
@@ -25,10 +25,20 @@ export async function GET(request: Request) {
   let config;
   try {
     config = readBgmOAuthConfig(origin);
-  } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : String(error) },
-      { status: 500 },
+  } catch {
+    /*
+     * 未配置 OAuth 应用 —— **跳回设置页并给出可操作的原因**，而不是返回裸 JSON。
+     *
+     * 用户是从设置页的链接进来的，直接给一页 `{"error":"缺少环境变量…"}`
+     * 等于把他扔进死胡同。设置页有个人令牌这条等价路径，把他送回去。
+     */
+    return NextResponse.redirect(
+      new URL(
+        `/settings?bgm=failed&reason=${encodeURIComponent(
+          "本部署未配置 Bangumi OAuth 应用（缺 BGM_CLIENT_ID / BGM_CLIENT_SECRET）。请改用「个人访问令牌」绑定，功能完全等价。",
+        )}`,
+        origin,
+      ),
     );
   }
 
@@ -43,11 +53,13 @@ export async function GET(request: Request) {
     maxAge: 600,
   });
 
-  const url = new URL("https://bgm.tv/oauth/authorize");
-  url.searchParams.set("client_id", config.clientId);
-  url.searchParams.set("response_type", "code");
-  url.searchParams.set("redirect_uri", config.redirectUri);
-  url.searchParams.set("state", state);
-
-  return NextResponse.redirect(url.toString());
+  /*
+   * 用 `bgmAuthorizeUrl`（→ `buildAuthorizeUrl`）而不是在这里拼一遍。
+   *
+   * 这里原先硬编码了 `https://bgm.tv/oauth/authorize`，而权威实现用的是
+   * `BGM_OAUTH_BASE` —— 两处会漂移（改环境变量只影响其中一处）。
+   * 更糟的是 `bgmAuthorizeUrl` 这个 wrapper **从未被使用**，
+   * 也就是说「被测过的那份」与「线上跑的那份」是两段代码。
+   */
+  return NextResponse.redirect(bgmAuthorizeUrl(config, state));
 }

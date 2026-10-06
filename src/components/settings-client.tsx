@@ -209,15 +209,32 @@ export default function SettingsClient({
             </p>
 
             <div className="space-y-2">
-              <a
-                href="/api/auth/bgm/start"
-                className="inline-block rounded bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary"
-              >
-                用 Bangumi 账号授权登录（推荐）
-              </a>
-              <p className="text-xs text-on-surface-variant/70">
-                跳转到 bgm.tv 完成授权。本平台全程不会接触你的 Bangumi 密码。
-                {!oauthConfigured && " 当前部署未配置 OAuth 应用，请改用下方个人令牌方式。"}
+              {/*
+                未配置 OAuth 时**不给可点的按钮**。
+
+                此前按钮恒可点，而 `readBgmOAuthConfig` 会抛「缺少环境变量」，
+                用户点一下就撞上一个裸 JSON 报错页 —— 这正是用户报的
+                「授权会报错」。一个必然失败的按钮比没有按钮更糟。
+              */}
+              {oauthConfigured ? (
+                <a href="/api/auth/bgm/start" className="btn btn-primary">
+                  用 Bangumi 账号授权登录（推荐）
+                </a>
+              ) : (
+                <button type="button" disabled className="btn btn-primary" title="本部署未配置 Bangumi OAuth 应用">
+                  用 Bangumi 账号授权登录（未启用）
+                </button>
+              )}
+              <p className="text-xs text-on-surface-variant">
+                {oauthConfigured ? (
+                  "跳转到 bgm.tv 完成授权。本平台全程不会接触你的 Bangumi 密码。"
+                ) : (
+                  <>
+                    本部署未配置 Bangumi OAuth 应用（缺 `BGM_CLIENT_ID` /
+                    `BGM_CLIENT_SECRET`），因此该方式不可用。请改用下方的
+                    <strong className="text-on-surface">个人访问令牌</strong>绑定 —— 功能完全等价。
+                  </>
+                )}
               </p>
             </div>
 

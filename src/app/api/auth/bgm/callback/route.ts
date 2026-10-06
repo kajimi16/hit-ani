@@ -27,14 +27,35 @@ export async function GET(request: Request) {
     );
   }
   if (!code || !state) {
-    return NextResponse.json({ error: "缺少 code 或 state" }, { status: 400 });
+    // 跳回设置页给可操作的原因，而不是裸 JSON —— 用户是被 BGM 重定向过来的，
+    // 一个 JSON 报错页没有出路（与 start 路由同一取舍）。
+    return NextResponse.redirect(
+      new URL(
+        `/settings?bgm=failed&reason=${encodeURIComponent("Bangumi 未返回授权码（code / state 缺失）。请重新发起绑定。")}`,
+        url.origin,
+      ),
+    );
   }
 
   const store = await cookies();
   const expected = store.get(OAUTH_STATE_COOKIE)?.value;
   store.delete(OAUTH_STATE_COOKIE);
   if (!expected || expected !== `bgm:${state}`) {
-    return NextResponse.json({ error: "state 校验失败，请重新发起绑定" }, { status: 400 });
+    /*
+     * state 校验失败最常见的原因是 **Cookie 没带回来**，而不一定是攻击：
+     * - 用户在不同域名/IP 之间跳转（`redirect_uri` 指向另一个 host）；
+     * - Cookie 带了 `Secure` 而实际是 HTTP（本项目踩过，见 cookie-policy.ts）；
+     * - 授权页停留超过 10 分钟，state Cookie 已过期。
+     * 因此提示里把这几种可能都说清楚，而不是只说「校验失败」。
+     */
+    return NextResponse.redirect(
+      new URL(
+        `/settings?bgm=failed&reason=${encodeURIComponent(
+          "授权状态校验失败（state 不匹配或已过期）。常见原因：授权页停留超过 10 分钟、或浏览器未保留 Cookie。请重新发起绑定。",
+        )}`,
+        url.origin,
+      ),
+    );
   }
 
   let user;

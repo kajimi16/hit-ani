@@ -485,3 +485,33 @@ model UserFollow {
   /// 「关注我的人」按时间倒序查
   @@index([followeeId, createdAt])
 }
+
+/// 注册邮箱验证码。
+///
+/// ## 为什么存散列而不是明文
+///
+/// 验证码是**短期凭据**（10 分钟），但仍等同于一次登录机会 —— 数据库若被
+/// 读取，明文验证码可以直接用来注册任意校内邮箱。复用 `hashPassword`
+/// （同一套 scrypt），与用户口令一个待遇。
+///
+/// ## 为什么用 (email, purpose) 作主键
+///
+/// 一个邮箱同一时刻只应有一个有效验证码：重发即覆盖，不留多份有效凭据
+/// （否则旧码也能用，等于把爆破面乘以「历史上发过多少次」）。
+model EmailVerification {
+  email     String
+  /// 用途。目前只有 `register`，将来加「找回密码」时可区分。
+  purpose   String   @default("register")
+  /// scrypt 散列，格式与 `User.passwordHash` 相同。
+  codeHash  String
+  /// 校验尝试次数。超过上限即作废 —— 否则 6 位数字可被在线穷举。
+  attempts  Int      @default(0)
+  expiresAt DateTime
+  /// 发送时间，用于「N 秒内不可重发」的节流。
+  sentAt    DateTime @default(now())
+  /// 最近一次发送者的 IP，用于按 IP 限流（防同一人换邮箱轰炸）。
+  sentFromIp String?
+
+  @@id([email, purpose])
+  @@index([expiresAt])
+}
