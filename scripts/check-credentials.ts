@@ -144,6 +144,20 @@ async function checkBgm(): Promise<boolean> {
   report(true, `redirect_uri = ${parsed.origin}${parsed.pathname}`);
 
   /*
+   * 如实说明**这个脚本查不到什么**。
+   *
+   * bgm.tv 的授权页在未登录时先重定向到 /login，**登录之后**才校验
+   * client_id / redirect_uri —— 所以「回调地址是否在 bgm.tv 上登记过」
+   * 无法用程序验证。假装查了比不查更糟（用户会以为那一环已经确认过）。
+   *
+   * 能做的是把**该登记的值原样打出来**，让他粘贴时不会输错。
+   */
+  console.log("     ⚠ 「回调地址是否已在 bgm.tv 登记」无法自动验证（bgm.tv 要求先登录）。");
+  console.log("       请确认 https://bgm.tv/dev/app 里的回调地址逐字符等于：");
+  console.log(`         ${parsed.origin}${parsed.pathname}`);
+  console.log("       若不一致，登录授权页时会直接报错，且现象与「凭据错误」相同。");
+
+  /*
    * 真凭据验证：用一个**假 code** 打 token 端点。
    *
    * BGM 能区分两种失败：
