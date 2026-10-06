@@ -16,7 +16,10 @@
 npm install
 
 # 2. 环境变量
-cp .env.example .env      # 填写 DATABASE_URL、SESSION_SECRET，BGM/QQ 凭据可留空
+#    必填：DATABASE_URL、SESSION_SECRET
+#    注册必填：下面「邮件发送」里的任一种（不配则注册不可用，见该节说明）
+#    可选：BGM / QQ 凭据（不配仍可用「个人访问令牌」绑定 BGM）
+cp .env.example .env
 
 # 3. 数据库（需一个 PostgreSQL 16）
 #    端口务必绑回环：-p 127.0.0.1:55432:5432
@@ -191,10 +194,49 @@ npm run bgm:types   # openapi-typescript .bgm-v0.yaml -o src/lib/bgm/schema.d.ts
 一条命令起全套（PostgreSQL + Web + 弹幕网关）：
 
 ```bash
-cp .env.example .env      # 填 POSTGRES_PASSWORD 与 SESSION_SECRET
+cp .env.example .env
+# 必填：POSTGRES_PASSWORD、SESSION_SECRET
+# 注册必填：SMTP_* 或 EMAIL_API_*（见下）
 docker compose up -d
 docker compose ps         # 三个服务都应 healthy / Up
 ```
+
+### ⚠️ 不配邮件，注册就是不可用的
+
+注册**强制**要求学校邮箱验证码，因此下面的两组配置**必须配一个**：
+
+```bash
+# 方式一：SMTP（学校邮箱 / QQ / 163 / 自建）
+SMTP_HOST=""  SMTP_PORT="587"  SMTP_USER=""  SMTP_PASS=""  EMAIL_FROM=""
+# 方式二：HTTP API（Cloudflare 后面的 MailChannels / Resend / 自建 Worker）
+EMAIL_API_URL=""  EMAIL_API_KEY=""
+```
+
+**没配的后果不是「少个功能」，而是整个注册不可用**（发码接口返回 503）。
+这一点在部署后立刻可见 —— 启动日志会打印：
+
+```
+⚠️  部署能力检查发现问题：
+   · 未配置邮件发送（SMTP_HOST 与 EMAIL_API_URL 都为空）—— 注册功能不可用。
+```
+
+**配好后先自检再部署**（会真连一次 SMTP，并用假 code 打 BGM 的 token 端点
+来区分「凭据无效」与「授权码无效」）：
+
+```bash
+npm run check:credentials -- --send 你的邮箱 --bgm
+```
+
+### 建议同时设 `APP_BASE_URL`
+
+```bash
+APP_BASE_URL="http://192.168.6.203:3100"   # 换成你实际访问的地址
+```
+
+设了它，所有重定向（OAuth 回调跳转等）都用这个地址、忽略请求头。
+不设时按请求的 `Host` 推导 —— 而用户可能从多个地址访问（局域网 IP、
+主机名、localhost），OAuth 的 `redirect_uri` 又必须在 bgm.tv 上登记成
+**唯一固定值**，于是必然时对时错。详见 `docs/DEPLOY.md`。
 
 **完整说明见 [`docs/DEPLOY.md`](docs/DEPLOY.md)**，含裸机 systemd 方案、
 反向代理配置、上线前必办清单、备份恢复。
