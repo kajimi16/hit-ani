@@ -321,16 +321,26 @@ systemctl status hit-ani-web hit-ani-gateway
 
 > `web` / `gateway` 只绑回环（见 §1.5），所以**没有反向代理 = 局域网里访问不到**。
 > 本节不再是「可选」。
->
-> **本机当服务器时**：把 `deploy/nginx-ani.conf` 装上即可 —— 它已按下面几条硬要求
-> 写好，并处理了弹幕的同源路径：
+
+> **本机当服务器时**：直接把 `deploy/nginx-ani.conf` 装上就行 ——
+> 它已经按下面两条硬要求写好，并处理了弹幕的同源路径：
 >
 > ```bash
 > sudo cp deploy/nginx-ani.conf /etc/nginx/conf.d/ani.conf
 > sudo nginx -t && sudo systemctl reload nginx
 > ```
 >
-> ⚠️ 装之前确认 `server_name` 与你的域名一致，且**不要动** `conf.d/` 里已有的站点。
+> ⚠️ 装之前确认 `server_name` 与你的域名一致，且**不要动** `conf.d/` 里
+> 已有的站点（本机还有 `gal.conf`）。
+>
+> 这份配置里三处**必须理解**的地方：
+> 1. `proxy_pass http://127.0.0.1:3102/;` 的**尾斜杠**负责剥掉 `/danmaku-ws`
+>    前缀 —— 网关只匹配 `/danmaku/room/<id>`。实测对比：有尾斜杠 **101 握手
+>    成功**，去掉就是 **404**。
+> 2. `proxy_set_header X-Forwarded-Host/-Proto` 是**覆盖**而非透传
+>    （见下面「两条硬要求」）。
+> 3. `.env` 里要有 `NEXT_PUBLIC_DANMAKU_WS_URL="/danmaku-ws"`，且它**是构建期
+>    常量** —— 改完必须 `docker compose build migrate web gateway`。
 
 ### 3.0 证书：必须用 DNS-01（本机解析到私网地址）
 
@@ -378,26 +388,6 @@ sudo systemctl daemon-reload && sudo systemctl enable --now certbot-renew.timer
   `systemctl start certbot-renew.service` 真跑一次同样 `status=0/SUCCESS`，
   且 **gal 那张已过期的证书被真的续成了有效**（`notBefore` 变成当天），
   证明 `ExecStartPost` 的 nginx 重载也生效。
-
-> **本机当服务器时**：直接把 `deploy/nginx-ani.conf` 装上就行 ——
-> 它已经按下面两条硬要求写好，并处理了弹幕的同源路径：
->
-> ```bash
-> sudo cp deploy/nginx-ani.conf /etc/nginx/conf.d/ani.conf
-> sudo nginx -t && sudo systemctl reload nginx
-> ```
->
-> ⚠️ 装之前确认 `server_name` 与你的域名一致，且**不要动** `conf.d/` 里
-> 已有的站点（本机还有 `gal.conf`）。
->
-> 这份配置里三处**必须理解**的地方：
-> 1. `proxy_pass http://127.0.0.1:3102/;` 的**尾斜杠**负责剥掉 `/danmaku-ws`
->    前缀 —— 网关只匹配 `/danmaku/room/<id>`。实测对比：有尾斜杠 **101 握手
->    成功**，去掉就是 **404**。
-> 2. `proxy_set_header X-Forwarded-Host/-Proto` 是**覆盖**而非透传
->    （见下面「两条硬要求」）。
-> 3. `.env` 里要有 `NEXT_PUBLIC_DANMAKU_WS_URL="/danmaku-ws"`，且它**是构建期
->    常量** —— 改完必须 `docker compose build migrate web gateway`。
 
 ### 3.0.1 本机访问自己的域名（Clash 规则）
 
