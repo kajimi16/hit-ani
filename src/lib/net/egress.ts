@@ -1,3 +1,5 @@
+import { connect, type Socket } from "node:net";
+
 /**
  * 出站代理配置检查 —— 启动时喊出来。
  *
@@ -71,12 +73,78 @@ export function egressShape(
 let announced = false;
 
 /**
+ * 允许重复打印。
+ *
+ * 给测试用 —— 与 `fetcher.ts` 的 `resetRateLimits()` 同一套理由：
+ * 模块级去重会让第二个用例开始全部静默返回，断言退化成
+ * 「什么都没发生也通过」。导出重置是为了让测试打**真实的**分支，
+ * 而不是在测试里把分支逻辑抄一遍（抄一遍就测不到真东西）。
+ */
+export function resetEgressAnnouncement(): void {
+  announced = false;
+}
+
+/** 探测函数：能否连上该地址。注入是为了让两种分支都能被测试。 */
+export type ProxyProbe = (url: string) => Promise<boolean>;
+
+/**
+ * 有界 TCP 探测代理地址。
+ *
+ * ## 为什么必须真探一次
+ *
+ * 只看形态会**在这台开发机上误报** —— 它确实写着
+ * `host.docker.internal:7897`，而本机真的跑着 Clash。一条每次启动都喊的
+ * 警告会训练人忽略它，那比不喊更糟（这正是这个文件想避免的失效模式）。
+ *
+ * 只做 TCP 握手，不发 HTTP：目的是「这个地址后面有没有东西在听」，
+ * 而不是「代理能不能出网」（后者是上游的可用性，抖动时误报没有意义）。
+ * 超时 800ms —— 启动路径上的上限，不能拖慢启动。
+ */
+export function probeProxyReachable(url: string, timeoutMs = 800): Promise<boolean> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value: boolean) => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      resolve(value);
+    };
+
+    let socket: Socket;
+    try {
+      const parsed = new URL(url);
+      const port = Number(parsed.port) || (parsed.protocol === "https:" ? 443 : 80);
+      // `host.docker.internal` 在容器里可能解析不了 —— 那正是我们要报的情况
+      socket = connect({ host: parsed.hostname, port });
+    } catch {
+      // 地址本身不合法（例如 `不是个 URL`）—— 按不可达处理
+      resolve(false);
+      return;
+    }
+
+    socket.setTimeout(timeoutMs);
+    socket.once("connect", () => finish(true));
+    socket.once("timeout", () => finish(false));
+    socket.once("error", () => finish(false));
+  });
+}
+
+/**
  * 打印出站代理形态。
  *
- * 每次启动都打印（`kind: "proxy"` 也打）—— 这条信息在排查网络问题时
- * 是第一手资料，事后去猜「当时到底走没走代理」比多打一行昂贵得多。
+ * | 形态 | 代理可达 | 输出 |
+ * |---|---|---|
+ * | 直连 | — | 一行 `[egress] 出站直连` |
+ * | 配了代理 | 是 | 一行 `[egress] 出站经代理 …` |
+ * | 配了代理 | **否** | 一段警告 + 处置办法 |
+ *
+ * 每次启动都打印（正常情况也打）—— 这条信息在排查网络问题时是第一手
+ * 资料，事后去猜「当时到底走没走代理」比多打一行昂贵得多。
  */
-export function announceEgress(log: (message: string) => void = console.warn): void {
+export async function announceEgress(
+  probe: ProxyProbe = (url) => probeProxyReachable(url),
+  log: (message: string) => void = console.warn,
+): Promise<void> {
   if (announced) return;
   announced = true;
 
@@ -87,14 +155,35 @@ export function announceEgress(log: (message: string) => void = console.warn): v
     return;
   }
 
+  /*
+   * **一律真探一次再决定喊不喊** —— 显式配的代理连不上，后果与
+   * 「本机代理被带到服务器」完全相同（所有外部请求失败，症状像代码 bug），
+   * 所以不能只对 `host.docker.internal` 报警。
+   */
+  if (await probe(shape.url)) {
+    log(`[egress] 出站经代理 ${shape.url}（可达）`);
+    return;
+  }
+
   if (shape.kind === "proxy") {
-    log(`[egress] 出站经代理 ${shape.url}`);
+    // 显式配置的代理：处置办法是「去查那台代理」，不是「删掉这个变量」
+    log("");
+    log("================================================================");
+    log(`⚠️  出站代理连不上：${shape.url}`);
+    log("");
+    log("   容器里所有外部请求（BGM / 弹幕源 / 媒体源）都会失败，");
+    log("   而症状与「代码有 bug」完全相同。");
+    log("");
+    log("   这不是「本机开发地址」那类误配 —— 该地址是显式配置的，");
+    log("   请确认代理真的在运行、且从这个网络能连上它。");
+    log("================================================================");
+    log("");
     return;
   }
 
   log("");
   log("================================================================");
-  log("⚠️  出站代理指向本机开发地址：");
+  log("⚠️  出站代理指向本机开发地址，且探不通：");
   log(`   HTTP_PROXY=${shape.url}`);
   log("");
   log("   容器里的 127.0.0.1 是它自己，host.docker.internal 在宿主");

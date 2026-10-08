@@ -37,7 +37,7 @@ export async function register(): Promise<void> {
    * 但这一条尤其重要：**代理配错会让所有外部请求失败，而症状与代码 bug
    * 一模一样**。见 `src/lib/net/egress.ts`。
    */
-  announceEgress();
+  await announceEgress();
 
   /*
    * schema 漂移。**必须 await** —— 不 await 的话进程可能在查询返回前就
