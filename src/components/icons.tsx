@@ -43,6 +43,16 @@ export function IconExplore({ size = 24, className }: IconProps) {
   );
 }
 
+/** 举报 —— 旗帜（Material 的 `flag`）。 */
+export function IconFlag({ size = 24, className }: IconProps) {
+  return (
+    <svg {...base(size, className)}>
+      <path d="M5 21V4" />
+      <path d="M5 4.5h9.5l-1 3 1 3H5" />
+    </svg>
+  );
+}
+
 /** 好友 —— 两个人（Material 的 `people`）。 */
 export function IconPeople({ size = 24, className }: IconProps) {
   return (

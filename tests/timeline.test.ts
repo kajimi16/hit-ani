@@ -39,6 +39,7 @@ const collectionRow = (over: Record<string, unknown> = {}) => ({
   isPrivate: false,
   updatedAt: at("2026-01-01T00:00:00Z"),
   collectedAt: null as Date | null,
+  playbackPositionMs: null as number | null,
   user,
   subject,
   ...over,

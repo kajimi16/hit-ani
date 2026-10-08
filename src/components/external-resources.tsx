@@ -37,6 +37,11 @@ interface Props {
   /** BGM 的剧集，用于把外部源的集数对齐到弹幕 */
   bgmEpisodes: { id: number; sort: number; ep: number | null }[];
   canInteract: boolean;
+  /**
+   * 上次看到的位置（毫秒）。**只影响外站源那条播放路径** ——
+   * Jellyfin 自己维护播放位置（跨设备同步），本地再存一份会两边打架。
+   */
+  resumePositionMs?: number | null;
 }
 
 function formatSize(bytes: number | null): string | null {
@@ -58,6 +63,7 @@ export default function ExternalResources({
   hasConnections,
   bgmEpisodes,
   canInteract,
+  resumePositionMs = null,
 }: Props) {
   /** 正在站内播放的源与条目页 */
   const [playingSource, setPlayingSource] = useState<{
@@ -168,6 +174,7 @@ export default function ExternalResources({
 
       {playingSource && (
         <SourcePlayer
+          resumePositionMs={resumePositionMs}
           bgmEpisodes={bgmEpisodes}
           sourceId={playingSource.sourceId}
           sourceName={playingSource.sourceName}

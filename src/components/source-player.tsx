@@ -16,6 +16,14 @@ interface Props {
   /** 该源上的条目详情页 */
   detailUrl: string;
   canInteract: boolean;
+  /**
+   * 上次看到的位置（毫秒）；从未播放过时 null。
+   *
+   * **只有外站源这条路径需要它**：Jellyfin 那条由 Jellyfin 自己维护播放位置
+   * （`UserData.PlaybackPositionTicks`，且跨设备同步），本地再存一份只会
+   * 两边打架 —— 那个决定是有意为之，见 `jellyfin-panel.tsx` 的注释。
+   */
+  resumePositionMs?: number | null;
   onClose: () => void;
 }
 
@@ -38,8 +46,33 @@ export default function SourcePlayer({
   sourceName,
   detailUrl,
   canInteract,
+  resumePositionMs = null,
   onClose,
 }: Props) {
+  /**
+   * 上报播放位置。
+   *
+   * **只报位置，不带 `type`** —— 位置与观看状态是两件正交的事，让「上报看到
+   * 第几秒」顺带把该集标成「想看」是明显的错误（接口那边 `type` 已改为可选）。
+   *
+   * 服务端会**独立钳制**这个值：客户端可被篡改，且程序化赋值
+   * `video.currentTime` 能绕过客户端的一切限制。
+   */
+  const reportPosition = useCallback(
+    async (bgmEpisodeId: number, positionMs: number) => {
+      try {
+        await fetch("/api/progress", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ episodeId: bgmEpisodeId, playbackPositionMs: positionMs }),
+        });
+      } catch {
+        /* 位置上报失败不影响播放 —— 它只是「下次接着看」的便利 */
+      }
+    },
+    [],
+  );
+
   const [episodes, setEpisodes] = useState<Episode[] | null>(null);
   const [playing, setPlaying] = useState<{ name: string; url: string; episodeNumber: number | null } | null>(null);
   /** 每集的解析状态：解析中 / 失败原因 */
@@ -129,6 +162,8 @@ export default function SourcePlayer({
         <span className="text-xs text-on-surface-variant/70">
           视频由来源站 CDN 直连你的浏览器，不经过本平台
         </span>
+
+
         <button
           type="button"
           onClick={onClose}
@@ -144,7 +179,24 @@ export default function SourcePlayer({
           episodeId={bgmEpisodeId}
           title={playing.name}
           streamUrl={playing.url}
+          // 续播：外站源没有服务端播放记录，只能靠我们自己存的这条位置
+          startAtMs={resumePositionMs ?? 0}
           canInteract={canInteract}
+          onProgress={
+            /*
+             * 位置上报。**每次都报**（播放器内部已按 `PROGRESS_REPORT_INTERVAL_MS`
+             * 节流），服务端会独立钳制 —— 客户端上报的值不可信。
+             *
+             * 与 Jellyfin 那条路径的差别：那边只在接近看完时上报「标记看过」，
+             * 因为位置由 Jellyfin 管；这里位置只有我们能存。
+             *
+             * 没对齐到 BGM 集号时不报（服务端要 episodeId 才能定位到条目，
+             * 而外部源的集号可能与 BGM 对不上）。
+             */
+            bgmEpisodeId === null
+              ? undefined
+              : (positionMs) => void reportPosition(bgmEpisodeId, positionMs)
+          }
         />
       )}
 

@@ -21,6 +21,13 @@ export interface LibraryItem {
   totalEpisodes: number;
   /** 加入收藏时间（可能未知） */
   collectedAt: string | null;
+  /**
+   * 上次看到的位置（毫秒）；从未播放过时 null。
+   *
+   * **不是 0** —— 0 表示「从片头继续」，null 表示「没有可续播的位置」。
+   * 列表只在非 null 时显示，否则每张卡都挂个「00:00」是噪音。
+   */
+  resumePositionMs: number | null;
   statusLabel: string;
 }
 
@@ -109,6 +116,9 @@ export function LibraryListRow({ item }: { item: LibraryItem }) {
               </span>
             )}
             {item.collectedAt && <span>{item.collectedAt.slice(0, 10)} 加入</span>}
+            {item.resumePositionMs !== null && (
+              <span className="text-primary">上次看到 {formatDuration(item.resumePositionMs)}</span>
+            )}
           </div>
 
           {/* 我的评分 / 评论 —— 列表视图的核心内容 */}
@@ -130,4 +140,14 @@ export function LibraryListRow({ item }: { item: LibraryItem }) {
       </Link>
     </li>
   );
+}
+
+/** 毫秒 → `mm:ss`（超过一小时给 `h:mm:ss`）。续播位置靠它读起来才有意义。 */
+export function formatDuration(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${pad(minutes)}:${pad(seconds)}`;
 }

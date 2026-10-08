@@ -22,6 +22,12 @@ services:
   #
   # 环境可直连外网时可整段删除。
   proxy:
+    # 只有显式启用时才起：`docker compose --profile proxy up -d`
+    #
+    # 默认不起的原因：它转发到 **开发机上的 Clash**。在校内服务器上那个
+    # 端口没有东西监听，服务会一直崩溃重启，而所有出站请求看起来像网络故障。
+    # 需要代理的部署再显式打开。
+    profiles: ["proxy"]
     image: alpine/socat:latest
     restart: unless-stopped
     network_mode: host
@@ -29,8 +35,8 @@ services:
       - ./scripts/proxy-forward.sh:/proxy-forward.sh:ro
     entrypoint: ["/bin/sh", "/proxy-forward.sh"]
     environment:
-      UPSTREAM: ${PROXY_UPSTREAM:-127.0.0.1:7897}
-      LISTEN_PORT: ${PROXY_LISTEN_PORT:-7897}
+      UPSTREAM: ${PROXY_UPSTREAM-127.0.0.1:7897}
+      LISTEN_PORT: ${PROXY_LISTEN_PORT-7897}
 
   # ---------------------------------------------------------------- 数据库
   postgres:
@@ -74,8 +80,8 @@ services:
       # 时这是唯一能让构建走通的方式（容器网络到不了宿主回环）。
       network: host
       args:
-        HTTP_PROXY: ${HTTP_PROXY_URL:-http://127.0.0.1:7897}
-        HTTPS_PROXY: ${HTTP_PROXY_URL:-http://127.0.0.1:7897}
+        HTTP_PROXY: ${HTTP_PROXY_URL-}
+        HTTPS_PROXY: ${HTTP_PROXY_URL-}
       # 用 migrator 阶段：它保留 devDependencies，因而有 prisma CLI。
       # 生产镜像（runner）出于体积考虑剔除了 CLI。
       target: migrator
@@ -97,8 +103,8 @@ services:
       # 时这是唯一能让构建走通的方式（容器网络到不了宿主回环）。
       network: host
       args:
-        HTTP_PROXY: ${HTTP_PROXY_URL:-http://127.0.0.1:7897}
-        HTTPS_PROXY: ${HTTP_PROXY_URL:-http://127.0.0.1:7897}
+        HTTP_PROXY: ${HTTP_PROXY_URL-}
+        HTTPS_PROXY: ${HTTP_PROXY_URL-}
     # 容器内访问 127.0.0.1 是容器自己 —— 用 host-gateway 指向宿主机
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -117,8 +123,8 @@ services:
       # 出站代理。本机走 Clash（宿主机 127.0.0.1:7897），容器内需指向
       # host.docker.internal —— 否则 api.bgm.tv / dandanplay 全部连不上。
       # 校内服务器若可直连外网，删掉这几行即可。
-      HTTP_PROXY: ${HTTP_PROXY_URL:-http://host.docker.internal:7897}
-      HTTPS_PROXY: ${HTTP_PROXY_URL:-http://host.docker.internal:7897}
+      HTTP_PROXY: ${HTTP_PROXY_URL-}
+      HTTPS_PROXY: ${HTTP_PROXY_URL-}
       NO_PROXY: localhost,127.0.0.1,postgres,gateway,jellyfin,web
       # ⚠️ **必须**：Node 的 `fetch`（undici）默认**不读** HTTP_PROXY ——
       # 只有 curl 之类的工具会读。没有这个变量时容器内 curl 能通、
@@ -161,8 +167,8 @@ services:
       # 时这是唯一能让构建走通的方式（容器网络到不了宿主回环）。
       network: host
       args:
-        HTTP_PROXY: ${HTTP_PROXY_URL:-http://127.0.0.1:7897}
-        HTTPS_PROXY: ${HTTP_PROXY_URL:-http://127.0.0.1:7897}
+        HTTP_PROXY: ${HTTP_PROXY_URL-}
+        HTTPS_PROXY: ${HTTP_PROXY_URL-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
@@ -178,8 +184,8 @@ services:
       <<: *db-url
       NODE_ENV: production
       # 与 web 同样需要出站代理（拉取外部弹幕源）
-      HTTP_PROXY: ${HTTP_PROXY_URL:-http://host.docker.internal:7897}
-      HTTPS_PROXY: ${HTTP_PROXY_URL:-http://host.docker.internal:7897}
+      HTTP_PROXY: ${HTTP_PROXY_URL-}
+      HTTPS_PROXY: ${HTTP_PROXY_URL-}
       NO_PROXY: localhost,127.0.0.1,postgres,gateway,jellyfin,web
       # 同 web —— Node 的 fetch 需要它才会走代理
       NODE_USE_ENV_PROXY: "1"

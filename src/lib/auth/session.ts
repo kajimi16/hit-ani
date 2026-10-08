@@ -78,11 +78,19 @@ export async function getSessionUser(): Promise<SessionUser | null> {
   });
   if (!user) return null;
 
-  // 环境变量是管理员的权威来源：登录时同步到 DB，避免两处状态不一致。
-  const shouldBeAdmin = isConfiguredAdmin(user.email);
-  if (user.isAdmin !== shouldBeAdmin) {
-    await prisma.user.update({ where: { id: userId }, data: { isAdmin: shouldBeAdmin } });
-  }
+  /*
+   * 管理员来自**两个来源的并集**：环境变量 `ADMIN_EMAILS`，或 DB 里的
+   * `User.isAdmin`（由 `npm run admin:grant` 设定）。
+   *
+   * 早先这里写的是 `shouldBeAdmin = isConfiguredAdmin(email)`，然后**把 DB
+   * 值覆盖成它** —— 后果是 DB 授予的管理员在下一次请求时就被抹掉，
+   * 于是「只有改 .env 并重启才能加管理员」。
+   *
+   * 为什么不做「首个注册的账号自动成为管理员」：本库的第一个用户是**种子
+   * 账号 alice**，那条规则会把她变成管理员 —— 与「种子账号绝不可用于生产」
+   * 直接冲突。显式授予（`admin:grant`）没有这个陷阱，且是可审计的。
+   */
+  const isAdmin = isConfiguredAdmin(user.email) || user.isAdmin;
 
   return {
     id: user.id,
@@ -96,7 +104,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     bgmUsername: user.bgmBinding?.bgmUsername ?? null,
     mirrorToBgm: user.mirrorToBgm,
     jellyfinConnected: user.jellyfinConnections.length > 0,
-    isAdmin: shouldBeAdmin,
+    isAdmin,
   };
 }
 

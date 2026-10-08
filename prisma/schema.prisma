@@ -251,6 +251,21 @@ model Collection {
    */
   collectedAt DateTime?
 
+  /**
+   * 上次看到的位置（毫秒）。用于「继续观看」跳到正确的时间点。
+   *
+   * ## 为什么放在 `Collection` 而不是 `EpisodeProgress`
+   *
+   * `EpisodeProgress` 记的是**每一集**的观/未观三元状态（Animeko 的
+   * `EpisodeCollectionType`），粒度是集。续播要的是「这一集看到第几秒」——
+   * 一条播放位置。放在条目级够用：一部番同一时刻只会在一个位置继续看，
+   * 换集时覆盖即可，不必为每集存一行。
+   *
+   * 可空：从未播放过时为 null（**不是 0** —— 0 表示「从片头继续」，
+   * null 表示「没有可续播的位置」，界面据此决定是否显示进度）。
+   */
+  playbackPositionMs Int?
+
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
 

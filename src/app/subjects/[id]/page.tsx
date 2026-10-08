@@ -240,6 +240,8 @@ export default async function SubjectPage({
               ep: episode.ep,
             }))}
             canInteract={user !== null}
+            // 续播位置：只给外站源路径用（Jellyfin 那条由 Jellyfin 自己管）
+            resumePositionMs={collection?.playbackPositionMs ?? null}
           />
 
           <EpisodeWorkspace

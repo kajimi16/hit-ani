@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -74,9 +75,14 @@ export default function LoginPage() {
 
       <p className="text-center text-sm text-on-surface-variant/70">
         没有账号？
-        <a href="/register" className="ml-1 text-primary underline">
+        <Link href="/register" className="ml-1 text-primary underline">
           注册
-        </a>
+        </Link>
+        <span className="mx-2 text-outline">·</span>
+        {/* 忘记密码的入口此前**完全不存在** —— 忘了口令 = 永久失去账号 */}
+        <Link href="/forgot-password" className="text-primary underline">
+          忘记密码
+        </Link>
       </p>
     </div>
   );

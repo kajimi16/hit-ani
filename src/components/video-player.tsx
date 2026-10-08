@@ -4,6 +4,13 @@ import Hls from "hls.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { allocateTracks, mergeById, shouldRefill, sortByPlayTime } from "@/lib/danmaku/engine";
 import { contrastOutlineFor, toCssColor } from "@/lib/danmaku/readable-color";
+import DanmakuSettings from "@/components/danmaku-settings";
+import {
+  DEFAULT_DANMAKU_STYLE,
+  danmakuLayout,
+  shouldRenderDanmaku,
+  type DanmakuStyle,
+} from "@/lib/danmaku/style";
 import { danmakuRoomUrl } from "@/lib/danmaku/ws-url";
 import {
   DanmakuLocation,
@@ -11,11 +18,11 @@ import {
   type DanmakuLocationValue,
 } from "@/lib/danmaku/types";
 
-const TRACK_COUNT = 8;
-const CANVAS_HEIGHT = TRACK_COUNT * 26;
-const TRACK_HEIGHT = 26;
-const SPEED_PX_PER_MS = 0.18;
-const CHAR_WIDTH = 16;
+/*
+ * 弹幕的绘制参数（轨道数、行高、速度、字宽）**全部由用户的显示设置决定**，
+ * 见 `danmakuLayout()`。这里不再有硬编码常量 —— 早先字号与速度是写死的，
+ * 手机上明显偏小且无法调整。
+ */
 /** seek 后重建屏幕的时间窗（对齐 Animeko 的 repopulateDistance = 20s）。 */
 const REPOPULATE_WINDOW_MS = 20_000;
 
@@ -44,6 +51,12 @@ interface Props {
   canInteract: boolean;
   /** 进度回调（本地落库 + BGM 回写由调用方决定）。 */
   onProgress?: (positionMs: number, durationMs: number) => void;
+  /**
+   * 弹幕显示样式（字号/透明度/区域/速度/开关）。
+   *
+   * 不传时用默认值 —— 与改动前的硬编码等价，因此老调用方观感不变。
+   */
+  danmakuStyle?: DanmakuStyle;
 }
 
 /**
@@ -67,8 +80,31 @@ export default function VideoPlayer({
   startAtMs = 0,
   canInteract,
   onProgress,
+  danmakuStyle = DEFAULT_DANMAKU_STYLE,
 }: Props) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  /**
+   * 绘制时读的样式。
+   *
+   * `draw()` 所在的 effect 是 `[]` 依赖（只挂一次，含 WebSocket 与 rAF），
+   * 直接闭包捕获样式会永远停在首帧的值。用 ref 让它每帧读最新。
+   */
+  /*
+   * 面板改的是**内部状态**，而不是回传给调用方 —— 播放器是弹幕显示的唯一
+   * 归属者，样式也只影响它。调用方传 `danmakuStyle` 只作为初始值。
+   */
+  const [activeStyle, setActiveStyle] = useState<DanmakuStyle>(danmakuStyle);
+  const danmakuStyleRef = useRef<DanmakuStyle>(danmakuStyle);
+  useEffect(() => {
+    danmakuStyleRef.current = activeStyle;
+  }, [activeStyle]);
+  useEffect(() => {
+    setActiveStyle(danmakuStyle);
+  }, [danmakuStyle]);
+
+  /** 画布尺寸随样式变化（区域小则画布也矮，不留一块空白挡着视频）。 */
+  const layout = danmakuLayout(activeStyle);
+
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   /**
@@ -292,12 +328,23 @@ export default function VideoPlayer({
       const dpr = window.devicePixelRatio || 1;
       const width = canvas.clientWidth;
       if (width <= 0) return;
-      if (canvas.width !== Math.round(width * dpr)) {
-        canvas.width = Math.round(width * dpr);
-        canvas.height = CANVAS_HEIGHT * dpr;
+
+      // 每帧读最新样式 —— 用户拖动滑块应立刻看到效果，而不是等重挂载
+      const style = danmakuStyleRef.current;
+      const layout = danmakuLayout(style);
+
+      // 画布尺寸随「显示区域」变化，因此必须逐帧核对而不是只设一次
+      const targetW = Math.round(width * dpr);
+      const targetH = Math.round(layout.canvasHeight * dpr);
+      if (canvas.width !== targetW || canvas.height !== targetH) {
+        canvas.width = targetW;
+        canvas.height = targetH;
       }
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.clearRect(0, 0, width, CANVAS_HEIGHT);
+      ctx.clearRect(0, 0, width, layout.canvasHeight);
+
+      // 关掉弹幕时整帧不画（不是把透明度调到 0 —— 那还在占用绘制）
+      if (!style.enabled) return;
 
       const { mediaMs: anchorMedia, renderMs: anchorRender } = anchorRef.current;
       // 当前渲染时刻对应的媒体时间 = 锚点媒体时间 + 已流逝渲染时间。
@@ -307,17 +354,21 @@ export default function VideoPlayer({
       const active = danmakusRef.current.filter(
         (d) =>
           d.playTimeMs <= renderMediaMs &&
-          d.playTimeMs >= renderMediaMs - REPOPULATE_WINDOW_MS,
+          d.playTimeMs >= renderMediaMs - REPOPULATE_WINDOW_MS &&
+          // 按类型开关过滤：关了顶弹幕就不该为它分配轨道（否则下方弹幕会被挤走）
+          shouldRenderDanmaku(style, d.location),
       );
 
       const assignments = allocateTracks(active, {
-        trackCount: TRACK_COUNT,
+        trackCount: layout.trackCount,
         viewportWidth: width,
-        charWidth: CHAR_WIDTH,
-        speedPxPerMs: SPEED_PX_PER_MS,
+        charWidth: layout.charWidth,
+        speedPxPerMs: layout.speedPxPerMs,
       });
 
-      ctx.font = "16px system-ui, sans-serif";
+      ctx.font = `${style.fontSize}px system-ui, sans-serif`;
+      // 透明度整体作用于这一帧的所有弹幕
+      ctx.globalAlpha = style.opacity;
       /*
        * canvas 上没有 CSS 层可以兜底，而且背景是**视频画面** —— 亮度完全
        * 不可知（可能全白也可能全黑）。因此这里**不改弹幕颜色**：
@@ -336,22 +387,22 @@ export default function VideoPlayer({
         const elapsed = renderMediaMs - danmaku.playTimeMs;
         if (elapsed < 0) continue;
 
-        const textWidth = Array.from(danmaku.text).length * CHAR_WIDTH;
+        const textWidth = Array.from(danmaku.text).length * layout.charWidth;
         ctx.strokeStyle = contrastOutlineFor(danmaku.color);
         ctx.fillStyle = toCssColor(danmaku.color);
 
         if (danmaku.location === DanmakuLocation.Normal) {
-          const x = width - elapsed * SPEED_PX_PER_MS;
+          const x = width - elapsed * layout.speedPxPerMs;
           if (x + textWidth < 0) continue;
-          const y = track * TRACK_HEIGHT + 18;
+          const y = track * layout.trackHeight + layout.trackHeight * 0.69;
           ctx.strokeText(danmaku.text, x, y);
           ctx.fillText(danmaku.text, x, y);
         } else {
           const x = (width - textWidth) / 2;
           const y =
             danmaku.location === DanmakuLocation.Top
-              ? 16 + track * TRACK_HEIGHT
-              : CANVAS_HEIGHT - 10 - track * TRACK_HEIGHT;
+              ? layout.trackHeight * 0.62 + track * layout.trackHeight
+              : layout.canvasHeight - layout.trackHeight * 0.38 - track * layout.trackHeight;
           ctx.strokeText(danmaku.text, x, y);
           ctx.fillText(danmaku.text, x, y);
         }
@@ -629,7 +680,7 @@ export default function VideoPlayer({
         />
         <canvas
           ref={canvasRef}
-          style={{ width: "100%", height: CANVAS_HEIGHT }}
+          style={{ width: "100%", height: layout.canvasHeight }}
           className="pointer-events-none absolute left-0 top-0"
         />
       </div>
@@ -686,6 +737,20 @@ export default function VideoPlayer({
           发送
         </button>
       </div>
+
+      {/*
+        弹幕显示设置。折叠起来 —— 它是「调一次就不动」的东西，
+        铺开会把发送框挤到屏幕外。
+      */}
+      <details className="group">
+        <summary className="cursor-pointer text-sm text-on-surface-variant marker:text-outline">
+          <span className="group-open:hidden">弹幕显示设置</span>
+          <span className="hidden group-open:inline">收起设置</span>
+        </summary>
+        <div className="mt-2">
+          <DanmakuSettings onChange={setActiveStyle} />
+        </div>
+      </details>
 
       {error && (
         <p className="alert alert-danger">

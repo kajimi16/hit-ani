@@ -30,7 +30,8 @@
     "media:curation": "tsx --env-file=.env scripts/media-curation.ts",
     "docker:rebuild": "docker compose build migrate web gateway && docker compose up -d",
     "check:credentials": "tsx scripts/check-credentials.ts",
-    "check:rendered": "tsx scripts/check-rendered-text.ts"
+    "check:rendered": "tsx scripts/check-rendered-text.ts",
+    "admin:grant": "tsx scripts/admin-grant.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.0",

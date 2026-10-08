@@ -145,6 +145,55 @@ docker compose down -v            # 停止并**删除数据**（谨慎）
 
 ---
 
+## 出站网络：容器默认直连，代理需显式开启
+
+**默认就是直连** —— 校内服务器部署时这一段不需要做任何事。
+
+只有在「宿主需要代理才能出网」的机器上（例如开发机跑着 Clash / Mihomo），
+容器才能借到代理。要做两件事，缺一不可：
+
+```bash
+# .env
+HTTP_PROXY_URL="http://host.docker.internal:7897"
+
+# 启动 socat 转发服务（它默认不起）
+docker compose --profile proxy up -d
+```
+
+**为什么必须两个都做**：
+
+1. **Clash 只监听宿主 `127.0.0.1`**，而容器里的 `127.0.0.1` 是它自己 ——
+   所以需要 `proxy` 服务把它转发到容器可达的桥接地址。
+2. **Node 的 `fetch`（undici）默认不读 `HTTP_PROXY`** —— 只有 `curl` 类工具会读。
+   compose 里已内置 `NODE_USE_ENV_PROXY=1`。这一条极具误导性：
+   同一个容器里 `curl https://api.bgm.tv` 是通的，而应用的 `fetch` 报
+   `fetch failed`。
+
+**排查症状**：探索页显示「Bangumi 搜索失败」、外部弹幕源 0/2 命中。
+先确认是网络问题还是应用问题：
+
+```bash
+# 容器内直连测试（绕开代理配置）
+docker compose exec web curl -sI --max-time 8 https://api.bgm.tv/v0/subjects/1
+
+# 对比 Node fetch（会走 NODE_USE_ENV_PROXY 的配置）
+docker compose exec web node -e "fetch('https://api.bgm.tv/v0/subjects/1').then(r=>console.log(r.status)).catch(e=>console.log('失败',e.cause?.code))"
+```
+
+### ⚠️ 构建期也需要出网
+
+`docker compose build` 要拉 `node:22-slim`、跑 `npm ci`。若服务器连不上这些
+注册表，会**卡在 build 而不是 run**。动手前先在服务器上验一次：
+
+```bash
+docker pull node:22-slim
+curl -sI https://registry.npmjs.org | head -1
+```
+
+两者都通再继续；不通需要先解决服务器的出网（或在本机构建好镜像再传过去）。
+
+---
+
 ## 2. 裸机 + systemd
 
 不用 Docker 时，需要自己保证两个进程常驻。

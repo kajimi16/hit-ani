@@ -9,6 +9,7 @@ import {
   normalizeEmail,
   verificationEmailSubject,
 } from "@/lib/email/verification";
+import { prisma } from "@/lib/prisma";
 import { TokenBucketLimiter } from "@/lib/danmaku/rate-limit";
 import { clientIp } from "@/lib/net/client-ip";
 import { consumeSendQuota, quotaMessage } from "@/lib/net/send-quota";
@@ -18,6 +19,13 @@ export const dynamic = "force-dynamic";
 
 const schema = z.object({
   email: z.string().email().max(254),
+  /**
+   * 用途：注册 或 重置密码。
+   *
+   * 两种用途的码**互不通用**（`EmailVerification` 主键含 purpose）——
+   * 否则一个注册码就能拿来重置别人的密码。
+   */
+  purpose: z.enum(["register", "reset"]).optional(),
 });
 
 /**
@@ -89,6 +97,7 @@ export async function POST(request: Request) {
   }
 
   const email = normalizeEmail(body.email);
+  const purpose = body.purpose === "reset" ? "reset" : "register";
 
   /*
    * 限流先于一切 —— 包括「邮箱是否合法」的判断。
@@ -132,7 +141,27 @@ export async function POST(request: Request) {
    * 代价是给已注册邮箱多发一封（注册时仍会被 409 拒绝），
    * 换来这条注释里声称的属性真正成立。
    */
-  const issued = await issueCode(email, clientIp(request.headers));
+  /*
+   * 重置密码时**先确认账号存在**，否则不发信。
+   *
+   * 注册那条**刻意不看**账号存在性（防枚举）；重置必须看：对一个不存在的
+   * 账号发「重置密码」邮件毫无意义，用户也无从知道自己记错了邮箱。
+   *
+   * 代价是这个接口可以被用来探测邮箱是否注册过 —— 这个取舍是**有意的**：
+   * 不说清「该邮箱未注册」，用户会一直等一封永远不来的邮件。
+   * 注册路径的枚举防护仍然完整（那才是攻击者更有价值的入口）。
+   */
+  if (purpose === "reset") {
+    const exists = await prisma.user.findUnique({ where: { email }, select: { id: true } });
+    if (!exists) {
+      return NextResponse.json(
+        { error: "该邮箱还没有注册过。请先注册，或确认邮箱是否输错。" },
+        { status: 404 },
+      );
+    }
+  }
+
+  const issued = await issueCode(email, clientIp(request.headers), purpose);
   if (!issued.ok) {
     return NextResponse.json(
       {
@@ -153,7 +182,7 @@ export async function POST(request: Request) {
        * 用户打开看到的是**最早那封**，而只有最新那封有效 ——
        * 于是正文里那句提示他根本滚不到。拆开会话才能让「最新」一眼可辨。
        */
-      subject: verificationEmailSubject(),
+      subject: verificationEmailSubject(purpose),
       text: [
         /*
          * 正文里必须点明「只有最新一封有效」。
@@ -166,7 +195,7 @@ export async function POST(request: Request) {
          * 这句话把那个沉默的失败模式变成可自解的。第一版没写它，
          * 结果我自己的测试邮件就把用户坑了一次。
          */
-        `你的注册验证码是：${issued.code}`,
+        `你的${purpose === "reset" ? "密码重置" : "注册"}验证码是：${issued.code}`,
         "",
         "有效期 10 分钟。",
         "如果收到了多封，只有最新这一封有效 —— 每次重新发送都会作废之前的。",

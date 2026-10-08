@@ -169,6 +169,7 @@ export function toLibraryItem(
     watchedEpisodes: watchedBySubject.get(row.subjectId) ?? 0,
     totalEpisodes: row.subject._count.episodes,
     collectedAt: row.collectedAt?.toISOString() ?? null,
+    resumePositionMs: row.playbackPositionMs,
     statusLabel: statusLabel(row.type),
   };
 }

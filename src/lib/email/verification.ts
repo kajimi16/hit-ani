@@ -34,8 +34,18 @@ export const RESEND_INTERVAL_MS = 60 * 1000;
 /** 单个验证码的最大尝试次数，超过即作废、必须重新发送。 */
 export const MAX_ATTEMPTS = 5;
 
-/** 唯一用途。将来加「找回密码」时再扩。 */
-const PURPOSE = "register";
+/**
+ * 验证码用途。
+ *
+ * 分用途是必需的：**注册码不能用来重置别人的密码**。两者共用
+ * `EmailVerification` 表（主键是 `(email, purpose)`），但码互不通用。
+ */
+export type VerifyPurpose = "register" | "reset";
+
+/** 校验用途取值，非法值退回注册 —— 调用方从 URL 取参数时不能让它任意指定。 */
+export function normalizePurpose(raw: unknown): VerifyPurpose {
+  return raw === "reset" ? "reset" : "register";
+}
 
 /**
  * 生成验证码。
@@ -80,9 +90,13 @@ export function normalizeEmail(email: string): string {
  *
  * 分钟粒度足够：重发有 60 秒节流，两次发送必然跨分钟。
  */
-export function verificationEmailSubject(now: Date = new Date()): string {
+export function verificationEmailSubject(
+  purpose: VerifyPurpose = "register",
+  now: Date = new Date(),
+): string {
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `hit-ani 注册验证码 ${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  const label = purpose === "reset" ? "重置密码" : "注册";
+  return `hit-ani ${label}验证码 ${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
 }
 
 export type VerifyOutcome =
@@ -99,8 +113,12 @@ export type VerifyOutcome =
  * 「码错了」（提示重试），而这不会泄露给攻击者任何有用信息 ——
  * `invalid` 与 `missing` 都只说明「这次输入不对」。
  */
-export async function verifyCode(email: string, code: string): Promise<VerifyOutcome> {
-  const key = { email: normalizeEmail(email), purpose: PURPOSE };
+export async function verifyCode(
+  email: string,
+  code: string,
+  purpose: VerifyPurpose = "register",
+): Promise<VerifyOutcome> {
+  const key = { email: normalizeEmail(email), purpose };
   const row = await prisma.emailVerification.findUnique({
     where: { email_purpose: key },
   });
@@ -122,9 +140,12 @@ export async function verifyCode(email: string, code: string): Promise<VerifyOut
 }
 
 /** 校验通过后删除记录 —— 一次性，不能拿去注册第二个账号。 */
-export async function consumeCode(email: string): Promise<void> {
+export async function consumeCode(
+  email: string,
+  purpose: VerifyPurpose = "register",
+): Promise<void> {
   await prisma.emailVerification.deleteMany({
-    where: { email: normalizeEmail(email), purpose: PURPOSE },
+    where: { email: normalizeEmail(email), purpose },
   });
 }
 
@@ -144,9 +165,10 @@ export type IssueOutcome =
 export async function issueCode(
   email: string,
   sentFromIp: string | null,
+  purpose: VerifyPurpose = "register",
 ): Promise<IssueOutcome> {
   const normalized = normalizeEmail(email);
-  const key = { email: normalized, purpose: PURPOSE };
+  const key = { email: normalized, purpose };
   const now = Date.now();
 
   const existing = await prisma.emailVerification.findUnique({
@@ -173,7 +195,7 @@ export async function issueCode(
 
   await prisma.emailVerification.upsert({
     where: { email_purpose: key },
-    create: { email: normalized, purpose: PURPOSE, ...fields },
+    create: { email: normalized, purpose, ...fields },
     update: fields,
   });
 
