@@ -97,17 +97,25 @@ docker compose run --rm --entrypoint sh migrate -c "
 
 ### 1.4 验证
 
+先在**本机**确认进程与数据库：
+
 ```bash
-curl -s localhost:3100/api/health    # {"ok":true,"db":"ok",...}
+curl -s localhost:3100/api/health    # {"ok":true,"db":"ok",...}  ← 回环，nginx 也走这条
 curl -s localhost:3102/              # {"service":"hit-ani-danmaku-gateway",...}
 ```
 
-**从另一台机器**用局域网地址访问（这一步必须做 —— 服务器上测正常不代表别人能用）：
+**真正的验收必须从另一台机器打域名**（服务器上测正常不代表别人能用）：
 
 ```bash
 # 在另一台机器上
-curl -s http://<服务器IP>:3100/api/health
+curl -s https://<你的域名>/api/health
 ```
+
+> ⚠️ **不要再用 `http://<服务器IP>:3100` 做这项验收** —— §1.5 起 `web`/`gateway`
+> 只绑回环（为了关掉一条绕过 TLS 的明文旁路），局域网**访问不到**这两个端口。
+> 那个 `curl` 现在必然失败，而失败原因与站点是否正常**无关** —— 会把人引偏。
+>
+> 也就是说：**没有反向代理，站点在局域网里是不可达的**（见 §3）。
 
 ### 1.5 防火墙
 
@@ -309,7 +317,20 @@ systemctl status hit-ani-web hit-ani-gateway
 
 ---
 
-## 3. 反向代理（可选）
+## 3. 反向代理（**必需**）
+
+> `web` / `gateway` 只绑回环（见 §1.5），所以**没有反向代理 = 局域网里访问不到**。
+> 本节不再是「可选」。
+>
+> **本机当服务器时**：把 `deploy/nginx-ani.conf` 装上即可 —— 它已按下面几条硬要求
+> 写好，并处理了弹幕的同源路径：
+>
+> ```bash
+> sudo cp deploy/nginx-ani.conf /etc/nginx/conf.d/ani.conf
+> sudo nginx -t && sudo systemctl reload nginx
+> ```
+>
+> ⚠️ 装之前确认 `server_name` 与你的域名一致，且**不要动** `conf.d/` 里已有的站点。
 
 ### 3.0 证书：必须用 DNS-01（本机解析到私网地址）
 
@@ -377,6 +398,34 @@ sudo systemctl daemon-reload && sudo systemctl enable --now certbot-renew.timer
 >    （见下面「两条硬要求」）。
 > 3. `.env` 里要有 `NEXT_PUBLIC_DANMAKU_WS_URL="/danmaku-ws"`，且它**是构建期
 >    常量** —— 改完必须 `docker compose build migrate web gateway`。
+
+### 3.0.1 本机访问自己的域名（Clash 规则）
+
+**服务器自己**用浏览器打开 `http://ani.kajimi.cc/` 会失败（「未发送任何数据」），
+即使域名与证书都正确。原因是 Clash 的规则表末尾是 `MATCH,节点选择` 兜底：
+
+```
+[TCP] ... --> ani.kajimi.cc:80 match Match using 节点选择[香港HKT-A]
+```
+
+**境外节点当然连不到校园私网地址**（10.249.61.10）。加一条 DIRECT 规则即可：
+
+```bash
+sudo bash deploy/clash-direct-campus.sh
+```
+
+脚本幂等，会插入 `DOMAIN-SUFFIX,kajimi.cc,DIRECT`、用核心自带的 `-t` 校验配置、
+重启服务，最后打一次域名确认。生效后日志变成：
+
+```
+[TCP] ... --> ani.kajimi.cc:80 match DomainSuffix(kajimi.cc) using DIRECT
+```
+
+用 `DOMAIN-SUFFIX` 覆盖整个后缀，将来加子域名不用再改。
+
+> ⚠️ `clash-verge.yaml` 是 Clash Verge **生成的运行期配置**。若你打开它的 GUI
+> 并重新生成配置，这条规则**可能被冲掉** —— 症状是「浏览器又打不开自己的站点了」。
+> 重跑上面的脚本即可恢复。
 
 ### 先说弹幕 WebSocket —— 它是最容易被漏掉的一半
 
