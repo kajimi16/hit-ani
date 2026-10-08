@@ -301,6 +301,53 @@ systemctl status hit-ani-web hit-ani-gateway
 
 ## 3. 反向代理（可选）
 
+### 3.0 证书：必须用 DNS-01（本机解析到私网地址）
+
+`ani.kajimi.cc` 指向 `10.249.61.10`（私网）。**Let's Encrypt 的验证服务器在公网上
+路由不到它**，所以 HTTP-01 必然失败 —— 只能用 **DNS-01**（在 DNS 里放一条 TXT
+记录，不需要任何入站可达性）。kajimi.cc 托管在 **GoDaddy**，凭据已在机器上：
+
+```bash
+# ⚠️ 三件事缺一不可，否则会以各种「连接失败/模块不存在」告终
+sudo env HTTPS_PROXY=http://127.0.0.1:7897 HTTP_PROXY=http://127.0.0.1:7897 \
+  python3.10 /usr/local/bin/certbot certonly \
+  -a dns-godaddy --dns-godaddy-credentials /etc/letsencrypt/godaddy.ini \
+  -d ani.kajimi.cc --non-interactive --agree-tos
+```
+
+1. **代理**：本机没有直连外网的路由，而 `sudo` 默认重置环境变量 ——
+   不显式传 `HTTPS_PROXY` 就连不上 GoDaddy API（实测：直连 `000`，
+   走代理 `401`，401 说明网络通、只是没带凭据）。
+2. **`python3.10`**：这台机器上 `/usr/local/bin/certbot` 的 shebang 曾指向
+   `/usr/bin/python3`（现为 3.12），而 certbot 装在 **3.10** 的 dist-packages 里
+   → `ModuleNotFoundError`。**已修好**（shebang 改成 `python3.10`），
+   但换机器部署时要注意同样的坑：`pip` 装的 certbot 与系统 python 版本一旦漂移就失效。
+3. **`-a dns-godaddy`** 而不是 `--dns-godaddy`：后者有歧义，
+   会匹配到 `--dns-godaddy-credentials` 而报 `ambiguous option`。
+
+#### 自动续期（原本完全没有）
+
+这台机器上**没有任何续期定时器**（`certbot.timer` / `certbot.service` 都不存在），
+所以 `gal.kajimi.cc` 的证书在 2026-09-01 **静默过期**了 —— 直到浏览器开始报
+证书错误才会发现。
+
+已补上 `deploy/certbot-renew.{service,timer}`：
+
+```bash
+sudo cp deploy/certbot-renew.{service,timer} /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now certbot-renew.timer
+```
+
+- service 里带了 `Environment=HTTP_PROXY/HTTPS_PROXY` —— 续期要访问 GoDaddy API，
+  而这台机器出网全靠代理。**这是最容易漏的一行**：漏了它续期会失败，
+  而证书到期前没有任何提示。
+- `ExecStartPost=systemctl reload nginx` —— 换了证书要重载，否则 nginx 仍用内存里的旧证书。
+- timer 一天两次 + `Persistent=true`（关机错过的会在开机后补跑）。
+- 实测：`certbot renew --dry-run` 对两张证书都成功；
+  `systemctl start certbot-renew.service` 真跑一次同样 `status=0/SUCCESS`，
+  且 **gal 那张已过期的证书被真的续成了有效**（`notBefore` 变成当天），
+  证明 `ExecStartPost` 的 nginx 重载也生效。
+
 > **本机当服务器时**：直接把 `deploy/nginx-ani.conf` 装上就行 ——
 > 它已经按下面两条硬要求写好，并处理了弹幕的同源路径：
 >

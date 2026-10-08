@@ -127,12 +127,33 @@ test("直连形态不探测、不报警（校内服务器应走这条）", async
   assert.deepEqual(lines, ["[egress] 出站直连（未配置代理）"]);
 });
 
-test("探测必须有界 —— 不可达时在超时内返回 false，不挂住启动", async () => {
-  // 10.255.255.1 是保留地址，一定连不上
+test("★ 探测必须有界 —— 不可达时返回 false，不挂住启动", async () => {
+  /*
+   * ⚠️ **不能用「保留地址一定连不上」来构造这个用例**。
+   *
+   * 这台机器跑着 Clash TUN（`auto-route: true`），**任何非环回 TCP 连接都会被
+   * TUN 在本地应答**（立即回 SYN-ACK，再由 Mihomo 决定怎么转发）——
+   * 于是 `probeProxyReachable("http://10.255.255.1:9")` 返回 `true`。
+   *
+   * 这个用例原先正是那么写的，在把核心从 GUI 托管换成 systemd 之后**开始失败**
+   * —— 暴露了「探测在 TUN 环境下无法判断非环回地址」这个真实局限。
+   * 后果是那条警告在不该沉默时会沉默，正是它想避免的失效模式。
+   *
+   * 环回不被 TUN 拦截，所以用「先占用端口、再释放」得到一个**确定的**不可达地址。
+   * 这也正是探测真正要覆盖的场景：它只对 `127.0.0.1` / `localhost` /
+   * `host.docker.internal` 这类「开发机地址」运行（见 `egressShape`）。
+   */
+  const net = await import("node:net");
+  const server = net.createServer();
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
+  const port = (server.address() as { port: number }).port;
+  await new Promise<void>((r) => server.close(() => r()));
+
   const started = Date.now();
-  const ok = await probeProxyReachable("http://10.255.255.1:9", 300);
+  const ok = await probeProxyReachable(`http://127.0.0.1:${port}`, 300);
   const elapsed = Date.now() - started;
-  assert.equal(ok, false);
+
+  assert.equal(ok, false, `释放后的端口 ${port} 不该被判定为可达`);
   assert.ok(elapsed < 3000, `探测耗时 ${elapsed}ms，必须远小于启动可接受时间`);
 });
 

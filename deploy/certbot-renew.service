@@ -1,0 +1,27 @@
+[Unit]
+Description=Let's Encrypt 证书续期（ani.kajimi.cc / gal.kajimi.cc，DNS-01）
+Documentation=file:/home/kajimi/interesting_project/hit-ani/docs/DEPLOY.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+
+# ⚠️ 本机**没有直连外网的路由**（实测：`curl --noproxy '*'` 取不到出口 IP），
+# 所有出站都经过宿主上的 Clash（127.0.0.1:7897）。
+#
+# DNS-01 续期要访问 **GoDaddy API**（写 TXT 记录）与 Let's Encrypt API。
+# 少了这两行，续期会以连接失败告终 —— 而**证书到期前没有任何其他提示**，
+# 直到某天浏览器开始报证书错误。
+#
+# 这不是假设：这台机器上 gal.kajimi.cc 的证书就是这么在 2026-09-01 悄悄过期
+# 的（当时既没有 systemd 定时器，certbot 本身还因为解释器不匹配而跑不起来）。
+Environment=HTTP_PROXY=http://127.0.0.1:7897
+Environment=HTTPS_PROXY=http://127.0.0.1:7897
+
+# `--no-random-sleep-on-renew`：随机延迟交给 timer 的 RandomizedDelaySec 做，
+# 避免两处各随机一次（否则可能等到很久以后才真正执行）。
+ExecStart=/usr/local/bin/certbot renew --quiet --no-random-sleep-on-renew
+
+# 续期换了证书文件后要重新加载 nginx，否则它仍会用启动时读进内存的旧证书。
+ExecStartPost=/bin/systemctl reload nginx

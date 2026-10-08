@@ -1,0 +1,17 @@
+[Unit]
+Description=每天两次检查 Let's Encrypt 证书续期
+
+[Timer]
+# 一天两次：Let's Encrypt 的证书有效期 90 天，而 certbot 只在剩余不足 30 天时
+# 才真正续期 —— 一天两次留足了重试余量（续期失败通常是临时的网络/DNS 问题）。
+OnCalendar=*-*-* 03,15:17:00
+
+# 打散执行时间，避免与其他定时任务挤在一起。
+RandomizedDelaySec=6h
+
+# 关机期间错过的执行，开机后补跑一次。
+# 少了这个，长期关机的机器可能一直错过续期窗口。
+Persistent=true
+
+[Install]
+WantedBy=timers.target

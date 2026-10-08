@@ -99,6 +99,21 @@ export type ProxyProbe = (url: string) => Promise<boolean>;
  * 只做 TCP 握手，不发 HTTP：目的是「这个地址后面有没有东西在听」，
  * 而不是「代理能不能出网」（后者是上游的可用性，抖动时误报没有意义）。
  * 超时 800ms —— 启动路径上的上限，不能拖慢启动。
+ *
+ * ## ⚠️ 已知局限：在 TUN 环境下只能可靠判断**环回**地址
+ *
+ * 若宿主机跑着 Clash/Mihomo 的 TUN（并且 `auto-route: true`），**任何非环回
+ * TCP 连接都会被 TUN 在本地应答** —— 探测会对一个根本不存在的远端地址返回
+ * `true`。实测：`10.255.255.1:9` 在 TUN 下「连得上」。
+ *
+ * 这不是理论问题：`tests/egress.test.ts` 里原本就用保留地址构造「不可达」，
+ * 在本机把核心从 GUI 托管换成 systemd 托管之后该断言开始失败，才暴露出这点。
+ *
+ * 好在探测**只对开发机地址运行**（`egressShape` 判定为 `dev-proxy` 时），
+ * 而那几类里 `127.0.0.1` / `localhost` 是环回、不受 TUN 影响 ——
+ * 正是最需要拦住的情况（服务器上那个端口没人监听）。
+ * `host.docker.internal` 不是环回，可能被 TUN 掩盖，这一点是接受的：
+ * 那种误判只会少喊一次警告，不会拦错东西。
  */
 export function probeProxyReachable(url: string, timeoutMs = 800): Promise<boolean> {
   return new Promise((resolve) => {
