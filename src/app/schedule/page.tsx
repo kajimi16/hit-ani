@@ -11,11 +11,22 @@ import {
 } from "@/lib/schedule-leaderboard";
 import { buildLeaderboard } from "@/lib/schedule-leaderboard-query";
 import { NSFW_COOKIE, nsfwFilterValue, parseNsfwCookie } from "@/lib/nsfw";
+import { withUpstreamCache } from "@/lib/cache/upstream-cache";
 import { isoDate, parseIsoDate, weekRange, weekdayLabel } from "@/lib/schedule";
 
 export const dynamic = "force-dynamic";
 
 export const metadata = { title: "新番时间表" };
+
+/**
+ * 时间表的上游缓存 TTL。
+ *
+ * 取 6 小时：一周的档期不会按分钟变，而 BGM 会随新番公布陆续补录条目 ——
+ * 6 小时足够跟上「新公布」这类变化，又让常规浏览几乎不消耗配额。
+ *
+ * 之前**每次访问**都打一次 BGM；热门时段（新番开播日）点几下就把配额用掉一片。
+ */
+const SCHEDULE_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 
 /**
  * 新番时间表。
@@ -43,17 +54,39 @@ export default async function SchedulePage({
   // NSFW 偏好与探索页同源（cookie），两处的过滤口径必须一致
   const nsfw = nsfwFilterValue(parseNsfwCookie((await cookies()).get(NSFW_COOKIE)?.value));
 
-  const page = await searchSubjects(
-    {
-      keyword: "",
-      sort: "heat",
-      filter: {
-        type: [SubjectType.Anime] as never,
-        air_date: [`>=${isoDate(start)}`, `<=${isoDate(end)}`],
-        ...(nsfw === undefined ? {} : { nsfw }),
-      },
-    },
-    { limit: 50 },
+  /*
+   * 缓存键：周次 + NSFW 偏好。
+   *
+   * 两者都会改变结果，**少一个就会串数据** —— 例如把「不看 NSFW」的用户
+   * 缓存下来的结果端给打开了 NSFW 的用户。
+   *
+   * 用 `isoDate(start)` 而不是 `weekOffset`：后者是相对量，跨周之后含义会变
+   * （同一个 offset 指向不同的周），拿它当键会串到别的周。
+   */
+  const cacheKey = `${isoDate(start)}|${nsfw ?? "all"}`;
+
+  const page = await withUpstreamCache(
+    { namespace: "schedule", key: cacheKey, ttlMs: SCHEDULE_CACHE_TTL_MS },
+    () =>
+      searchSubjects(
+        {
+          keyword: "",
+          sort: "heat",
+          filter: {
+            type: [SubjectType.Anime] as never,
+            air_date: [`>=${isoDate(start)}`, `<=${isoDate(end)}`],
+            ...(nsfw === undefined ? {} : { nsfw }),
+          },
+        },
+        { limit: 50 },
+      ),
+    /*
+     * 上游长时间不可用时**不再让整页空着**。
+     *
+     * 以前是 `.catch(() => null)` —— 上游一挂，页面上一天档期都没有。
+     * 缓存层内部已经处理了「吃陈旧数据」，走到这里的只剩「连陈旧数据都没有」，
+     * 那种情况下返回 null（空档期表）确实比让整页 500 好。
+     */
   ).catch(() => null);
 
   const byDate = new Map<string, NonNullable<typeof page>["data"]>();

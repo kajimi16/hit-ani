@@ -9,7 +9,8 @@ import { prisma } from "@/lib/prisma";
 import { SubjectType, searchSubjects, withRetry } from "@/lib/bgm/client";
 import { cookies } from "next/headers";
 import { BGM_MAX_PAGE_SIZE, pageCount, pageOffset } from "@/lib/bgm/paging";
-import { recommendQuery } from "@/lib/bgm/recommend";
+import { recentCutoff, recommendQuery } from "@/lib/bgm/recommend";
+import { withUpstreamCache } from "@/lib/cache/upstream-cache";
 import { NSFW_COOKIE, nsfwFilterValue, parseNsfwCookie } from "@/lib/nsfw";
 
 export const metadata: Metadata = {
@@ -48,6 +49,34 @@ async function load<T>(fn: () => Promise<T>, label: string): Promise<T | null> {
 
 /** Hero 轮播条数。对应 Animeko `TrendingSubjectsCarousel` 的 8 个占位。 */
 const HERO_COUNT = 8;
+
+/**
+ * 默认落地页的上游缓存 TTL。
+ *
+ * 取 1 小时（比时间表的 6 小时短）：这里的列表按**收藏人数**排序，属
+ * 「热门趋势」性质，用户预期它比较新。1 小时已能把配额消耗从「每次访问」
+ * 压到「每小时至多一次」。
+ */
+const EXPLORE_CACHE_TTL_MS = 60 * 60 * 1000;
+
+/**
+ * 带缓存地取上游；失败时记日志并返回 `null`（与 `load` 同样的收口方式）。
+ *
+ * **为什么不套 `load`**：`load` 内部有 `withRetry`，而这里的 loader 也要重试 ——
+ * 两层套起来在持续失败时会放大成 4 次上游请求，正好与「省配额」的初衷相反。
+ * 所以自己收口，只保留**一层**重试。
+ */
+async function loadCached<T>(key: string, fn: () => Promise<T>): Promise<T | null> {
+  try {
+    return await withUpstreamCache(
+      { namespace: "explore", key, ttlMs: EXPLORE_CACHE_TTL_MS },
+      () => withRetry(fn, key, 2),
+    );
+  } catch (error) {
+    console.error(`[home] ${key} 加载失败：`, error);
+    return null;
+  }
+}
 
 /**
  * 探索页 —— 对应 Animeko 的 `ExplorationScreen`。
@@ -99,12 +128,26 @@ export default async function HomePage({
   const [hero, recommended, watching] = await Promise.all([
     isSearching
       ? Promise.resolve(null)
-      : load(() => searchSubjects(recommendQuery(), { limit: HERO_COUNT, offset: 0 }), "hero"),
-    load(
-      () =>
-        searchSubjects(
-          isSearching
-            ? {
+      : /*
+           * 只有**非搜索**的默认落地页走缓存：`recommendQuery()` 是确定性的
+           * （近一年动画按收藏人数排，且强制 `nsfw: false`），所以首页对所有人
+           * 是同一份数据 —— 一天一个键，命中率极高。
+           *
+           * 键里**必须带 `recentCutoff()`**（「今天减一年」，每天变）：
+           * 不带的话缓存会一直活到 TTL 过期，跨日时短暂用上昨天的时间窗 ——
+           * 无害，但没必要让「每天换」退化成「每小时才换」。
+           *
+           * 搜索结果**不缓存**：键由关键词/标签/排序/页码组合，命中率极低，
+           * 只会把表塞满一次性条目。
+           */
+          loadCached(`hero|${recentCutoff()}`, () =>
+            searchSubjects(recommendQuery(), { limit: HERO_COUNT, offset: 0 }),
+          ),
+    isSearching
+      ? load(
+          () =>
+            searchSubjects(
+              {
                 keyword,
                 sort,
                 filter: {
@@ -112,16 +155,22 @@ export default async function HomePage({
                   ...(tags.length ? { tag: tags } : {}),
                   ...(nsfw === undefined ? {} : { nsfw }),
                 },
-              }
-            : recommendQuery(),
-          {
-            limit: BGM_MAX_PAGE_SIZE,
-            // Hero 占掉前 8 条，推荐从第 9 条开始；搜索时没有 Hero，从头开始
-            offset: pageOffset(page, isSearching ? 0 : HERO_COUNT),
-          },
+              },
+              // 搜索时没有 Hero，从头开始
+              { limit: BGM_MAX_PAGE_SIZE, offset: pageOffset(page, 0) },
+            ),
+          "subjects",
+        )
+      : loadCached(
+          // 与 hero 同一时间窗，但偏移从 Hero 之后开始。
+          // **两个键必须分开** —— 合并会把 Hero 的 8 条当成推荐第一页端出去。
+          `recommend|${recentCutoff()}|${pageOffset(page, HERO_COUNT)}`,
+          () =>
+            searchSubjects(recommendQuery(), {
+              limit: BGM_MAX_PAGE_SIZE,
+              offset: pageOffset(page, HERO_COUNT),
+            }),
         ),
-      "subjects",
-    ),
     // 「继续观看」直接读本地库，不打上游
     user
       ? prisma.collection

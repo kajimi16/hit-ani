@@ -473,6 +473,35 @@ model JellyfinConnection {
 ///
 /// `payload` 存 JSON 字符串而不是 Json 列：评论条目里含大量中文与引号，
 /// 整体存字符串可以一次性 `JSON.parse`，也避免了 Json 列对形状的隐式约束。
+/// 上游响应的通用缓存（按命名空间 + 键）。
+///
+/// ## 为什么需要它
+///
+/// 有些页面**每次访问都打上游**（最典型的是时间表：按周查 BGM 的档期）。
+/// 上游有配额、也会限流，而这类数据本身变化很慢（一周的档期不会按分钟变），
+/// 每次访问都回源纯属浪费 —— 配额被日常浏览吃掉，真正需要新鲜数据时反而没得用。
+///
+/// ## 与 `DanmakuCache` 的关系
+///
+/// 刻意**不合并**：弹幕那边有 `count` / `total`（界面要提示「共 N 条，已显示前 M 条」）
+/// 这类业务字段，而上游响应缓存只关心「键 → 一段 JSON」。把两者塞进一张表会让
+/// 弹幕多出用不上的列、缓存表多出语义不明的列。共用的是**做法**（gzip + fetchedAt
+/// + 惰性过期），不是表。
+model UpstreamCache {
+  /// 分类（如 `schedule` / `explore-hero`）。便于分命名空间清理与观察。
+  namespace String
+  /// 该分类内的键。调用方负责保证「同样的键 = 同样的响应」。
+  key       String
+  /// gzip 压缩后的 JSON
+  payload   Bytes
+  /// 写入时间。TTL 判定与惰性过期都基于它。
+  fetchedAt DateTime @default(now())
+
+  @@id([namespace, key])
+  /// 按时间清理过期条目
+  @@index([fetchedAt])
+}
+
 model BgmCommentsCache {
   subjectId Int      @id
   payload   String
