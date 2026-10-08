@@ -301,6 +301,28 @@ systemctl status hit-ani-web hit-ani-gateway
 
 ## 3. 反向代理（可选）
 
+> **本机当服务器时**：直接把 `deploy/nginx-ani.conf` 装上就行 ——
+> 它已经按下面两条硬要求写好，并处理了弹幕的同源路径：
+>
+> ```bash
+> sudo cp deploy/nginx-ani.conf /etc/nginx/conf.d/ani.conf
+> sudo nginx -t && sudo systemctl reload nginx
+> ```
+>
+> ⚠️ 装之前确认 `server_name` 与你的域名一致，且**不要动** `conf.d/` 里
+> 已有的站点（本机还有 `gal.conf`）。
+>
+> 这份配置里三处**必须理解**的地方：
+> 1. `proxy_pass http://127.0.0.1:3102/;` 的**尾斜杠**负责剥掉 `/danmaku-ws`
+>    前缀 —— 网关只匹配 `/danmaku/room/<id>`。实测对比：有尾斜杠 **101 握手
+>    成功**，去掉就是 **404**。
+> 2. `proxy_set_header X-Forwarded-Host/-Proto` 是**覆盖**而非透传
+>    （见下面「两条硬要求」）。
+> 3. `.env` 里要有 `NEXT_PUBLIC_DANMAKU_WS_URL="/danmaku-ws"`，且它**是构建期
+>    常量** —— 改完必须 `docker compose build migrate web gateway`。
+
+
+
 想用域名 + HTTPS 时。
 
 ### 先说弹幕 WebSocket —— 它是最容易被漏掉的一半
