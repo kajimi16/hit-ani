@@ -144,6 +144,19 @@ export default function SourcePlayer({
   };
 
   /**
+   * 当前播放集在列表里的下一集。
+   *
+   * 按**列表顺序**取而不是「集号 +1」：源站命名很杂（`第 5.5 话`、
+   * 总集篇、特典），按集号推算会跳到一个不存在或错位的集上。
+   * 找不到当前集时返回 null —— 宁可停住，也不要跳到未知的位置。
+   */
+  let nextEpisode: Episode | null = null;
+  if (playing !== null && episodes !== null) {
+    const index = episodes.findIndex((e) => e.name === playing.name);
+    if (index >= 0 && index + 1 < episodes.length) nextEpisode = episodes[index + 1];
+  }
+
+  /**
    * 把外部源的集号对齐到 BGM 的 episodeId。
    *
    * 对齐不上时返回 null —— 播放器会禁用弹幕，而不是把弹幕挂到错误的集上。
@@ -197,6 +210,14 @@ export default function SourcePlayer({
               ? undefined
               : (positionMs) => void reportPosition(bgmEpisodeId, positionMs)
           }
+          /*
+           * 自动连播：播完切下一集。解析（`play`）与当前是同一台机器上
+           * 同一次播放，不涉及服务端状态。
+           */
+          hasNext={nextEpisode !== null}
+          onEnded={() => {
+            if (nextEpisode) void play(nextEpisode);
+          }}
         />
       )}
 

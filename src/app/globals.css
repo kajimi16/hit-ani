@@ -1598,3 +1598,86 @@
     }
   }
 }
+
+/* ---------------------------------------------------------------- 播放器控件
+ * 自绘控件（原生 `<video controls>` 无法加倍速菜单，且会吞掉手势）。
+ * 底色一律走半透明黑 —— 控制条叠在任意画面上，不能依赖主题色对比。
+ */
+@layer components {
+  .player-btn {
+    display: inline-flex;
+    min-width: 1.75rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+    padding: 0.1rem 0.35rem;
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    color: #ffffff;
+    transition: background-color var(--duration-accelerate) var(--ease-standard);
+  }
+  .player-btn:hover {
+    background-color: color-mix(in oklab, #ffffff 18%, transparent);
+  }
+  /*
+   * 焦点必须可见 —— 控制条叠在视频上，键盘用户没有别的线索知道焦点在哪。
+   * 用 `outline` 而不是 `box-shadow`：box-shadows 在深色视频上几乎看不见。
+   */
+  .player-btn:focus-visible,
+  .player-range:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+
+  /*
+   * 进度条。用 `appearance: none` 才能改高度与滑块 ——
+   * 原生样式在深色背景上几乎是隐形的。
+   */
+  .player-range {
+    height: 1rem;
+    appearance: none;
+    background: transparent;
+    cursor: pointer;
+  }
+  .player-range::-webkit-slider-runnable-track {
+    height: 0.25rem;
+    border-radius: 999px;
+    background-color: color-mix(in oklab, #ffffff 30%, transparent);
+  }
+  .player-range::-moz-range-track {
+    height: 0.25rem;
+    border-radius: 999px;
+    background-color: color-mix(in oklab, #ffffff 30%, transparent);
+  }
+  .player-range::-webkit-slider-thumb {
+    appearance: none;
+    width: 0.75rem;
+    height: 0.75rem;
+    /* 轨道 4px 高，滑块 12px —— 上移 4px 让它垂直居中 */
+    margin-top: -0.25rem;
+    border-radius: 999px;
+    background-color: var(--color-primary);
+  }
+  .player-range::-moz-range-thumb {
+    width: 0.75rem;
+    height: 0.75rem;
+    border: none;
+    border-radius: 999px;
+    background-color: var(--color-primary);
+  }
+
+  /* 深色底上的说明文字：正文色在视频上不可读，这里固定白色系 */
+  .player-shell {
+    --player-fg: #ffffff;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .player-btn {
+      transition: none;
+    }
+    /* 控制条的淡出也属于动效 */
+    .player-shell > div[class*="transition-opacity"] {
+      transition: none;
+    }
+  }
+}

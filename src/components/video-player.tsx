@@ -17,6 +17,22 @@ import {
   type DanmakuDto,
   type DanmakuLocationValue,
 } from "@/lib/danmaku/types";
+import {
+  DEFAULT_SPEED,
+  NEXT_COUNTDOWN_SECONDS,
+  clampTime,
+  countdownRemaining,
+  formatSpeed,
+  isTypingTarget,
+  resolveShortcut,
+  seekTargetFromDrag,
+  shouldAutoAdvance,
+  readPlayerPrefs,
+  stepSpeed,
+  writePlayerPrefs,
+  type ShortcutAction,
+  type TimerHandle,
+} from "@/lib/player/controls";
 
 /*
  * 弹幕的绘制参数（轨道数、行高、速度、字宽）**全部由用户的显示设置决定**，
@@ -57,6 +73,15 @@ interface Props {
    * 不传时用默认值 —— 与改动前的硬编码等价，因此老调用方观感不变。
    */
   danmakuStyle?: DanmakuStyle;
+  /**
+   * 播放到片尾时的回调（自动连播用）。
+   *
+   * 不传则**不显示**任何「下一集」界面 —— 没法换集时给倒计时是骗人。
+   * 「下一集是哪一集」由调用方决定，播放器不持有剧集列表。
+   */
+  onEnded?: () => void;
+  /** 是否存在下一集。没有时播完即停，不进入倒计时。 */
+  hasNext?: boolean;
 }
 
 /**
@@ -81,17 +106,16 @@ export default function VideoPlayer({
   canInteract,
   onProgress,
   danmakuStyle = DEFAULT_DANMAKU_STYLE,
+  onEnded,
+  hasNext = false,
 }: Props) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  /**
-   * 绘制时读的样式。
-   *
-   * `draw()` 所在的 effect 是 `[]` 依赖（只挂一次，含 WebSocket 与 rAF），
-   * 直接闭包捕获样式会永远停在首帧的值。用 ref 让它每帧读最新。
-   */
   /*
-   * 面板改的是**内部状态**，而不是回传给调用方 —— 播放器是弹幕显示的唯一
-   * 归属者，样式也只影响它。调用方传 `danmakuStyle` 只作为初始值。
+   * 弹幕样式：面板改的是**内部状态**，而不是回传给调用方 —— 播放器是弹幕
+   * 显示的唯一归属者，样式也只影响它。调用方传 `danmakuStyle` 只作为初始值。
+   *
+   * `danmakuStyleRef` 是给 `draw()` 读的：它所在的 effect 依赖是 `[]`
+   * （只挂一次，含 WebSocket 与 rAF），直接闭包捕获样式会永远停在首帧的值。
    */
   const [activeStyle, setActiveStyle] = useState<DanmakuStyle>(danmakuStyle);
   const danmakuStyleRef = useRef<DanmakuStyle>(danmakuStyle);
@@ -113,13 +137,94 @@ export default function VideoPlayer({
    * 用 `undefined` 而非 `null`：`clearTimeout(undefined)` 是合法的 no-op，
    * 因此取消时无需守卫（项目规则也禁止对 clearTimeout 加平凡守卫）。
    */
-  const seekTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const seekTimerRef = useRef<TimerHandle | undefined>(undefined);
 
   const [danmakus, setDanmakus] = useState<DanmakuDto[]>([]);
   /** rAF 循环里读取的弹幕列表 —— 用 ref 避免把整个列表塞进 effect 依赖。 */
   const danmakusRef = useRef<DanmakuDto[]>([]);
   const [schoolOnly, setSchoolOnly] = useState(false);
   const [connection, setConnection] = useState<"connecting" | "open" | "fallback">("connecting");
+
+  /* ---------------------------------------------------------------- *
+   * 自绘控件的状态
+   * ---------------------------------------------------------------- */
+
+  /**
+   * 播放倍速。
+   *
+   * 与弹幕显示样式一样，**刻意放在组件内部**：它只影响这一台机器上的这次
+   * 播放，回传给调用方既没有用处，也会让条目页多一份无意义的 state。
+   */
+  const [speed, setSpeed] = useState<number>(DEFAULT_SPEED);
+  /**
+   * 快捷键回调里读的倍速。
+   *
+   * 键盘监听必须**只挂一次** —— 依赖 `speed` 状态会让每次调速都重新注册
+   * 文档级监听，而重新注册的间隙里按下的键会丢。用 ref 读最新值。
+   */
+  const speedRef = useRef<number>(DEFAULT_SPEED);
+  /** 自动连播开关的当前值 —— `applySpeed` 写偏好时要把它一起带上。 */
+  const autoNextRef = useRef(true);
+  const [muted, setMuted] = useState(false);
+  /** 拖动进度条时的**预览**位置：拖动过程中不真的 seek，松手才跳。 */
+  const [scrubMs, setScrubMs] = useState<number | null>(null);
+  /** 拖动横向手势时的目标位置预览。 */
+  const [gestureScrubMs, setGestureScrubMs] = useState<number | null>(null);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [autoNext, setAutoNext] = useState(true);
+  /**
+   * 播完之后停顿的剩余秒数；`null` = 不在倒计时。
+   *
+   * 用「剩余秒数」而不是「已过去多久」—— 倒计时界面要显示的是它，
+   * 而每秒重算 `NEXT_COUNTDOWN_SECONDS - elapsed` 需要在渲染里做减法，
+   * 一旦忘了就不显示或显示负数。
+   */
+  const [countdown, setCountdown] = useState<number | null>(null);
+  /** 控制条在暂停/鼠标移入时显示；播放中淡出。 */
+  const [controlsVisible, setControlsVisible] = useState(true);
+  const hideControlsTimerRef = useRef<TimerHandle | undefined>(undefined);
+
+  /**
+   * 播完时该做什么。
+   *
+   * 用 ref 而不是把它塞进媒体时钟 effect 的依赖：那个 effect 依赖
+   * `[startAtMs, streamUrl]`，把 `autoNext`/`hasNext` 加进去会让每次改动
+   * 都重新绑定全部监听 —— 而监听重绑期间的事件会丢。
+   */
+  const endedHandlerRef = useRef<() => void>(() => undefined);
+  useEffect(() => {
+    endedHandlerRef.current = () => {
+      /*
+       * 三个条件缺一不可（见 `shouldAutoAdvance`）：关了自动连播、
+       * 没有下一集、或只是暂停/切走，都不该弹倒计时。
+       */
+      if (shouldAutoAdvance({ enabled: autoNext, hasNext, ended: true })) {
+        countdownStartRef.current = Date.now();
+        setCountdown(NEXT_COUNTDOWN_SECONDS);
+      }
+    };
+  }, [autoNext, hasNext]);
+
+  /** 拖动手势的起点。非 null 表示正在拖。 */
+  /**
+   * 单击/双击消歧的计时器。
+   *
+   * 浏览器在双击时**也会**先发一次 `click`，所以不能「click 就暂停」——
+   * 那样双击全屏会顺带暂停。改成：单击延迟 220ms 再执行，
+   * 若期间来了双击就取消它（`dblclick` 必然晚于第一个 `click`）。
+   */
+  const clickTimerRef = useRef<TimerHandle | undefined>(undefined);
+
+  /** 播放器外框 —— 全屏与手势都作用在它身上。 */
+  const shellRef = useRef<HTMLDivElement | null>(null);
+
+  const gestureRef = useRef<{
+    x: number;
+    y: number;
+    startMs: number;
+    /** 已判定为横向拖动（用于忽略纵向抖动）。 */
+    axis: "unknown" | "horizontal" | "vertical";
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [position, setPosition] = useState<DanmakuLocationValue>(DanmakuLocation.Normal);
@@ -566,6 +671,12 @@ export default function VideoPlayer({
     const onLoadedMetadata = () => {
       setDurationMs(Number.isFinite(video.duration) ? video.duration * 1000 : 0);
       if (startAtMs > 0) video.currentTime = startAtMs / 1000;
+      /*
+       * 重新应用倍速与音量：换源（或 hls.js 重新 attach）之后浏览器会把
+       * `playbackRate` 复位成 1，而界面上的「1.5×」还在 —— 状态与实际的
+       * 不一致是最难查的那种 bug。音量同理（部分浏览器会复位）。
+       */
+      video.playbackRate = speedRef.current;
     };
     const onTimeUpdate = () => setMediaTimeMs(video.currentTime * 1000);
 
@@ -575,7 +686,15 @@ export default function VideoPlayer({
     video.addEventListener("seeked", onSeeked);
     video.addEventListener("loadedmetadata", onLoadedMetadata);
     video.addEventListener("timeupdate", onTimeUpdate);
-    video.addEventListener("ended", onPause);
+    /*
+     * `ended` 与 `pause` 都要做：`ended` 时视频已暂停但 `pause` 事件不一定
+     * 触发，只挂 `pause` 会让「播完」被当成「用户按了暂停」，控制条永远显示。
+     */
+    const onEndedEvent = () => {
+      onPause();
+      endedHandlerRef.current();
+    };
+    video.addEventListener("ended", onEndedEvent);
 
     return () => {
       video.removeEventListener("play", onPlay);
@@ -584,7 +703,7 @@ export default function VideoPlayer({
       video.removeEventListener("seeked", onSeeked);
       video.removeEventListener("loadedmetadata", onLoadedMetadata);
       video.removeEventListener("timeupdate", onTimeUpdate);
-      video.removeEventListener("ended", onPause);
+      video.removeEventListener("ended", onEndedEvent);
     };
   }, [startAtMs, streamUrl]);
 
@@ -642,6 +761,195 @@ export default function VideoPlayer({
     return `${m}:${String(s).padStart(2, "0")}`;
   };
 
+  /* -------------------------------------------------------------- *
+   * 自绘控件的动作
+   * -------------------------------------------------------------- */
+
+  /**
+   * 跳转到指定毫秒。
+   *
+   * 用 `clampTime` 钳制而不是直接赋值：`duration` 在元数据到达前是 `NaN`，
+   * 直接 `video.currentTime = NaN` 会把播放位置弄坏（且不报错）。
+   */
+  const seekTo = useCallback((ms: number) => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.currentTime = clampTime(ms, video.duration * 1000) / 1000;
+  }, []);
+
+  const togglePlay = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (video.paused) void video.play().catch(() => setError("浏览器拒绝了自动播放"));
+    else video.pause();
+  }, []);
+
+  const applySpeed = useCallback(
+    (next: number) => {
+      setSpeed(next);
+      // ref 必须与状态同步更新：快捷键回调读的是它
+      speedRef.current = next;
+      if (videoRef.current) videoRef.current.playbackRate = next;
+      writePlayerPrefs({ autoNext: autoNextRef.current, speed: next });
+    },
+    [],
+  );
+
+  const nudgeSpeed = useCallback(
+    (delta: number) => applySpeed(stepSpeed(speedRef.current, delta)),
+    [applySpeed],
+  );
+
+  const toggleMute = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.muted = !video.muted;
+    setMuted(video.muted);
+  }, []);
+
+  const nudgeVolume = useCallback((delta: number) => {
+    const video = videoRef.current;
+    if (!video) return;
+    // 调音量时自动取消静音 —— 否则「按了没反应」会被当成坏了
+    video.muted = false;
+    setMuted(false);
+    video.volume = Math.min(1, Math.max(0, video.volume + delta));
+  }, []);
+
+  const toggleFullscreen = useCallback(() => {
+    const shell = shellRef.current;
+    if (!shell) return;
+    if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
+    else void shell.requestFullscreen().catch(() => undefined);
+  }, []);
+
+  /**
+   * 执行一条快捷键。
+   *
+   * 解析在 `resolveShortcut`（纯函数、有测试），这里只做副作用。
+   */
+  const runShortcut = useCallback(
+    (action: ShortcutAction) => {
+      switch (action.kind) {
+        case "toggle-play":
+          togglePlay();
+          return;
+        case "seek-by": {
+          const video = videoRef.current;
+          if (video) seekTo((video.currentTime + action.seconds) * 1000);
+          return;
+        }
+        case "speed":
+          nudgeSpeed(action.delta);
+          return;
+        case "speed-reset":
+          applySpeed(DEFAULT_SPEED);
+          return;
+        case "volume":
+          nudgeVolume(action.delta);
+          return;
+        case "toggle-mute":
+          toggleMute();
+          return;
+        case "toggle-fullscreen":
+          toggleFullscreen();
+          return;
+      }
+    },
+    [applySpeed, nudgeSpeed, nudgeVolume, seekTo, toggleFullscreen, toggleMute, togglePlay],
+  );
+
+  /**
+   * 全局快捷键。
+   *
+   * 挂在 `document` 上而不是播放器容器上：用户点了全屏按钮之后焦点不在
+   * 容器里，绑在容器上的监听收不到按键。因此**必须**用 `isTypingTarget`
+   * 过滤掉输入框 —— 那条是安全不变量（见 `lib/player/controls.ts`）。
+   */
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const action = resolveShortcut({
+        key: event.key,
+        ctrlKey: event.ctrlKey,
+        metaKey: event.metaKey,
+        altKey: event.altKey,
+        shiftKey: event.shiftKey,
+        typing: isTypingTarget(event.target as { tagName?: string; isContentEditable?: boolean }),
+      });
+      if (!action) return;
+      // 空格会滚动页面、方向键会滚动 —— 既然我们接管了就必须阻止默认
+      event.preventDefault();
+      runShortcut(action);
+    };
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [runShortcut]);
+
+  /* ---- 偏好：挂载后才读 localStorage（SSR 阶段没有它）---- */
+  useEffect(() => {
+    const prefs = readPlayerPrefs();
+    setAutoNext(prefs.autoNext);
+    applySpeed(prefs.speed);
+  }, [applySpeed]);
+
+  /* ---- 全屏状态 ---- */
+  useEffect(() => {
+    const onFullscreenChange = () => setFullscreen(document.fullscreenElement === shellRef.current);
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+  }, []);
+
+  /* ---- 控制条自动隐藏 ---- */
+  const showControlsTemporarily = useCallback(() => {
+    setControlsVisible(true);
+    clearTimeout(hideControlsTimerRef.current);
+    hideControlsTimerRef.current = setTimeout(() => setControlsVisible(false), 3000);
+  }, []);
+  useEffect(() => {
+    clearTimeout(hideControlsTimerRef.current);
+    // 暂停时**不**隐藏：用户正要操作，把控制条藏掉是最烦人的
+    if (paused) setControlsVisible(true);
+    else showControlsTemporarily();
+    return () => clearTimeout(hideControlsTimerRef.current);
+  }, [paused, showControlsTemporarily]);
+
+  /* ---- 自动连播倒计时 ---- */
+  const advanceToNext = useCallback(() => {
+    setCountdown(null);
+    onEnded?.();
+  }, [onEnded]);
+
+  /**
+   * 倒计时起点（墙上时钟）。
+   *
+   * 剩余秒数**由起点推算**，而不是每次 tick 减一 —— 后台标签页里
+   * `setInterval` 会被浏览器节流到约每分钟一次，纯递减会让倒计时
+   * 比真实时间慢得多，看起来像卡死了。
+   */
+  const countdownStartRef = useRef(0);
+  /**
+   * 是否正在倒计时。
+   *
+   * 抽成变量是为了让 effect 的依赖数组**可被静态检查**：写
+   * `[countdown === null]` 会被 `exhaustive-deps` 判为复杂表达式；
+   * 直接依赖 `countdown` 又会让计时器每秒被重建一次（重建的间隙会吃掉 tick）。
+   */
+  const countingDown = countdown !== null;
+
+  useEffect(() => {
+    if (!countingDown) return;
+    const timer = setInterval(() => {
+      const left = countdownRemaining(Date.now() - countdownStartRef.current);
+      if (left <= 0) {
+        advanceToNext();
+        return;
+      }
+      setCountdown(left);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [countingDown, advanceToNext]);
+
   return (
     <section className="space-y-3">
       <div className="flex flex-wrap items-center gap-3">
@@ -669,11 +977,26 @@ export default function VideoPlayer({
         </label>
       </div>
 
-      {/* 播放器：video 与弹幕 canvas 叠放 */}
-      <div className="relative overflow-hidden rounded border border-outline-variant bg-black">
+      {/*
+        播放器：video + 弹幕 canvas + 手势层 + 自绘控制条。
+
+        **刻意不用 `<video controls>`** —— 原生控件是浏览器自绘的，
+        CSS 改不动、无法加倍速菜单，而且它会吞掉点击事件导致手势失效。
+        代价是我们必须自己保证无障碍：下面的控件全部是原生 `button` /
+        `input[type=range]`，键盘与读屏可用（自绘成 `div` 会全部失效）。
+
+        层级自下而上：video → canvas → 手势层 → 控制条 → 倒计时。
+        手势层铺满视频区，因此控制条**必须**放在它之后（DOM 顺序即层级），
+        否则点击按钮会先被手势层吃掉。
+      */}
+      <div
+        ref={shellRef}
+        className="player-shell group relative overflow-hidden rounded border border-outline-variant bg-black"
+        onMouseMove={showControlsTemporarily}
+        onMouseLeave={() => !paused && setControlsVisible(false)}
+      >
         <video
           ref={videoRef}
-          controls
           playsInline
           preload="metadata"
           className="block aspect-video w-full bg-black"
@@ -683,6 +1006,218 @@ export default function VideoPlayer({
           style={{ width: "100%", height: layout.canvasHeight }}
           className="pointer-events-none absolute left-0 top-0"
         />
+
+        {/*
+          手势层。`touch-none` 关掉浏览器自带的滚动/缩放，否则手机上横向拖动
+          会被识别成页面滚动，`pointermove` 收不到。
+        */}
+        <div
+          className="absolute inset-0 touch-none"
+          role="presentation"
+          onPointerDown={(event) => {
+            const video = videoRef.current;
+            if (!video) return;
+            gestureRef.current = {
+              x: event.clientX,
+              y: event.clientY,
+              startMs: video.currentTime * 1000,
+              axis: "unknown",
+            };
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }}
+          onPointerMove={(event) => {
+            const gesture = gestureRef.current;
+            const video = videoRef.current;
+            if (!gesture || !video) return;
+
+            const dx = event.clientX - gesture.x;
+            const dy = event.clientY - gesture.y;
+
+            // 先判定主轴，避免手指轻微抖动时位置预览来回跳
+            if (gesture.axis === "unknown") {
+              if (Math.abs(dx) < 12 && Math.abs(dy) < 12) return;
+              gesture.axis = Math.abs(dx) > Math.abs(dy) ? "horizontal" : "vertical";
+              if (gesture.axis === "vertical") {
+                // 纵向手势不参与定位，直接放弃这次
+                gestureRef.current = null;
+                return;
+              }
+            }
+
+            const width = event.currentTarget.clientWidth || 1;
+            setGestureScrubMs(
+              seekTargetFromDrag({
+                startMs: gesture.startMs,
+                dragRatio: dx / width,
+                durationMs: video.duration * 1000,
+              }),
+            );
+          }}
+          onPointerUp={() => {
+            const gesture = gestureRef.current;
+            gestureRef.current = null;
+            if (gestureScrubMs !== null) {
+              seekTo(gestureScrubMs);
+              setGestureScrubMs(null);
+              return;
+            }
+            setGestureScrubMs(null);
+            // `axis` 仍是 unknown = 没有位移 → 这是一次单击（而非拖动）
+            if (gesture?.axis !== "unknown") return;
+            clearTimeout(clickTimerRef.current);
+            clickTimerRef.current = setTimeout(() => togglePlay(), 220);
+          }}
+          onPointerCancel={() => {
+            gestureRef.current = null;
+            setGestureScrubMs(null);
+          }}
+          onDoubleClick={() => {
+            clearTimeout(clickTimerRef.current);
+            toggleFullscreen();
+          }}
+        />
+
+        {/* 拖动定位的实时预览 —— 不显示的话用户不知道会跳到哪里 */}
+        {gestureScrubMs !== null && (
+          <div className="pointer-events-none absolute left-1/2 top-4 -translate-x-1/2 rounded bg-scrim/85 px-3 py-1 font-mono text-sm text-white">
+            {fmt(gestureScrubMs)} / {durationMs > 0 ? fmt(durationMs) : "--:--"}
+          </div>
+        )}
+
+        {/*
+          控制条。播放中淡出，暂停或鼠标移入时出现。
+          `pointer-events-none` 在隐藏时必须加上 —— 否则一条不可见但可点的
+          横条会挡住视频下方的画面。
+        */}
+        <div
+          className={
+            "absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent px-3 pb-2 pt-6 transition-opacity " +
+            (controlsVisible ? "opacity-100" : "pointer-events-none opacity-0")
+          }
+        >
+          <input
+            type="range"
+            min={0}
+            max={Math.max(1, Math.round(durationMs))}
+            value={Math.round(scrubMs ?? mediaTimeMs)}
+            onChange={(event) => setScrubMs(Number(event.target.value))}
+            /*
+             * 松手才真的 seek：拖动过程中连续 seek 会让 hls.js 反复重新缓冲，
+             * 而且每次 seek 都会触发服务端的弹幕窗口重建（网关被打爆）。
+             */
+            onPointerUp={() => {
+              if (scrubMs !== null) seekTo(scrubMs);
+              setScrubMs(null);
+            }}
+            onKeyUp={() => {
+              if (scrubMs !== null) seekTo(scrubMs);
+              setScrubMs(null);
+            }}
+            aria-label="播放进度"
+            className="player-range w-full"
+          />
+          <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-white">
+            <button
+              type="button"
+              onClick={togglePlay}
+              aria-label={paused ? "播放" : "暂停"}
+              title={paused ? "播放（空格）" : "暂停（空格）"}
+              className="player-btn"
+            >
+              {paused ? "▶" : "❚❚"}
+            </button>
+            <span className="font-mono">
+              {fmt(scrubMs ?? mediaTimeMs)} / {durationMs > 0 ? fmt(durationMs) : "--:--"}
+            </span>
+
+            <button
+              type="button"
+              onClick={() => nudgeSpeed(-1)}
+              aria-label="减速"
+              title="减速（[）"
+              className="player-btn"
+            >
+              −
+            </button>
+            <button
+              type="button"
+              onClick={() => applySpeed(DEFAULT_SPEED)}
+              aria-label={`播放速度 ${formatSpeed(speed)}，点击恢复正常速度`}
+              title="恢复正常速度（0）"
+              className="player-btn font-mono"
+            >
+              {formatSpeed(speed)}
+            </button>
+            <button
+              type="button"
+              onClick={() => nudgeSpeed(1)}
+              aria-label="加速"
+              title="加速（]）"
+              className="player-btn"
+            >
+              ＋
+            </button>
+
+            <button
+              type="button"
+              onClick={toggleMute}
+              aria-label={muted ? "取消静音" : "静音"}
+              title={muted ? "取消静音（M）" : "静音（M）"}
+              className="player-btn"
+            >
+              {muted ? "🔇" : "🔊"}
+            </button>
+
+            <label className="ml-auto flex items-center gap-1.5">
+              <input
+                type="checkbox"
+                checked={autoNext}
+                onChange={(event) => {
+                  setAutoNext(event.target.checked);
+                  autoNextRef.current = event.target.checked;
+                  writePlayerPrefs({ autoNext: event.target.checked, speed: speedRef.current });
+                  // 关掉时立刻收起倒计时 —— 否则还会继续数到 0 并换集
+                  if (!event.target.checked) setCountdown(null);
+                }}
+                className="size-3.5 accent-sky-500"
+              />
+              <span>自动连播</span>
+            </label>
+
+            <button
+              type="button"
+              onClick={toggleFullscreen}
+              aria-label={fullscreen ? "退出全屏" : "全屏"}
+              title={fullscreen ? "退出全屏（F）" : "全屏（F）"}
+              className="player-btn"
+            >
+              {fullscreen ? "⤢" : "⛶"}
+            </button>
+          </div>
+        </div>
+
+        {/*
+          自动连播倒计时。给 5 秒而不是立刻切 —— 立刻切会让人以为播放器坏了，
+          而且没有机会取消（比如想再看一遍片尾）。
+        */}
+        {countdown !== null && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-scrim/80 text-center text-white">
+            <p className="text-sm">即将播放下一集</p>
+            <p className="font-mono text-3xl">{countdown}</p>
+            <div className="flex gap-3">
+              <button type="button" onClick={advanceToNext} className="btn btn-sm bg-primary text-white">
+                立即播放
+              </button>
+              <button
+                type="button"
+                onClick={() => setCountdown(null)}
+                className="btn btn-ghost btn-sm text-white"
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {episodeId === null && (
