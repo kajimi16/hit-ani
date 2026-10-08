@@ -145,6 +145,39 @@ docker compose down -v            # 停止并**删除数据**（谨慎）
 
 ---
 
+### 1.7 开机自启（把本机当服务器时）
+
+依赖链上有三层，**只有中间那层会漏**：
+
+| 层 | 现状 | 谁负责 |
+| --- | --- | --- |
+| Docker 守护进程 | 已 `enabled` | 系统 |
+| **代理核心（Clash）** | ⚠️ 由 **GUI 程序**提供，靠桌面 autostart 启动 | **需要显式装成服务** |
+| compose 容器 | 全部 `restart: unless-stopped`，守护进程起来后自动拉回 | Docker |
+
+代理那层是唯一会漏的：`clash-verge` 是**图形程序**，而默认 `graphical.target`
+且没有自动登录 —— 重启后停在登录界面，7897 永远不会监听，容器所有出站请求
+`fetch failed`（症状与代码 bug 完全相同，见 `src/lib/net/egress.ts`）。
+
+装成系统服务（**一条命令，幂等**）：
+
+```bash
+sudo bash deploy/install-autostart.sh
+```
+
+它做的事：装 `verge-mihomo.service`、把 GUI 的桌面自启改名为 `.disabled`
+（否则登录后 GUI 会再拉一个核心抢 7897）、停掉 GUI 拉起的旧核心、
+启用服务、等端口就绪、经代理取一次 `api.bgm.tv` 验证。
+
+> ⚠️ 服务接管后，**改节点/订阅要 `sudo systemctl restart verge-mihomo`** 才生效。
+> 想临时用 GUI 切节点，先 `sudo systemctl stop verge-mihomo`，用完再 start ——
+> 否则两个核心会抢 7897。
+
+**不需要自启的**：`migrate`（一次性任务，`restart: "no"`）、Jellyfin
+（没插媒体盘时它是空库，现在是显式停止状态，重启后保持停止）。
+
+---
+
 ## 出站网络：容器默认直连，代理需显式开启
 
 **默认就是直连** —— 校内服务器部署时这一段不需要做任何事。

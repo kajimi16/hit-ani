@@ -1,0 +1,48 @@
+[Unit]
+Description=Clash Verge 代理核心（verge-mihomo）—— hit-ani 容器出网依赖
+Documentation=https://github.com/kajimi16/hit-ani
+# TUN 配置里开了 auto-detect-interface，需要默认路由**已经就绪**才能选对出口网卡。
+# NetworkManager-wait-online 已启用，所以 network-online.target 会真的等到网络可用。
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+
+# 以 root 运行。
+#
+# 不是因为「偷懒」：配置里 tun.enable=true 且开了 auto-route 与 dns-hijack，
+# 建 TUN 设备与改路由表需要 CAP_NET_ADMIN。
+#
+# 更要紧的是：**这正是 Clash Verge GUI 自己拉核心时的形态**（core 进程本来就是
+# root，由 clash-verge-service 这个 root 助手服务启动）。这里是照搬一个已经
+# 被验证可用的形态，而不是自创一套「非 root + AmbientCapabilities」的写法 ——
+# 后者在没人能立刻反复试错的机器上（每次都要 sudo）不值得赌。
+#
+# 文件属主不会被搞乱：核心只覆写已存在的 kajimi:kajimi 文件（如 cache.db），
+# 而写入不会改变属主。
+User=root
+
+WorkingDirectory=/home/kajimi/.local/share/io.github.clash-verge-rev.clash-verge-rev
+
+# /tmp 在每次重启后是空的，而配置里把控制套接字写死在 /tmp/verge/ 下。
+# 少了这一步，核心会因为建不出套接字而失败 —— 而报错信息与「代理没起来」无关，
+# 很难查。
+ExecStartPre=/bin/mkdir -p /tmp/verge
+
+# 参数与 GUI 实际使用的一模一样（照抄 /proc/<pid>/cmdline）：
+#   -d <配置目录>            geo 数据也在这里
+#   -f <配置文件>            具体用哪份配置
+#   -ext-ctl-unix <套接字>   控制套接字，GUI 用它连核心
+#
+# 写成**单行**：systemd 的反斜杠续行对运维脚本不友好（`sed` 按行读时会读到
+# 半个命令），而 install-autostart.sh 要从这里解析路径。少一类坑。
+ExecStart=/usr/bin/verge-mihomo -d /home/kajimi/.local/share/io.github.clash-verge-rev.clash-verge-rev -f /home/kajimi/.local/share/io.github.clash-verge-rev.clash-verge-rev/clash-verge.yaml -ext-ctl-unix /tmp/verge/verge-mihomo.sock
+
+# 代理挂了整站上游都会失效（BGM / 弹幕源 / 媒体源），所以无条件拉起。
+# 3 秒足够让「端口被旧核心占着」这类情况在旧进程退出后接上。
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
