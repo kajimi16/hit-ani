@@ -111,15 +111,21 @@ curl -s http://<服务器IP>:3100/api/health
 
 ### 1.5 防火墙
 
-两个端口都要放行：
+**只放行 nginx 的 80 / 443**（正门就是它）：
 
 ```bash
-sudo ufw allow 3100/tcp   # 页面 + API
-sudo ufw allow 3102/tcp   # 弹幕 WebSocket
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
 ```
 
-数据库**不需要**放行 —— compose 里它只绑在回环地址（`127.0.0.1:55433`），
-局域网与其他机器都不可达。
+`web`(3100) 与 `gateway`(3102) **只绑在回环地址**（compose 里写的是
+`127.0.0.1:3100:3100`），因此**不需要**放行，局域网也访问不到。
+> 早期这两个端口发布在 `0.0.0.0`，图上省事，实际给了局域网一条**绕过 TLS** 的路径：
+> 那个源上会话 Cookie 不带 `Secure`（`resolveSecureCookie` 按**真实协议**判定，
+> 见 §3 的对照实验），明文可被嗅探 —— 等于把 HTTPS 的收益直接抹掉。
+> 现在 nginx 经环回转发，所以绑回环不影响任何功能。
+
+数据库同理：compose 里它只绑回环（`127.0.0.1:55433`），局域网与其他机器都不可达。
 
 > ⚠️ **实测过的事故**：开发用的数据库容器曾用 `docker run -p 55432:5432` 启动 ——
 > `-p` 默认绑 `0.0.0.0`，等于把数据库放到整个局域网里。当时口令还是弱值 `hitani`，
@@ -127,6 +133,10 @@ sudo ufw allow 3102/tcp   # 弹幕 WebSocket
 > 以及 Bangumi access token 这类账户级凭据）。
 >
 > 用 `-p` 起数据库时务必写成 `-p 127.0.0.1:端口:5432`。
+> 这与上面 3100/3102 是同一条教训：**发布端口前先问「这个端口需要被局域网看到吗」**。
+
+**例外**：Jellyfin(3103) **保持发布在 `0.0.0.0`** —— 它按设计就是让浏览器/电视
+**直连**的（见 §10 与 `JELLYFIN_PUBLIC_URL`），不经过本平台的代理。
 
 ### 1.6 常用操作
 
@@ -367,10 +377,6 @@ sudo systemctl daemon-reload && sudo systemctl enable --now certbot-renew.timer
 >    （见下面「两条硬要求」）。
 > 3. `.env` 里要有 `NEXT_PUBLIC_DANMAKU_WS_URL="/danmaku-ws"`，且它**是构建期
 >    常量** —— 改完必须 `docker compose build migrate web gateway`。
-
-
-
-想用域名 + HTTPS 时。
 
 ### 先说弹幕 WebSocket —— 它是最容易被漏掉的一半
 
