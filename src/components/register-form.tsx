@@ -3,6 +3,17 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+/**
+ * 开放注册生效时的信息；`null` 表示仍是白名单模式。
+ *
+ * 由**服务端**判定后传进来（见 `app/register/page.tsx`）—— 客户端不该自己
+ * 读环境变量（`REGISTRATION_FALLBACK_SCHOOL_ID` 不是 `NEXT_PUBLIC_`），也不该猜。
+ */
+export interface OpenRegistration {
+  /** 非匹配邮箱归入的学校名。 */
+  schoolName: string;
+}
+
 export interface SchoolOption {
   id: string;
   name: string;
@@ -12,6 +23,8 @@ export interface SchoolOption {
 interface Props {
   /** 学校白名单。由服务端组件取好传入 —— 首屏就有，不必客户端再拉一次。 */
   schools: SchoolOption[];
+  /** `null` = 白名单模式（只有下列域名可注册）。 */
+  openRegistration: OpenRegistration | null;
 }
 
 /**
@@ -23,7 +36,7 @@ interface Props {
  * 替换成说明 —— 用户可能已经开始输入了。页面（`page.tsx`）是服务端组件，
  * 它直接调 `checkCapabilities()` 并决定渲染表单还是说明。
  */
-export default function RegisterForm({ schools }: Props) {
+export default function RegisterForm({ schools, openRegistration }: Props) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -107,7 +120,19 @@ export default function RegisterForm({ schools }: Props) {
 
       <div className="panel bg-surface-container text-xs text-on-surface-variant">
         <p className="font-medium text-on-surface">校内准入</p>
-        <p className="mt-1">只有下列学校邮箱域名的账号可以注册，学校归属由此确定：</p>
+        {openRegistration ? (
+          /*
+           * 开放注册：文案必须**说清归属怎么定**，而不只是「都能注册」。
+           * 归属决定「只看本校弹幕」看到谁 —— 用户会关心这件事。
+           */
+          <p className="mt-1">
+            用下列学校邮箱注册时归属会自动对应；
+            <strong className="text-on-surface">其他邮箱也能注册</strong>，归属为「
+            {openRegistration.schoolName}」。
+          </p>
+        ) : (
+          <p className="mt-1">只有下列学校邮箱域名的账号可以注册，学校归属由此确定：</p>
+        )}
         <ul className="mt-2 space-y-1">
           {schools.map((school) => (
             <li key={school.id}>

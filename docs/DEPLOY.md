@@ -83,7 +83,7 @@ docker compose ps            # 三个服务都应为 healthy / Up
 ### 1.3 首次初始化
 
 ```bash
-# 建学校白名单（否则没人能注册）
+# 建学校（至少一所，否则没人能注册）
 docker compose exec postgres psql -U hitani -d hitani -c "
 INSERT INTO \"School\" (id, name, domains) VALUES
   ('hit', '哈尔滨工业大学', ARRAY['hit.edu.cn','stu.hit.edu.cn'])
@@ -504,10 +504,43 @@ docker compose exec web printenv NEXT_PUBLIC_DANMAKU_WS_URL
 | **配置 `DANMAKU_BLOCKED_WORDS`** | 弹幕/评论/短评/昵称都靠它过滤。留空等于没有任何内容管控，违规内容会直接进所有人屏幕，法律风险落在部署方（学校） |
 | **授予至少一个管理员** | 举报处理后台在 `/admin/reports`，**仅管理员可见**。一个都没有等于举报无人处理。用 `npm run admin:grant <邮箱或学号>` 授予（改 `User.isAdmin`，**不需要重启**）。见下一节「管理员与举报处理」 |
 | **替换 `SESSION_SECRET` 与 `POSTGRES_PASSWORD`** | 默认值仅供开发 |
-| **配好学校白名单** | 否则没人能注册（注册按邮箱域名判定学校归属） |
+| **建好学校，并决定准入口径** | 至少一所学校，否则没人能注册。默认**白名单模式**：只有 `School.domains` 里列出的邮箱域名能注册。若校内同学未必都有本校邮箱，设 `REGISTRATION_FALLBACK_SCHOOL_ID=<schoolId>` 开放注册（见 §4.1） |
 | **确认内容策略** | 抓取源由你选择，相应责任也在你。见 `docs/MEDIA.md` §6.4 |
 
 ---
+
+### 4.1 注册准入口径：白名单 / 开放注册
+
+`schoolId` 是「只看本校弹幕」的**唯一依据**（本校筛选、好友与时光机的学校隔离都靠它），
+所以准入口径是需要显式决定的策略，不是实现细节。
+
+| 模式 | 配置 | 行为 |
+| --- | --- | --- |
+| **白名单**（默认） | `REGISTRATION_FALLBACK_SCHOOL_ID` **留空** | 只有 `School.domains` 里列出的域名能注册，其余一律拒绝 |
+| **开放注册** | `REGISTRATION_FALLBACK_SCHOOL_ID=<schoolId>` | 域名**匹配**到某所学校就归那所；**不匹配**的归这一所 |
+
+```env
+# 例：校内很多同学没有 hit.edu.cn 邮箱时
+REGISTRATION_FALLBACK_SCHOOL_ID="hit"
+```
+
+**为什么默认是白名单**：打开开放注册等于把「校内」的判定从「持有本校邮箱」
+降级为「能访问本站 + 会用一个邮箱」。对自建校园站通常可接受（站点在校园网内，
+校外本来就访问不到），但它**改变了核心功能「只看本校弹幕」的含义** ——
+那种改变不该由升级代码悄悄做掉。未配置时的行为与改动前**逐字相同**。
+
+**配错会响亮失败**：若该变量指向不存在的学校 id，注册会报
+「开放注册已启用，但 … 不是有效的学校 id」，而**不会**静默退回白名单 ——
+退回的话报错会指向「邮箱域名不允许」，与真实原因（id 拼错）完全无关。
+
+启动时会播报当前口径，排查「同学说注册不了」先看它：
+
+```bash
+docker compose logs web | grep '\[registration\]'
+```
+
+---
+
 
 ## 管理员与举报处理
 

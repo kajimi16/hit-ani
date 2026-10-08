@@ -21,6 +21,7 @@
 import { announceCapabilities } from "@/lib/email/capabilities";
 import { announceEgress } from "@/lib/net/egress";
 import { announceSchemaDrift } from "@/lib/db/schema-drift";
+import { announceRegistrationAdmission } from "@/lib/auth/school";
 
 export async function register(): Promise<void> {
   /*
@@ -46,4 +47,12 @@ export async function register(): Promise<void> {
    * 放在最后：它要连数据库，是最慢的一项，而上面两项是纯内存判断。
    */
   await announceSchemaDrift();
+
+  /*
+   * 注册准入口径（白名单 / 开放注册）。
+   *
+   * 两种模式对用户的差别极大（一种「任何邮箱都行」，另一种「只有本校邮箱」），
+   * 而「同学说注册不了」是常见报障 —— 第一眼要看的就是它。
+   */
+  await announceRegistrationAdmission();
 }

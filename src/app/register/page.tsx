@@ -1,4 +1,5 @@
 import { checkCapabilities } from "@/lib/email/capabilities";
+import { fallbackSchoolId } from "@/lib/auth/school";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import RegisterForm from "@/components/register-form";
@@ -61,5 +62,19 @@ export default async function RegisterPage() {
     );
   }
 
-  return <RegisterForm schools={schools} />;
+  /*
+   * 准入口径一并传到表单：界面上的说明必须与**服务端实际的判定**一致。
+   *
+   * 早先这段文案写死了「只有下列学校邮箱域名的账号可以注册」—— 一旦启用开放
+   * 注册，那句话就变成了谎话，而用户会因此以为自己的邮箱不能用、直接放弃。
+   */
+  const fallbackId = fallbackSchoolId();
+  const openTo = fallbackId ? (schools.find((s) => s.id === fallbackId) ?? null) : null;
+
+  return (
+    <RegisterForm
+      schools={schools}
+      openRegistration={openTo ? { schoolName: openTo.name } : null}
+    />
+  );
 }
