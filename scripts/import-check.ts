@@ -52,12 +52,14 @@ function resetLog(): void {
   log.total = 0;
 }
 
+import { STUB_SUBJECT_ID_MIN, STUB_SUBJECT_ID_MAX } from "@/lib/subject-ids";
+
 const SUBJECT_COUNT = 250;
 const EPISODES_PER_SUBJECT = 3;
 
 /** 桩：250 个收藏、每个 3 集、每个 1 条进度。 */
 function stubUpstream(): void {
-  const ids = Array.from({ length: SUBJECT_COUNT }, (_, i) => 800_000 + i);
+  const ids = Array.from({ length: SUBJECT_COUNT }, (_, i) => STUB_SUBJECT_ID_MIN + i);
 
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -296,18 +298,26 @@ async function main(): Promise<void> {
 
     // 只数桩范围内 —— 本地开发库里本来就有真实条目，不能假设全库等于桩数量
     const stubCounts = await prisma.subject.count({
-      where: { id: { gte: 800_000, lt: 800_000 + SUBJECT_COUNT } },
+      where: { id: { gte: STUB_SUBJECT_ID_MIN, lt: STUB_SUBJECT_ID_MIN + SUBJECT_COUNT } },
     });
     check(`桩条目数 = ${SUBJECT_COUNT}（无重复插入）`, stubCounts === SUBJECT_COUNT, stubCounts);
   } finally {
     globalThis.fetch = REAL_FETCH;
     await prisma.user.delete({ where: { id: user.id } }).catch(() => undefined);
-    // 清理桩数据，避免污染本地库
-    await prisma.danmaku.deleteMany({ where: { episode: { subjectId: { gte: 800_000, lt: 900_000 } } } }).catch(() => undefined);
-    await prisma.collection.deleteMany({ where: { subjectId: { gte: 800_000, lt: 900_000 } } }).catch(() => undefined);
-    await prisma.episodeProgress.deleteMany({ where: { episode: { subjectId: { gte: 800_000, lt: 900_000 } } } }).catch(() => undefined);
-    await prisma.episode.deleteMany({ where: { subjectId: { gte: 800_000, lt: 900_000 } } }).catch(() => undefined);
-    await prisma.subject.deleteMany({ where: { id: { gte: 800_000, lt: 900_000 } } }).catch(() => undefined);
+    /*
+     * 清理桩数据，避免污染本地库。
+     *
+     * **按整段删，不按「本次写了多少」** —— 上限用 `STUB_SUBJECT_ID_MAX` 而不是
+     * `STUB_SUBJECT_ID_MIN + SUBJECT_COUNT`。差别在换基址或改 `SUBJECT_COUNT` 时：
+     * 按本次范围删，上一次写的桩就成了永远清不掉的孤儿（这正是本站
+     * 排行榜一度被 15 条桩条目霸榜的原因）。
+     */
+    const band = { gte: STUB_SUBJECT_ID_MIN, lt: STUB_SUBJECT_ID_MAX };
+    await prisma.danmaku.deleteMany({ where: { episode: { subjectId: band } } }).catch(() => undefined);
+    await prisma.collection.deleteMany({ where: { subjectId: band } }).catch(() => undefined);
+    await prisma.episodeProgress.deleteMany({ where: { episode: { subjectId: band } } }).catch(() => undefined);
+    await prisma.episode.deleteMany({ where: { subjectId: band } }).catch(() => undefined);
+    await prisma.subject.deleteMany({ where: { id: band } }).catch(() => undefined);
   }
 
   console.log(`\n通过 ${checks - failures} / ${checks}`);

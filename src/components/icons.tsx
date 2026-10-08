@@ -53,6 +53,18 @@ export function IconFlag({ size = 24, className }: IconProps) {
   );
 }
 
+/** 排行榜 —— 柱状条（Material 的 `leaderboard`）。 */
+export function IconLeaderboard({ size = 24, className }: IconProps) {
+  return (
+    <svg {...base(size, className)}>
+      <path d="M4 20V12" />
+      <path d="M10 20V5" />
+      <path d="M16 20v-6" />
+      <path d="M3 20h18" />
+    </svg>
+  );
+}
+
 /** 好友 —— 两个人（Material 的 `people`）。 */
 export function IconPeople({ size = 24, className }: IconProps) {
   return (

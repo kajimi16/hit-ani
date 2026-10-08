@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -291,4 +292,56 @@ async function bgmAccessTokenFor(user: SessionUser | null): Promise<string | und
   } catch {
     return undefined;
   }
+}
+
+/**
+ * 分享预览：同学把某部番的链接甩进班群时，卡片上要能看到**番名与封面**，
+ * 而不是一条裸链接。
+ *
+ * 只读**本地缓存**，不回源 BGM —— `generateMetadata` 与页面渲染是两条独立的
+ * 执行路径，若它自己再 `enrichSubject` 一次，同一次访问就会打两遍上游。
+ * 代价是「库中还没有的条目」没有预览图，而那本来就还没法正常打开。
+ */
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}): Promise<Metadata> {
+  const { id } = await params;
+  const subjectId = Number(id);
+  if (!Number.isInteger(subjectId) || subjectId <= 0) return {};
+
+  const subject = await prisma.subject.findUnique({
+    where: { id: subjectId },
+    select: { nameCn: true, name: true, summary: true, coverUrl: true, score: true },
+  });
+  if (!subject) return {};
+
+  const title = subject.nameCn || subject.name;
+  // 描述里带上评分：一眼能看出「这部番值不值得点」。
+  const rating =
+    subject.score !== null && subject.score > 0
+      ? `Bangumi ${subject.score.toFixed(1)} 分`
+      : null;
+  const raw = [rating, subject.summary?.replace(/\s+/g, " ").trim()].filter(Boolean).join(" · ");
+  const description = raw.slice(0, 160) || undefined;
+
+  /*
+   * 图片地址**必须是绝对 URL** —— 分享卡片的爬虫在对方站点上取不到相对路径。
+   * `coverUrl` 上游给的就是绝对地址，原样透传即可。
+   */
+  const images = subject.coverUrl ? [{ url: subject.coverUrl, alt: title }] : undefined;
+
+  return {
+    title,
+    description,
+    openGraph: { type: "video.tv_show", title, description, images },
+    twitter: {
+      // 有封面时用大图卡，没有时退回紧凑卡（否则会渲染一块空白）
+      card: images ? "summary_large_image" : "summary",
+      title,
+      description,
+      images: subject.coverUrl ? [subject.coverUrl] : undefined,
+    },
+  };
 }

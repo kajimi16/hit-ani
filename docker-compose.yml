@@ -80,8 +80,14 @@ services:
       # 时这是唯一能让构建走通的方式（容器网络到不了宿主回环）。
       network: host
       args:
-        HTTP_PROXY: ${HTTP_PROXY_URL-}
-        HTTPS_PROXY: ${HTTP_PROXY_URL-}
+        # ⚠️ 构建与运行期**必须用不同的地址**，别合并成一个变量：
+        #   构建 → `network: host`，代理在**宿主的 127.0.0.1**；
+        #   运行 → 桥接网络，只能走 `host.docker.internal`。
+        #   合并的后果实测过：构建容器是 host 网络，而 `host.docker.internal`
+        #   在宿主 /etc/hosts 里**没有条目** → 解析失败 → `apt-get update`
+        #   拿不到索引、`npm ci` 也连不上，报出来却像网络故障。
+        HTTP_PROXY: ${BUILD_PROXY_URL-}
+        HTTPS_PROXY: ${BUILD_PROXY_URL-}
       # 用 migrator 阶段：它保留 devDependencies，因而有 prisma CLI。
       # 生产镜像（runner）出于体积考虑剔除了 CLI。
       target: migrator
@@ -103,8 +109,8 @@ services:
       # 时这是唯一能让构建走通的方式（容器网络到不了宿主回环）。
       network: host
       args:
-        HTTP_PROXY: ${HTTP_PROXY_URL-}
-        HTTPS_PROXY: ${HTTP_PROXY_URL-}
+        HTTP_PROXY: ${BUILD_PROXY_URL-}
+        HTTPS_PROXY: ${BUILD_PROXY_URL-}
     # 容器内访问 127.0.0.1 是容器自己 —— 用 host-gateway 指向宿主机
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -167,8 +173,8 @@ services:
       # 时这是唯一能让构建走通的方式（容器网络到不了宿主回环）。
       network: host
       args:
-        HTTP_PROXY: ${HTTP_PROXY_URL-}
-        HTTPS_PROXY: ${HTTP_PROXY_URL-}
+        HTTP_PROXY: ${BUILD_PROXY_URL-}
+        HTTPS_PROXY: ${BUILD_PROXY_URL-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped

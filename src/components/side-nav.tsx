@@ -9,6 +9,7 @@ import {
   IconExplore,
   IconHistory,
   IconFlag,
+  IconLeaderboard,
   IconPeople,
   IconSettings,
 } from "@/components/icons";
@@ -60,6 +61,7 @@ export default function SideNav({ isAdmin, user }: Props) {
     },
     { href: "/library", label: "追番", icon: IconBookmark, match: (p) => p.startsWith("/library") },
     { href: "/schedule", label: "时间表", icon: IconCalendar, match: (p) => p.startsWith("/schedule") },
+    { href: "/ranking", label: "排行榜", icon: IconLeaderboard, match: (p) => p.startsWith("/ranking") },
     { href: "/timeline", label: "时光机", icon: IconHistory, match: (p) => p.startsWith("/timeline") },
     {
       href: "/friends",
