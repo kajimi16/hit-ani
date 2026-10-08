@@ -241,8 +241,12 @@ export default async function SubjectPage({
               ep: episode.ep,
             }))}
             canInteract={user !== null}
-            // 续播位置：只给外站源路径用（Jellyfin 那条由 Jellyfin 自己管）
+            // 续播位置：只给外站源路径用（Jellyfin 那条由 Jellyfin 自己管）。
+            // 必须连**集号**一起传 —— 位置是条目级的，只凭位置无法判断当前
+            // 这一集是不是上次看到的那一集（看完第 1 集自动切第 2 集时，
+            // 第 2 集会在开头就跳到第 1 集的片尾位置）。
             resumePositionMs={collection?.playbackPositionMs ?? null}
+            resumeEpisodeId={collection?.playbackEpisodeId ?? null}
           />
 
           <EpisodeWorkspace

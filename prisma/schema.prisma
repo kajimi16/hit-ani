@@ -265,6 +265,15 @@ model Collection {
    * null 表示「没有可续播的位置」，界面据此决定是否显示进度）。
    */
   playbackPositionMs Int?
+  /**
+   * `playbackPositionMs` 属于**哪一集**（BGM 的 episodeId）。
+   *
+   * 没有它就无法判断「这次续播该不该用这个位置」—— 位置是条目级的
+   * （一部番同时只在一个位置续看），但只存位置会让**换集后仍用上一集的
+   * 位置**续播：看完第 1 集自动切到第 2 集，第 2 集一开头就跳到第 1 集的
+   * 片尾位置，于是立刻又触发「播完」。手动点开别的集也一样错。
+   */
+  playbackEpisodeId Int?
 
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)

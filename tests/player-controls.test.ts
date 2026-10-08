@@ -15,10 +15,11 @@ import {
   clampTime,
   countdownRemaining,
   formatSpeed,
-  isTypingTarget,
+  ownsKeyboard,
   nearestSpeedIndex,
   resolveShortcut,
   normalizePlayerPrefs,
+  resumeStartMs,
   seekTargetFromDrag,
   shouldAutoAdvance,
   stepSpeed,
@@ -71,49 +72,64 @@ test("★ 输入状态下所有快捷键都失效 —— 否则打弹幕会改�
   // 这是安全不变量：弹幕输入框就在同一个组件里，不过滤的话
   // 打「[」改倍速、打空格暂停、打「f」全屏，且**没有任何报错**。
   for (const key of [" ", "k", "ArrowLeft", "ArrowRight", "[", "]", "0", "m", "f"]) {
-    assert.equal(resolveShortcut({ key, typing: true }), null, `输入时 ${key} 不该触发动作`);
+    assert.equal(
+      resolveShortcut({ key, targetOwnsKeys: true }),
+      null,
+      `输入时 ${key} 不该触发动作`,
+    );
   }
 });
 
-test("input / textarea / select / contenteditable 都算「正在输入」", () => {
-  assert.equal(isTypingTarget({ tagName: "INPUT" }), true);
-  assert.equal(isTypingTarget({ tagName: "textarea" }), true);
-  assert.equal(isTypingTarget({ tagName: "select" }), true);
+test("input / textarea / select / contenteditable 都算「自己拥有键盘」", () => {
+  assert.equal(ownsKeyboard({ tagName: "INPUT" }), true);
+  assert.equal(ownsKeyboard({ tagName: "textarea" }), true);
+  assert.equal(ownsKeyboard({ tagName: "select" }), true);
   // contenteditable 不在 tagName 上 —— 只查 tagName 会漏
-  assert.equal(isTypingTarget({ tagName: "DIV", isContentEditable: true }), true);
-  assert.equal(isTypingTarget({ tagName: "DIV" }), false);
-  assert.equal(isTypingTarget(null), false);
+  assert.equal(ownsKeyboard({ tagName: "DIV", isContentEditable: true }), true);
+  assert.equal(ownsKeyboard({ tagName: "DIV" }), false);
+  assert.equal(ownsKeyboard(null), false);
+});
+
+test("★ 已聚焦的按钮/链接也算「自己拥有键盘」—— 空格该激活那个按钮，不是切播放", () => {
+  // 用户刚点了「静音」按钮，此时空格必须再点一次**那个**按钮。
+  // 抢过来会在用户毫无察觉的情况下切换播放状态。
+  for (const tagName of ["button", "a", "SUMMARY"]) {
+    assert.equal(ownsKeyboard({ tagName }), true, tagName);
+  }
+  // 仍然不能把整个播放器容器算进去（否则快捷键永不生效）
+  assert.equal(ownsKeyboard({ tagName: "DIV" }), false);
+  assert.equal(ownsKeyboard({ tagName: "VIDEO" }), false);
 });
 
 test("带修饰键的组合不拦（Ctrl+F 查找、Cmd+R 刷新要留给浏览器）", () => {
-  assert.equal(resolveShortcut({ key: "f", ctrlKey: true, typing: false }), null);
-  assert.equal(resolveShortcut({ key: " ", metaKey: true, typing: false }), null);
-  assert.equal(resolveShortcut({ key: "k", altKey: true, typing: false }), null);
+  assert.equal(resolveShortcut({ key: "f", ctrlKey: true, targetOwnsKeys: false }), null);
+  assert.equal(resolveShortcut({ key: " ", metaKey: true, targetOwnsKeys: false }), null);
+  assert.equal(resolveShortcut({ key: "k", altKey: true, targetOwnsKeys: false }), null);
 });
 
 test("空格与 K 都是播放/暂停；左右是 ±5 秒", () => {
-  assert.deepEqual(resolveShortcut({ key: " ", typing: false }), { kind: "toggle-play" });
-  assert.deepEqual(resolveShortcut({ key: "k", typing: false }), { kind: "toggle-play" });
-  assert.deepEqual(resolveShortcut({ key: "ArrowLeft", typing: false }), {
+  assert.deepEqual(resolveShortcut({ key: " ", targetOwnsKeys: false }), { kind: "toggle-play" });
+  assert.deepEqual(resolveShortcut({ key: "k", targetOwnsKeys: false }), { kind: "toggle-play" });
+  assert.deepEqual(resolveShortcut({ key: "ArrowLeft", targetOwnsKeys: false }), {
     kind: "seek-by",
     seconds: -5,
   });
-  assert.deepEqual(resolveShortcut({ key: "ArrowRight", typing: false }), {
+  assert.deepEqual(resolveShortcut({ key: "ArrowRight", targetOwnsKeys: false }), {
     kind: "seek-by",
     seconds: 5,
   });
 });
 
 test("方括号调速：`[` 减速、`]` 加速；`0` 回到 1×", () => {
-  assert.deepEqual(resolveShortcut({ key: "[", typing: false }), { kind: "speed", delta: -1 });
-  assert.deepEqual(resolveShortcut({ key: "]", typing: false }), { kind: "speed", delta: 1 });
-  assert.deepEqual(resolveShortcut({ key: "0", typing: false }), { kind: "speed-reset" });
+  assert.deepEqual(resolveShortcut({ key: "[", targetOwnsKeys: false }), { kind: "speed", delta: -1 });
+  assert.deepEqual(resolveShortcut({ key: "]", targetOwnsKeys: false }), { kind: "speed", delta: 1 });
+  assert.deepEqual(resolveShortcut({ key: "0", targetOwnsKeys: false }), { kind: "speed-reset" });
 });
 
 test("不认识的键返回 null（不拦截，避免吃掉浏览器默认行为）", () => {
-  assert.equal(resolveShortcut({ key: "a", typing: false }), null);
-  assert.equal(resolveShortcut({ key: "Enter", typing: false }), null);
-  assert.equal(resolveShortcut({ key: "Tab", typing: false }), null);
+  assert.equal(resolveShortcut({ key: "a", targetOwnsKeys: false }), null);
+  assert.equal(resolveShortcut({ key: "Enter", targetOwnsKeys: false }), null);
+  assert.equal(resolveShortcut({ key: "Tab", targetOwnsKeys: false }), null);
 });
 
 /* ================================================================== *
@@ -204,4 +220,63 @@ test("只给部分字段时，其余取默认（与改动前的行为等价：1�
   const prefs = normalizePlayerPrefs({ autoNext: false });
   assert.equal(prefs.autoNext, false);
   assert.equal(prefs.speed, DEFAULT_SPEED, "默认倍速必须是 1，与改动前一致");
+});
+
+/* ================================================================== *
+ * 续播
+ * ================================================================== */
+
+test("★ 集号对不上时不续播 —— 否则换集后在开头就跳到上一集的片尾", () => {
+  // 这是真事故：看完第 1 集自动切第 2 集 → 第 2 集一开头就跳到第 1 集
+  // 的片尾位置 → 立刻又「播完」→ 一集接一集空转。
+  assert.equal(
+    resumeStartMs({ currentEpisodeId: 523, recordedEpisodeId: 522, recordedPositionMs: 45_000 }),
+    0,
+    "第 2 集不该用第 1 集的位置",
+  );
+});
+
+test("集号一致才续播 —— 否则功能就白做了", () => {
+  assert.equal(
+    resumeStartMs({ currentEpisodeId: 522, recordedEpisodeId: 522, recordedPositionMs: 45_000 }),
+    45_000,
+  );
+});
+
+test("★ 老数据（没有集号）宁可从头播 —— 猜错就是从片尾开始", () => {
+  // 加这一列之前写入的位置没有集号。猜错的表现是「一打开就结束了」，
+  // 比「从头播」糟得多，所以这里必须返回 0。
+  assert.equal(
+    resumeStartMs({ currentEpisodeId: 522, recordedEpisodeId: null, recordedPositionMs: 45_000 }),
+    0,
+  );
+});
+
+test("★ 两边都是 null 时也必须返回 0 —— 这一格只有「显式 null 守卫」能拦", () => {
+  /*
+   * 反向验证发现的缺口：`(null, 522)` 那一格其实是被**集号比较**兜住的
+   * （`null !== 522`），所以删掉显式 null 守卫时那条测试**不会失败** ——
+   * 它没有隔离住自己要测的东西。而 `(null, null)` 时 `null !== null` 为假，
+   * 比较拦不住，会一路走到读位置，于是「在 BGM 里找不到对应集」的弹幕场景
+   * 会莫名其妙地续播。这一格才是显式守卫真正的用武之地。
+   */
+  assert.equal(
+    resumeStartMs({ currentEpisodeId: null, recordedEpisodeId: null, recordedPositionMs: 45_000 }),
+    0,
+  );
+});
+
+test("当前集在 BGM 里找不到对应时不续播（连是不是同一集都无从判断）", () => {
+  assert.equal(
+    resumeStartMs({ currentEpisodeId: null, recordedEpisodeId: 522, recordedPositionMs: 45_000 }),
+    0,
+  );
+});
+
+test("位置缺失/为 0/负数/NaN 都回落到 0，不产生 NaN currentTime", () => {
+  const base = { currentEpisodeId: 522, recordedEpisodeId: 522 };
+  assert.equal(resumeStartMs({ ...base, recordedPositionMs: null }), 0);
+  assert.equal(resumeStartMs({ ...base, recordedPositionMs: 0 }), 0);
+  assert.equal(resumeStartMs({ ...base, recordedPositionMs: -1 }), 0);
+  assert.equal(resumeStartMs({ ...base, recordedPositionMs: Number.NaN }), 0);
 });

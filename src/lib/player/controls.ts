@@ -91,36 +91,46 @@ export const SEEK_STEP_SECONDS = 5;
 export const VOLUME_STEP = 0.05;
 
 /**
- * 判断事件目标是否处于「正在输入」状态 —— 此时**绝不允许**快捷键生效。
+ * 该事件目标是否**自己拥有键盘** —— 拥有时播放器一律不拦。
  *
- * ## 为什么这是安全不变量而不是体验优化
+ * 覆盖两类，缺一不可：
  *
- * 弹幕输入框就在同一个组件里。若不过滤，用户在输入框里打字时：
- * - 打 `[` → 播放速度被改；
- * - 打 空格 → 视频暂停；
- * - 打 `f` → 全屏，输入框直接被遮住。
+ * 1. **正在输入**（`input` / `textarea` / `select` / `contenteditable`）。
+ *    弹幕输入框就在同一个组件里 —— 不过滤的话用户打弹幕时敲 `[` 会改倍速、
+ *    敲空格会暂停、敲 `f` 会全屏，而**没有任何报错**。
+ * 2. **已聚焦的可操作控件**（`button` / `a` / `summary`）。用户刚刚点了
+ *    「静音」按钮，此时按空格应当**再点一次那个按钮**，而不是被我们抢去
+ *    切换播放。空格与回车对按钮来说就是「激活」，抢过来是错的。
  *
- * 而且**没有任何报错**，用户只会觉得「这个站打字好奇怪」。
- *
- * 判定覆盖 `input` / `textarea` / `select` 与 `contenteditable`（后者在
- * `isContentEditable` 上，不在 tagName 上，只查 tagName 会漏）。
+ * `contenteditable` 必须查 `isContentEditable` —— 它不在 `tagName` 上，
+ * 只查 tagName 会漏掉整个富文本场景。
  */
-export function isTypingTarget(target: {
+export function ownsKeyboard(target: {
   tagName?: string;
   isContentEditable?: boolean;
 } | null): boolean {
   if (!target) return false;
   if (target.isContentEditable) return true;
   const tag = target.tagName?.toUpperCase();
-  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+  return (
+    tag === "INPUT" ||
+    tag === "TEXTAREA" ||
+    tag === "SELECT" ||
+    tag === "BUTTON" ||
+    tag === "A" ||
+    tag === "SUMMARY"
+  );
 }
 
 /**
  * 把按键解析成动作。不认识的键返回 `null`（不拦截）。
  *
+ * `targetOwnsKeys` 由 `ownsKeyboard()` 得出 —— 见那里的说明，
+ * 它同时覆盖「正在输入」与「已聚焦的控件」两类。
+ *
  * `key` 用 `KeyboardEvent.key`（不是 `code`）—— 这样在非英文键盘布局下
  * 按下的仍是**印在键上的那个字符**对应的行为。中文输入法不会影响它，
- * 因为输入法组合期间的按键会被 `isTypingTarget` 拦掉。
+ * 因为输入法组合期间的按键会被 `ownsKeyboard` 拦掉。
  */
 export function resolveShortcut(input: {
   key: string;
@@ -128,11 +138,11 @@ export function resolveShortcut(input: {
   metaKey?: boolean;
   altKey?: boolean;
   shiftKey?: boolean;
-  typing: boolean;
+  targetOwnsKeys: boolean;
 }): ShortcutAction | null {
   // 带修饰键的组合留给浏览器（Ctrl+F 查找、Cmd+R 刷新…），一律不拦
   if (input.ctrlKey || input.metaKey || input.altKey) return null;
-  if (input.typing) return null;
+  if (input.targetOwnsKeys) return null;
 
   switch (input.key) {
     case " ":
@@ -301,4 +311,49 @@ export function writePlayerPrefs(prefs: PlayerPrefs): void {
   } catch {
     // 写不进去不影响本次播放
   }
+}
+
+/* ------------------------------------------------------------------ *
+ * 续播
+ * ------------------------------------------------------------------ */
+
+/**
+ * 续播的起始位置。
+ *
+ * ## 为什么需要「集号」而不只是位置
+ *
+ * 位置在库里是**条目级**的（一部番同时只在一个位置续看），但只凭位置
+ * 无法判断它属于哪一集。实测的后果：
+ *
+ * - 看完第 1 集自动切到第 2 集 → 第 2 集在**开头**就跳到第 1 集的片尾位置，
+ *   于是立刻又触发「播完」，一集接一集地空转；
+ * - 手动点开第 5 集 → 从第 1 集的位置开始播。
+ *
+ * 因此位置必须连带记下「属于哪一集」（`Collection.playbackEpisodeId`），
+ * 对不上就**从 0 开始**。
+ *
+ * ## 老数据为什么也返回 0
+ *
+ * 加这一列之前写入的 `playbackPositionMs` 没有集号。那种情况下**宁可从头
+ * 播**也不猜 —— 猜错就是从片尾开始（用户看到「一打开就结束了」）。
+ *
+ * 另外 `SourcePlayer` 的 `key={playing.url}` 会让换集时播放器**整体重新挂载**，
+ * 而 `resumePositionMs` 是服务端渲染的属性、一次会话内不变，所以判定
+ * 必须在每次挂载时按当前集号重新做，不能缓存在调用方。
+ */
+export function resumeStartMs(input: {
+  /** 当前这一集的 BGM episodeId；这一集在 BGM 里找不到对应时为 null。 */
+  currentEpisodeId: number | null;
+  /** 库里记着的位置属于哪一集；老数据为 null。 */
+  recordedEpisodeId: number | null;
+  /** 库里记着的位置（毫秒）。 */
+  recordedPositionMs: number | null;
+}): number {
+  // 找不到对应集号时不续播 —— 这时连「是不是同一集」都无从判断
+  if (input.currentEpisodeId === null || input.recordedEpisodeId === null) return 0;
+  if (input.currentEpisodeId !== input.recordedEpisodeId) return 0;
+
+  const position = input.recordedPositionMs;
+  if (position === null || !Number.isFinite(position) || position <= 0) return 0;
+  return position;
 }

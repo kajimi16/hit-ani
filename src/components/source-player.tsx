@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import VideoPlayer from "@/components/video-player";
+import { resumeStartMs } from "@/lib/player/controls";
 
 interface Episode {
   name: string;
@@ -24,6 +25,15 @@ interface Props {
    * 两边打架 —— 那个决定是有意为之，见 `jellyfin-panel.tsx` 的注释。
    */
   resumePositionMs?: number | null;
+  /**
+   * `resumePositionMs` 属于哪一集（BGM episodeId）。
+   *
+   * 位置在库里是**条目级**的（一部番同时只在一个位置续看），所以必须靠
+   * 集号判断「现在播的这一集是不是上次看到的那一集」——
+   * 否则看完第 1 集自动切到第 2 集时，第 2 集会在开头就跳到第 1 集的
+   * 片尾位置，于是立刻又触发「播完」，一集接一集地空转。
+   */
+  resumeEpisodeId?: number | null;
   onClose: () => void;
 }
 
@@ -47,6 +57,7 @@ export default function SourcePlayer({
   detailUrl,
   canInteract,
   resumePositionMs = null,
+  resumeEpisodeId = null,
   onClose,
 }: Props) {
   /**
@@ -193,7 +204,17 @@ export default function SourcePlayer({
           title={playing.name}
           streamUrl={playing.url}
           // 续播：外站源没有服务端播放记录，只能靠我们自己存的这条位置
-          startAtMs={resumePositionMs ?? 0}
+          /*
+           * 续播判定走纯函数（`resumeStartMs`，有测试）：只有「当前这集 ==
+           * 记着的那集」才用记下的位置，否则从 0 开始。**不能**写成
+           * `resumePositionMs ?? 0` —— 那是一次会话内不变的服务端渲染属性，
+           * 而换集只是重新挂载播放器，于是每一集都会用同一个位置续播。
+           */
+          startAtMs={resumeStartMs({
+            currentEpisodeId: bgmEpisodeId,
+            recordedEpisodeId: resumeEpisodeId,
+            recordedPositionMs: resumePositionMs,
+          })}
           canInteract={canInteract}
           onProgress={
             /*

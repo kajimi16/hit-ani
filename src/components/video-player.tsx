@@ -23,7 +23,7 @@ import {
   clampTime,
   countdownRemaining,
   formatSpeed,
-  isTypingTarget,
+  ownsKeyboard,
   resolveShortcut,
   seekTargetFromDrag,
   shouldAutoAdvance,
@@ -860,35 +860,49 @@ export default function VideoPlayer({
   );
 
   /**
-   * 全局快捷键。
+   * 快捷键。
    *
-   * 挂在 `document` 上而不是播放器容器上：用户点了全屏按钮之后焦点不在
-   * 容器里，绑在容器上的监听收不到按键。因此**必须**用 `isTypingTarget`
-   * 过滤掉输入框 —— 那条是安全不变量（见 `lib/player/controls.ts`）。
+   * **挂在播放器外框上，不挂 `document`。** 挂 document 会让「播放器只是
+   * 挂在页面上」就劫持整页的空格与方向键 —— 条目页有一屏又一屏的章节、
+   * 评论、影评，用户按空格想往下翻，结果是视频暂停/播放，
+   * 而且**没有任何提示**说明是谁拿走了按键。
+   *
+   * 为了让焦点能落在容器上：容器设了 `tabIndex={-1}`，并且在 `pointerdown`
+   * 时主动 `focus()`（点视频任意位置即可）。全屏时容器本身就是
+   * `fullscreenElement`，按键仍然冒泡到它，因此全屏下同样有效。
+   *
+   * `ownsKeyboard` 是安全不变量：输入框（弹幕框就在同一组件里）与已聚焦的
+   * 按钮都必须自己保留按键 —— 见 `lib/player/controls.ts`。
    */
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
+  const onShellKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
       const action = resolveShortcut({
         key: event.key,
         ctrlKey: event.ctrlKey,
         metaKey: event.metaKey,
         altKey: event.altKey,
         shiftKey: event.shiftKey,
-        typing: isTypingTarget(event.target as { tagName?: string; isContentEditable?: boolean }),
+        targetOwnsKeys: ownsKeyboard(event.target as { tagName?: string; isContentEditable?: boolean }),
       });
       if (!action) return;
       // 空格会滚动页面、方向键会滚动 —— 既然我们接管了就必须阻止默认
       event.preventDefault();
       runShortcut(action);
-    };
-
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [runShortcut]);
+    },
+    [runShortcut],
+  );
 
   /* ---- 偏好：挂载后才读 localStorage（SSR 阶段没有它）---- */
   useEffect(() => {
     const prefs = readPlayerPrefs();
+    /*
+     * **ref 必须在 `applySpeed` 之前赋值** —— `applySpeed` 会把两个偏好
+     * 一起写回存储，而它读的是 `autoNextRef.current`。漏掉这一行的话，
+     * 存着 `autoNext: false` 的用户每次挂载都会被改回 `true`：
+     * 持久化形同虚设，而且**没有任何报错**（这正是当初加持久化要修的
+     * 那个「设置每次被重置」问题，只是换了个地方复发）。
+     */
+    autoNextRef.current = prefs.autoNext;
     setAutoNext(prefs.autoNext);
     applySpeed(prefs.speed);
   }, [applySpeed]);
@@ -991,7 +1005,15 @@ export default function VideoPlayer({
       */}
       <div
         ref={shellRef}
-        className="player-shell group relative overflow-hidden rounded border border-outline-variant bg-black"
+        /*
+         * `tabIndex={-1}` 让容器可被**程序化**聚焦（不进入 Tab 顺序）——
+         * 快捷键监听挂在它身上，所以焦点必须能落到这里。点视频任意位置
+         * 即聚焦，这也是「我要开始操作播放器了」的自然信号。
+         */
+        tabIndex={-1}
+        onKeyDown={onShellKeyDown}
+        onPointerDown={() => shellRef.current?.focus()}
+        className="player-shell group relative overflow-hidden rounded border border-outline-variant bg-black outline-none focus-visible:ring-2 focus-visible:ring-primary"
         onMouseMove={showControlsTemporarily}
         onMouseLeave={() => !paused && setControlsVisible(false)}
       >

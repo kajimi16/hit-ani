@@ -42,6 +42,8 @@ interface Props {
    * Jellyfin 自己维护播放位置（跨设备同步），本地再存一份会两边打架。
    */
   resumePositionMs?: number | null;
+  /** `resumePositionMs` 属于哪一集（BGM episodeId）；对不上就不该续播。 */
+  resumeEpisodeId?: number | null;
 }
 
 function formatSize(bytes: number | null): string | null {
@@ -64,6 +66,7 @@ export default function ExternalResources({
   bgmEpisodes,
   canInteract,
   resumePositionMs = null,
+  resumeEpisodeId = null,
 }: Props) {
   /** 正在站内播放的源与条目页 */
   const [playingSource, setPlayingSource] = useState<{
@@ -175,6 +178,7 @@ export default function ExternalResources({
       {playingSource && (
         <SourcePlayer
           resumePositionMs={resumePositionMs}
+          resumeEpisodeId={resumeEpisodeId}
           bgmEpisodes={bgmEpisodes}
           sourceId={playingSource.sourceId}
           sourceName={playingSource.sourceName}

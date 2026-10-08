@@ -117,9 +117,15 @@ export async function PUT(request: Request) {
         // 还没收藏就顺手建一条「在看」—— 正在看却不在追番列表里是矛盾的
         type: CollectionStatus.Doing,
         playbackPositionMs: position,
+        // 位置必须连带记下「属于哪一集」，否则换集后会拿上一集的位置续播
+        playbackEpisodeId: body.episodeId,
         source: "local",
       },
-      update: { playbackPositionMs: position },
+      /*
+       * 两个字段必须**成对**更新：只更新位置而不更新集号，会让新集的位置
+       * 配上旧的集号，续播判断随即失效（看起来像「续播突然不灵了」）。
+       */
+      update: { playbackPositionMs: position, playbackEpisodeId: body.episodeId },
     });
   }
 
