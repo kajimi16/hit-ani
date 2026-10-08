@@ -20,8 +20,9 @@
 
 import { announceCapabilities } from "@/lib/email/capabilities";
 import { announceEgress } from "@/lib/net/egress";
+import { announceSchemaDrift } from "@/lib/db/schema-drift";
 
-export function register(): void {
+export async function register(): Promise<void> {
   /*
    * 只在 Node 运行时执行。
    *
@@ -37,4 +38,12 @@ export function register(): void {
    * 一模一样**。见 `src/lib/net/egress.ts`。
    */
   announceEgress();
+
+  /*
+   * schema 漂移。**必须 await** —— 不 await 的话进程可能在查询返回前就
+   * 进入服务状态，警告会出现在日志的另一处，甚至来不及打印。
+   *
+   * 放在最后：它要连数据库，是最慢的一项，而上面两项是纯内存判断。
+   */
+  await announceSchemaDrift();
 }
