@@ -66,7 +66,7 @@ npm run check:credentials -- --send 你的邮箱 --bgm
 | `BGM_CLIENT_ID` / `BGM_CLIENT_SECRET` | 无法绑定 Bangumi，也就无法一键导入收藏 |
 | `QQ_APP_ID` / `QQ_APP_KEY` | 无法绑定 QQ |
 | `DANDANPLAY_APP_ID` / `_SECRET` | 少一个外部弹幕源（Animeko 那个免费源仍然可用） |
-| `ADMIN_EMAILS` | 没有管理员，无法配置抓取源 |
+| `ADMIN_EMAILS` | 少一种管理员来源（仍可用 `npm run admin:grant:docker` 在库里授予）；没有管理员则**没人能处理举报、也没人能看到媒体源页** |
 | `DANMAKU_BLOCKED_WORDS` | **弹幕无内容过滤**，见 §4 |
 
 `NEXT_PUBLIC_DANMAKU_WS_URL` **保持为空**即可 —— 浏览器会按页面主机名自动推导网关地址。
@@ -355,10 +355,54 @@ docker compose exec web printenv NEXT_PUBLIC_DANMAKU_WS_URL
 | --- | --- |
 | **配置邮件发送**（`SMTP_*` 或 `EMAIL_API_*`） | **注册强制要求邮箱验证码**，不配则注册整体不可用。见 §1.1 —— 这是唯一会让「功能整个消失」的配置项 |
 | **配置 `DANMAKU_BLOCKED_WORDS`** | 弹幕/评论/短评/昵称都靠它过滤。留空等于没有任何内容管控，违规内容会直接进所有人屏幕，法律风险落在部署方（学校） |
-| **处理举报** | 学生能举报，但目前**没有处理后台** —— 举报会积压在 `DanmakuReport` 表里无人处理。见 §5 |
+| **授予至少一个管理员** | 举报处理后台在 `/admin/reports`，**仅管理员可见**。一个都没有等于举报无人处理。用 `npm run admin:grant <邮箱或学号>` 授予（改 `User.isAdmin`，**不需要重启**）。见下一节「管理员与举报处理」 |
 | **替换 `SESSION_SECRET` 与 `POSTGRES_PASSWORD`** | 默认值仅供开发 |
 | **配好学校白名单** | 否则没人能注册（注册按邮箱域名判定学校归属） |
 | **确认内容策略** | 抓取源由你选择，相应责任也在你。见 `docs/MEDIA.md` §6.4 |
+
+---
+
+## 管理员与举报处理
+
+**举报是有处理后台的**：管理员登录后侧栏出现「举报」→ `/admin/reports`。
+
+授予管理员（两种来源取**并集**，改哪个都行）。
+
+**Docker 部署用这一条**（在仓库根目录执行，读的是**容器库**）：
+
+```bash
+npm run admin:grant:docker -- --list                     # 查看当前管理员
+npm run admin:grant:docker -- 2024311524                 # 学号或邮箱
+npm run admin:grant:docker -- someone@stu.hit.edu.cn
+npm run admin:grant:docker -- 2024311524 --revoke        # 撤销
+```
+
+> ⚠️ **别在服务器上直接跑 `npm run admin:grant`**。它用宿主 `.env` 的
+> `DATABASE_URL` —— 在那个文件里那是**开发库**（`127.0.0.1:55432`）。
+> `:docker` 那条走 `migrate` 镜像 + 挂载脚本，因此连的是 compose 里的库。
+
+- 改的是 `User.isAdmin`，**不需要重启**（与 `ADMIN_EMAILS` 不同 —— 那个要改
+  `.env` 再重启，适合「配置级」的管理员）。
+- 为什么用 `migrate` 镜像而不是 `web`：`.dockerignore` 把 `scripts/` 排除了
+  （只留 `build-gateway.mjs`），所以**生产镜像里没有这个脚本**；而 `migrate`
+  是唯一保留 `tsx` 与 devDependencies 的镜像。挂载单个脚本即可，
+  不必把运维工具塞进生产镜像。
+- **没有管理员 = 举报无人处理。** 后台页面本身有守卫：非管理员访问会被
+  重定向（`/admin/reports` 的 API 返回 401），所以一个都不授予就等于
+  举报只进库、没人能看见。
+
+### 举报的处理方式
+
+后台有两个动作，按钮文案写明后果：
+
+| 动作 | 效果 |
+| --- | --- |
+| **屏蔽这条弹幕** | 事务内同时把举报标为已处理 **且** 把弹幕本体置为不可见（所有读路径都过滤）。弹幕行**仍保留**，以便追溯与误判恢复 |
+| **驳回举报** | 只把举报标为已处理，弹幕保留 |
+
+**刻意不做物理删除**：屏蔽已经让弹幕对所有用户不可见，而保留行才能事后
+追溯（谁在什么时候举报了什么）以及恢复误判。手工 `DELETE` 是不必要的，
+也会丢掉这些信息。
 
 ---
 
@@ -405,15 +449,12 @@ body 里带的是测试文案 —— 于是这条测试数据真的写进了用�
 - 冒烟脚本（`npm run smoke`）已改用自建账号，不会触达上游。
 - 若怀疑上游被污染，查日志里的 `[bgm-mirror]`，比 `grep` 代码可靠。
 
----
-
 ## 6. 已知缺口
 
 诚实列出，避免上线后才发现：
 
 | 缺口 | 影响 | 变通 |
 | --- | --- | --- |
-| **举报处理后台未实现** | 举报只入库，无人能处理 | 手工 SQL：`UPDATE "Danmaku" SET status=1 WHERE id='...'` 屏蔽某条 |
 | 无数据库自动备份 | 卷损坏即丢数据 | `docker compose exec postgres pg_dump -U hitani hitani > backup.sql`，建议加 cron |
 | 无日志聚合 | 排查只能 `docker compose logs` | 单机规模够用 |
 | 无监控告警 | 服务挂了不会通知你 | 可用外部探针打 `/api/health` |

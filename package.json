@@ -31,7 +31,8 @@
     "docker:rebuild": "docker compose build migrate web gateway && docker compose up -d",
     "check:credentials": "tsx scripts/check-credentials.ts",
     "check:rendered": "tsx scripts/check-rendered-text.ts",
-    "admin:grant": "tsx scripts/admin-grant.ts"
+    "admin:grant": "tsx scripts/admin-grant.ts",
+    "admin:grant:docker": "docker compose run --rm --no-deps -v ./scripts/admin-grant.ts:/app/scripts/admin-grant.ts:ro migrate npx tsx scripts/admin-grant.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.0",
