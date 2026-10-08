@@ -268,37 +268,84 @@ systemctl status hit-ani-web hit-ani-gateway
 
 ## 3. 反向代理（可选）
 
-想用域名 + HTTPS 时。以 Caddy 为例（自动签发证书）：
+想用域名 + HTTPS 时。
+
+### 先说弹幕 WebSocket —— 它是最容易被漏掉的一半
+
+**只代理 80/443 是不够的。** 弹幕网关是**独立服务、独立端口**（3102），
+而浏览器端的地址默认从**页面地址**推导：
+
+```
+wss://<页面主机名>:3102
+```
+
+所以只把 443 代理到 3100 时，页面正常、**弹幕一直连不上**（且不报错，
+只是「没有弹幕」）。两条出路，选一条：
+
+### 方案 A（推荐）：同源路径，不必暴露 3102
+
+`.env` 里设**同源路径**：
+
+```env
+NEXT_PUBLIC_DANMAKU_WS_URL="/danmaku-ws"
+```
+
+代理**必须剥掉这个前缀**再转发 —— 网关只匹配 `/danmaku/room/<id>`
+（见 `src/server/danmaku-gateway.ts` 的正则），把 `/danmaku-ws/danmaku/room/1`
+原样丢过去会被拒绝升级。
+
+Caddy（`handle_path` 会剥前缀）：
 
 ```caddyfile
 ani.example.edu.cn {
-    # 页面与 API
+    handle_path /danmaku-ws/* {
+        reverse_proxy localhost:3102
+    }
     reverse_proxy localhost:3100
-
-    # 弹幕 WebSocket —— 必须单独处理，否则升级握手会失败
-    @ws path /danmaku/room/*
-    reverse_proxy @ws localhost:3102
 }
 ```
 
-用 Nginx 时对应配置：
+Nginx（`proxy_pass` 带**尾斜杠**才会剥前缀）：
 
 ```nginx
-location /danmaku/room/ {
-    proxy_pass http://127.0.0.1:3102;
+location /danmaku-ws/ {
+    proxy_pass http://127.0.0.1:3102/;   # ← 尾斜杠是关键
     proxy_http_version 1.1;
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection "upgrade";
-    proxy_read_timeout 3600s;    # WS 是长连接，不能按默认 60s 断
+    proxy_read_timeout 3600s;            # WS 是长连接，不能按默认 60s 断
 }
-
 location / {
     proxy_pass http://127.0.0.1:3100;
 }
 ```
 
-> 若 WS 挂在与页面**不同**的域名/端口下，需要在 `.env` 里显式设置
-> `NEXT_PUBLIC_DANMAKU_WS_URL` 并**重新构建** —— 它是构建期常量。
+好处：协议与端口都跟随页面，**证书只用管一张**，3102 不必对外开放；
+而且换域名时不用改任何配置（地址是从页面推导的）。
+
+### 方案 B：把 3102 也暴露出去
+
+保持默认推导，但要让 `wss://<域名>:3102` 真的能连上 ——
+**HTTPS 页面连 `ws://` 会被浏览器直接拦掉**，所以 3102 也得配 TLS 证书。
+一般不值得，除非你本来就对 3102 做了终结。
+
+### ⚠️ `NEXT_PUBLIC_*` 是**构建期**烘焙的
+
+与 `APP_BASE_URL` 不同：改 `NEXT_PUBLIC_DANMAKU_WS_URL` / `_WS_PORT`
+**必须重新构建镜像**，只改 `.env` 再 `up -d` **不生效**。
+
+```bash
+docker compose build web gateway && docker compose up -d
+```
+
+验证是否生效（构建后，在服务器上）：
+
+```bash
+docker compose exec web printenv NEXT_PUBLIC_DANMAKU_WS_URL
+```
+
+漏掉这一步的症状与方案选错完全一样（页面正常、弹幕不动），
+所以改完一次就把这条命令跑一遍。
 
 ---
 
@@ -546,6 +593,34 @@ UUID=<你的UUID>  /media/kajimi/kajimi  ntfs3  rw,nosuid,nodev,uid=1000,gid=100
 
 切换方式：`npx prisma migrate dev --name init` 生成初始迁移，之后 compose 里的
 `migrate` 服务改用 `npx prisma migrate deploy`。
+
+---
+
+### ⚠️ 部署前必跑：确认 `.env` 里的代理和 profile 不对
+
+`.env` 是**整份复制**到服务器的（里面有 `SESSION_SECRET`、SMTP 凭据，必须跟着走），
+所以开发机上为 Clash 写的 `HTTP_PROXY_URL` 极易跟着过去。服务器上没有那个代理时，
+容器往外发的请求**全部** `fetch failed`，而 `NODE_USE_ENV_PROXY=1` 会让 `curl`
+能通、应用不通 —— 与「代码有 bug」的症状一模一样。
+
+**上服务器后、`up -d` 之前，先看代换后的实际值：**
+
+```bash
+docker compose config | grep -iE 'proxy|profile'
+```
+
+一条命令同时抓两类问题：
+
+- 输出里出现 `host.docker.internal:7897` 或 `127.0.0.1:7897` → **`.env` 残留了本机代理**，
+  把 `HTTP_PROXY_URL=` 与 `BUILD_PROXY_URL=` 都留空；
+- 期望有代理却没出现 → 变量没生效（多半是被 `${VAR:-default}` 这类写法吃掉了）。
+
+服务器上还应确保 **没有设 `COMPOSE_PROFILES`**，否则 `proxy` 服务会被
+自动拉起，而它转发到一个不存在的地址，会一直崩溃重启。
+
+应用启动时也会主动喊一声（`src/lib/net/egress.ts`）——
+`docker compose logs web | head -20` 能看到 `[egress] 出站直连（未配置代理）`
+或一段警告。**看到那段警告就别再往下查代码了，先修配置。**
 
 ---
 

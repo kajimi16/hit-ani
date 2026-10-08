@@ -19,6 +19,7 @@
  */
 
 import { announceCapabilities } from "@/lib/email/capabilities";
+import { announceEgress } from "@/lib/net/egress";
 
 export function register(): void {
   /*
@@ -30,4 +31,10 @@ export function register(): void {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
 
   announceCapabilities();
+  /*
+   * 出站代理形态。理由与上面同一套（日志说话，别让用户替我们发现），
+   * 但这一条尤其重要：**代理配错会让所有外部请求失败，而症状与代码 bug
+   * 一模一样**。见 `src/lib/net/egress.ts`。
+   */
+  announceEgress();
 }
