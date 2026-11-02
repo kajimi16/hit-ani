@@ -440,7 +440,7 @@ export function extractEpisodeNumber(title: string): number | null {
   // （它们的前一个字符分别是 `(` 和 `[`，都不在分隔符集合里）。
   // `(?<![\d.])` 防止把小数当成裸集号：`[11.5]` 里的 `5` 前面是
   // 数字和点，不是真正的分隔符 —— 否则小数会被截成 `5`。
-  const bareMatch = /(?<![\d.])[\s\-_.](\d{1,3})(?:v\d+)?(?:[\s\-_.\]]|$)/.exec(title);
+  const bareMatch = /(?<![\d.])[\s\-_.](\d{1,3})(?!\d)(?!\.\d)(?:v\d+)?(?:[\s\-_.\]]|$)/.exec(title);
   if (bareMatch) return Number(bareMatch[1]);
 
   // 无法判定时返回 null，归入「合集/未知」—— 宁可让用户多点一次，

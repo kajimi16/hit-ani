@@ -64,8 +64,22 @@ export default function SiteSettingsClient({ initialNsfwEnabled }: Props) {
       <h2 className="font-medium">R18 / NSFW 内容</h2>
       <p className="text-sm text-on-surface-variant">
         {enabled
-          ? "本站允许出现 R18 条目。每个用户仍可在自己的设置里选择是否显示（默认不显示）。"
-          : "本站不允许出现 R18 条目：探索页与时间表不再请求它们，普通用户的设置里也不会出现该选项。"}
+          ? "允许在探索页与时间表里出现 R18 条目。每个用户仍可在自己的设置里选择是否显示（默认不显示）。"
+          : "探索页与时间表不再请求 R18 条目，普通用户的设置里也不会出现该选项。"}
+      </p>
+
+      {/*
+        **如实写明边界**，避免管理员以为「关了就等于全站干净」。
+
+        本地 `Subject` 表没有 nsfw 字段：探索页/时间表是按 BGM 的 `nsfw`
+        过滤**根本不请求**它们，所以这条路径是可靠的；但用户通过「导入收藏」
+        落进本地的条目无法回溯判定 —— 实测 Bangumi 的 `nsfw` 过滤对无权限的
+        访问会被**静默忽略**（带 `nsfw: true` 搜索返回的全是 `nsfw: false`），
+        因此历史条目里哪些是 R18，我们现在读不出来。
+      */}
+      <p className="text-xs text-on-surface-variant/70">
+        范围：探索页与时间表。已通过「导入收藏」落到本地的条目、以及排行榜中来自本地缓存的部分不在其内
+        —— Bangumi 的 R18 标记需要账号权限才能读取，历史条目无法回溯判定。
       </p>
 
       <div className="flex flex-wrap items-center gap-3">
