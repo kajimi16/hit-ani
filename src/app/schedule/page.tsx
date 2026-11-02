@@ -55,27 +55,19 @@ export default async function SchedulePage({
   );
 
   /*
-   * 缓存键：周次 + NSFW 偏好。
+   * 数据源换成**周历**：它列的是「当前在播」的番，按星期分组。
    *
-   * 两者都会改变结果，**少一个就会串数据** —— 例如把「不看 NSFW」的用户
-   * 缓存下来的结果端给打开了 NSFW 的用户。
+   * 之前按 `air_date` 落在本周来筛 —— 那等于「本周首播」，播了半年的年番
+   * 会被整段排除；而用户要的是「今天有哪些番更新」。
    *
-   * 用 `isoDate(start)` 而不是 `weekOffset`：后者是相对量，跨周之后含义会变
-   * （同一个 offset 指向不同的周），拿它当键会串到别的周。
+   * 缓存键只随 NSFW 偏好变化：周历描述的是「当前状态」，不随周次变化；
+   * 而两种 NSFW 口径的结果不能互相端错。
    */
-    /*
-     * 数据源换成**周历**：它列的是「当前在播」的番，按星期分组。
-     *
-     * 之前按 `air_date` 落在本周来筛 —— 那等于「本周首播」，播了半年的
-     * 年番会被整段排除；而用户要的是「今天有哪些番更新」。
-     *
-     * 缓存键不再含日期：周历描述的是「当前状态」，不随周次变化。
-     */
-    const cacheKey = String(nsfw ?? "all");
-    const calendar = await withUpstreamCache(
-      { namespace: "schedule", key: cacheKey, ttlMs: SCHEDULE_CACHE_TTL_MS },
-      () => getCalendar(),
-    ).catch(() => null);
+  const cacheKey = String(nsfw ?? "all");
+  const calendar = await withUpstreamCache(
+    { namespace: "schedule", key: cacheKey, ttlMs: SCHEDULE_CACHE_TTL_MS },
+    () => getCalendar(),
+  ).catch(() => null);
 
     const allItems = (calendar ?? []).flatMap((day) => day.items);
 
@@ -92,6 +84,12 @@ export default async function SchedulePage({
       });
       for (const row of flagged) hiddenIds.add(row.id);
     }
+
+  /*
+   * 榜单与计数**也必须用过滤后的列表** —— 只过滤日列的话，被藏的 R18 条目
+   * 仍会从排行榜标题和「共 N 部」里露出名字。
+   */
+  const visible = allItems.filter((item) => !hiddenIds.has(item.id));
 
     // 按星期 1..7（周一..周日）对齐；不依赖上游数组顺序
     const today = new Date();
@@ -117,7 +115,7 @@ export default async function SchedulePage({
    */
   const leaderboard = user
     ? rankLeaderboard(
-        await buildLeaderboard({ subjects: allItems, schoolId: user.schoolId }),
+        await buildLeaderboard({ subjects: visible, schoolId: user.schoolId }),
         rankSort,
       )
     : [];
@@ -127,7 +125,7 @@ export default async function SchedulePage({
         <section className="space-y-3">
           <h1 className="text-2xl font-normal">新番时间表</h1>
           <p className="text-sm text-on-surface-variant">
-            当前在播的番，按放送星期排列 · 共 {allItems.length} 部
+            当前在播的番，按放送星期排列 · 共 {visible.length} 部
           </p>
           {/*
             如实说明数据缺口：上游的周历接口只有星期，没有放送时刻
