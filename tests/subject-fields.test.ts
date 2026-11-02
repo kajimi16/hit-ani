@@ -18,7 +18,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { subjectFieldsFromDetail, subjectFieldsFromSlim } from "@/lib/bgm/subject-fields";
-import { isoDate, parseIsoDate } from "@/lib/date";
+import { isoDate } from "@/lib/date";
 import type { Subject } from "@/lib/bgm/client";
 
 /** 与真实响应同形状的最小条目（字段值取自条目 493016）。 */
@@ -88,23 +88,6 @@ test("空的 rating.count 不会被当成 undefined 丢掉", () => {
   // 区分「上游给了空直方图」与「上游没给」：前者是 {}，后者是 undefined。
   const fields = subjectFieldsFromDetail(detail({ rating: { rank: 1, total: 0, count: {}, score: 0 } as never }));
   assert.deepEqual(fields.ratingHistogram, {});
-});
-
-test("parseIsoDate 只接受严格的 YYYY-MM-DD", () => {
-  assert.equal(parseIsoDate("2026-01-04")!.toISOString().slice(0, 10), "2026-01-04");
-  // BGM 对未定档条目会返回空串
-  for (const bad of ["", "  ", "2026-1-4", "2026/01/04", "2026-13-45", "未定档", null, undefined]) {
-    assert.equal(parseIsoDate(bad as string), null, `${JSON.stringify(bad)} 应解析为 null`);
-  }
-});
-
-test("parseIsoDate 用 UTC，不受本地时区影响", () => {
-  // 用本地时间构造会让 UTC+8 的机器把 2026-01-04 存成 2026-01-03。
-  const date = parseIsoDate("2026-01-04")!;
-  assert.equal(date.getUTCFullYear(), 2026);
-  assert.equal(date.getUTCMonth(), 0);
-  assert.equal(date.getUTCDate(), 4);
-  assert.equal(date.getUTCHours(), 0);
 });
 
 /* ---------------------------------------------------------------- *

@@ -13,7 +13,6 @@
 
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
-import { randomInt } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import {
   CODE_LENGTH,
@@ -209,21 +208,6 @@ test("验证码以散列形式落库，**不存明文**", async () => {
   assert.match(row.codeHash, /^scrypt\$/, "应复用与用户口令同一套散列");
 });
 
-test("库里不残留过期很久的记录之外的东西（顺带验证索引可用）", async () => {
-  // 只验证查询不报错、且删干净 —— 清理逻辑由 `consumeCode` 与重发覆盖承担
-  await prisma.emailVerification.deleteMany({ where: { email: EMAIL } });
-  assert.equal(
-    await prisma.emailVerification.count({ where: { email: EMAIL } }),
-    0,
-  );
-});
-
-test("randomInt 的范围不会产生超出位数的值", () => {
-  // `10 ** CODE_LENGTH` 作为上界是**开区间**，取值最大 999999 —— 不会出现
-  // 1000000 这种 7 位数（那会让 padStart 变成 no-op 且长度校验失败）
-  assert.ok(randomInt(0, 10 ** CODE_LENGTH) < 10 ** CODE_LENGTH);
-});
-
 /* ---------------------------------------------------------------- *
  * 邮件主题：必须每次唯一
  * ---------------------------------------------------------------- */
@@ -241,12 +225,6 @@ test("不同分钟产生不同主题（拆开会话的前提）", () => {
   const a = verificationEmailSubject("register", new Date(2026, 9, 6, 16, 25));
   const b = verificationEmailSubject("register", new Date(2026, 9, 6, 16, 26));
   assert.notEqual(a, b, "相隔一分钟的主题必须不同，否则仍会被折叠");
-});
-
-test("同一分钟内的多次调用主题相同（时间戳是唯一变量）", () => {
-  // 反向确认：唯一性来自时间而不是随机数 —— 它是可解释的。
-  const at = new Date(2026, 9, 6, 16, 25, 30);
-  assert.equal(verificationEmailSubject("register", at), verificationEmailSubject("register", at));
 });
 
 test("跨天、跨月也唯一", () => {

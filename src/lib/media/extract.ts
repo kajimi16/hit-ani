@@ -425,7 +425,9 @@ export function extractEpisodeNumber(title: string): number | null {
   // - 分辨率/位深：`[1080p]`、`[10bits]`、`[1920x1080]` → p/x/b 开头
   // - 日期：`[7月新番]`、`[2020年]` → 月/年/日 开头
   // 不排掉它们的话，`[7月新番]` 会被当成第 7 集。
-  const looseBracket = /\[(\d{1,4})(?!\d*[pPxXbB月年日])[^\]]*\]/.exec(title);
+  // `(?!\.\d)` 排掉小数集号：`[11.5]` 是中间集（OVA/总集篇），
+  // 截成 11 会让资源挂到错误的一集上 —— 宁可解不出，也不能猜错。
+  const looseBracket = /\[(\d{1,4})(?!\d)(?!\.\d)(?!\d*[pPxXbB月年日])[^\]]*\]/.exec(title);
   if (looseBracket) return Number(looseBracket[1]);
 
   // ---- 第五轮：带前缀的西式写法 EP11 / E11 ----
@@ -436,7 +438,9 @@ export function extractEpisodeNumber(title: string): number | null {
   //
   // 限制 1-3 位并要求前面是分隔符，避开 `(2015)` 年份与 `[1080p]` 分辨率
   // （它们的前一个字符分别是 `(` 和 `[`，都不在分隔符集合里）。
-  const bareMatch = /[\s\-_.](\d{1,3})(?:v\d+)?(?:[\s\-_.\]]|$)/.exec(title);
+  // `(?<![\d.])` 防止把小数当成裸集号：`[11.5]` 里的 `5` 前面是
+  // 数字和点，不是真正的分隔符 —— 否则小数会被截成 `5`。
+  const bareMatch = /(?<![\d.])[\s\-_.](\d{1,3})(?:v\d+)?(?:[\s\-_.\]]|$)/.exec(title);
   if (bareMatch) return Number(bareMatch[1]);
 
   // 无法判定时返回 null，归入「合集/未知」—— 宁可让用户多点一次，

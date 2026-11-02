@@ -17,7 +17,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { appBaseUrl, browserHost, browserOrigin, hostnameOf, resolvePublicOrigin } from "@/lib/auth/request-origin";
+import { appBaseUrl, browserHost, browserOrigin, hostHeadersFrom, hostnameOf, resolvePublicOrigin } from "@/lib/auth/request-origin";
 
 const h = (host: string | null, forwardedHost: string | null = null, proto: string | null = null) => ({
   host,
@@ -150,12 +150,24 @@ test("既没有 APP_BASE_URL 也没有 Host 头时用兜底值", () => {
  * 转发头的信任开关
  * ---------------------------------------------------------------- */
 
-test("默认**不信任** X-Forwarded-*（防开放重定向）", () => {
+test("★ 默认不信任 X-Forwarded-*：伪造的转发头必须被丢弃", () => {
   withEnv("TRUST_PROXY_HEADERS", undefined, () => {
-    // hostHeadersFrom 需要 Headers 对象
-    const headers = new Headers({ host: "real.test:3100", "x-forwarded-host": "evil.test" });
-    // 未开开关时 forwardedHost 应为 null
-    const parts = { host: headers.get("host"), forwardedHost: null, forwardedProto: null };
-    assert.equal(browserHost(parts), "real.test:3100", "应退回 Host，而不是采信伪造的转发头");
+    // 走**真实**的 hostHeadersFrom（而不是手写一个 forwardedHost: null 的对象）——
+    // 手写的话这个用例根本没执行开关逻辑，把开关删掉它照样通过。
+    const parts = hostHeadersFrom(
+      new Headers({ host: "real.test:3100", "x-forwarded-host": "evil.test" }),
+    );
+    assert.equal(parts.forwardedHost, null, "未开开关时必须丢弃转发头");
+    assert.equal(browserHost(parts), "real.test:3100");
+  });
+});
+
+test("★ 显式开启 TRUST_PROXY_HEADERS=1 后才采信转发头", () => {
+  withEnv("TRUST_PROXY_HEADERS", "1", () => {
+    const parts = hostHeadersFrom(
+      new Headers({ host: "web:3100", "x-forwarded-host": "ani.example.edu", "x-forwarded-proto": "https" }),
+    );
+    assert.equal(parts.forwardedHost, "ani.example.edu");
+    assert.equal(browserHost(parts), "ani.example.edu");
   });
 });

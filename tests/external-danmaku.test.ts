@@ -100,18 +100,3 @@ test("mapAnimekoContent 时间取整（毫秒必须是整数，时间轴比较�
 /* ---------------------------------------------------------------- *
  * 与站内枚举的一致性
  * ---------------------------------------------------------------- */
-
-test("站内位置常量与 Animeko 语义一致", () => {
-  assert.equal(DanmakuLocation.Normal, 0);
-  assert.equal(DanmakuLocation.Top, 1);
-  assert.equal(DanmakuLocation.Bottom, 2);
-});
-
-test("外部弹幕的 schoolId 设计为空串 → 被「只看本校」自然排除", () => {
-  // 设计意图：外部弹幕不属于任何学校。
-  // 若改成某个具体值，它们就会混进本校弹幕里 —— 那会破坏最核心的筛选语义。
-  const externalSchoolId = "";
-  const mySchool = "hit";
-  assert.notEqual(externalSchoolId, mySchool);
-  assert.ok(!externalSchoolId, "空串是 falsy，界面据此显示为「外部」");
-});

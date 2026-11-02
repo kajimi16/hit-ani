@@ -66,7 +66,11 @@ test("优先识别「第N话」而非方括号里的其它数字", () => {
 test("豆瓣式小数集号不会被误当作整数集", () => {
   // 11.5 是中间集，我们对不上 BGM 的整数集号，应返回 null 而不是 11
   const result = extractEpisodeNumber("[Group] Show [11.5][1080p]");
-  assert.ok(result === null || result === 11, `实际 ${result}`);
+  /*
+   * 必须**恰好**是 null。原先是 `assert.ok(result === null || result === 11)` ——
+   * 两种结果都算通过，等于恒真：把函数改成返回 11 也不会红。
+   */
+  assert.equal(result, null, `11.5 是中间集，不该被当成整数集（实际 ${result}）`);
 });
 
 /* ---------------------------------------------------------------- *

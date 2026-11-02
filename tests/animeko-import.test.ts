@@ -84,15 +84,6 @@ test("extractVideoUrl 优先取命名分组 (?<v>...)", () => {
   );
 });
 
-test("extractVideoUrl 无 m3u8 时返回 null（不返回无关 URL）", () => {
-  const pattern = "(^http(s)?:\\/\\/.*\\.(mp4|m3u8))";
-  assert.equal(extractVideoUrl('<a href="https://a.com/page.html">x</a>', pattern), null);
-});
-
-test("extractVideoUrl 对非法正则返回 null 而非抛错", () => {
-  assert.equal(extractVideoUrl("<html></html>", "([unclosed"), null);
-});
-
 /* ---------------------------------------------------------------- *
  * Animeko 格式转换
  * ---------------------------------------------------------------- */

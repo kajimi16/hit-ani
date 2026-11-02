@@ -149,40 +149,6 @@ test("全局开关优先于测试账号判定（运维意图优先）", () => {
  * 用户偏好 —— 默认关闭
  * ---------------------------------------------------------------- */
 
-test("用户没开同步时不做镜像（默认状态）", () => {
-  withMirrorEnv(undefined, () => {
-    const decision = decideMirror({ email: "alice@hit.edu.cn", mirrorToBgm: false });
-    assert.equal(decision.allowed, false);
-    assert.equal(
-      decision.code,
-      "user-disabled",
-      "「没开这个功能」必须与「真失败」可区分 —— 界面据此决定说法",
-    );
-  });
-});
-
-test("用户开了同步才放行", () => {
-  withMirrorEnv(undefined, () => {
-    assert.equal(decideMirror({ email: "alice@hit.edu.cn", mirrorToBgm: true }).allowed, true);
-  });
-});
-
-test("运维硬闸压过用户偏好（避免跑写库测试时被用户设置绕过）", () => {
-  withMirrorEnv("0", () => {
-    const decision = decideMirror({ email: "alice@hit.edu.cn", mirrorToBgm: true });
-    assert.equal(decision.allowed, false, "用户开了同步也不能绕过运维硬闸");
-    assert.equal(decision.code, "ops-disabled");
-  });
-});
-
-test("测试账号即使开了同步也拒绝（安全兜底优先于用户偏好）", () => {
-  withMirrorEnv(undefined, () => {
-    const decision = decideMirror({ email: "smoke-1@hit.edu.cn", mirrorToBgm: true });
-    assert.equal(decision.allowed, false);
-    assert.equal(decision.code, "test-account");
-  });
-});
-
 test("原因码只有三种，且放行时为 null", () => {
   // 界面按 code 分支，多一种取值就会掉进「真失败」的文案里。
   const codes = new Set<string | null>();

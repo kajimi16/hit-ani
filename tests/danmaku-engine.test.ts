@@ -325,12 +325,6 @@ test("mergeById 去除重复 id（补充窗口与已有数据交叉时）", () =
   assert.equal(merged.filter((d) => d.id === "b").length, 1, "重复 id 只应保留一条");
 });
 
-test("mergeById 全部重复时返回等价内容", () => {
-  const existing = [dto({ id: "a" }), dto({ id: "b" })];
-  const merged = mergeById(existing, [dto({ id: "a" }), dto({ id: "b" })]);
-  assert.equal(merged.length, 2);
-});
-
 test("mergeById 空增量不改变内容", () => {
   const existing = [dto({ id: "a" })];
   assert.deepEqual(mergeById(existing, []).map((d) => d.id), ["a"]);

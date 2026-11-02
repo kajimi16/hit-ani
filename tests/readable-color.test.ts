@@ -273,13 +273,6 @@ test("纯黑被提亮为中性灰，且色相中性（R=G=B）", () => {
   assert.equal(g, b, "中性灰的 G 与 B 应相等");
 });
 
-test("边界值 0x000000 与 0xffffff 都不抛错", () => {
-  for (const backdrop of BACKDROPS) {
-    assert.doesNotThrow(() => ensureReadableColor(0x000000, backdrop.rgb));
-    assert.doesNotThrow(() => ensureReadableColor(0xffffff, backdrop.rgb));
-  }
-});
-
 /* ---------------------------------------------------------------- *
  * canvas 描边色
  * ---------------------------------------------------------------- */

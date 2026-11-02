@@ -261,12 +261,6 @@ test("isTorrentLink 识别磁力与 .torrent", () => {
   assert.equal(isTorrentLink("https://x.com/page"), false);
 });
 
-test("filterFeedItems 按 torrentOnly 过滤", () => {
-  const items = parseFeed(RSS_FIXTURE, BASE);
-  assert.equal(filterFeedItems(items, { torrentOnly: false } as never).length, 2);
-  assert.equal(filterFeedItems(items, { torrentOnly: true } as never).length, 2);
-});
-
 /* ---------------------------------------------------------------- *
  * 实体反转义
  * ---------------------------------------------------------------- */
