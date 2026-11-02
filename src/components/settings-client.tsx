@@ -2,11 +2,16 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { bgmTokenStatus } from "@/lib/auth/token-status";
 
 interface Props {
   qqBound: boolean;
   bgmBound: boolean;
   bgmUsername: string | null;
+  /** 令牌过期时刻（毫秒时间戳）；未绑定为 null。 */
+  bgmExpiresAt: number | null;
+  /** 个人令牌无 refresh_token，过期只能重新粘贴。 */
+  bgmPersonalToken: boolean;
   /** 是否已配置 OAuth 应用凭据；未配置时只能走个人令牌。 */
   oauthConfigured: boolean;
 }
@@ -31,6 +36,8 @@ export default function SettingsClient({
   qqBound,
   bgmBound,
   bgmUsername,
+  bgmExpiresAt,
+  bgmPersonalToken,
   oauthConfigured,
 }: Props) {
   const router = useRouter();
@@ -150,6 +157,114 @@ export default function SettingsClient({
     }
   };
 
+  /**
+   * 令牌输入表单。
+   *
+   * **已绑定与未绑定都必须能用** —— 这正是要修的 bug：此前它只出现在
+   * 未绑定分支里，于是令牌过期的用户被卡死在「已绑定」界面上，
+   * 找不到任何更换令牌的入口。
+   *
+   * 抽成函数而不是复制两份：冲突确认、校验中状态、后果说明都在这里，
+   * 两处各写一遍必然漂移。
+   */
+  const tokenForm = (summary: string) => (
+                <details className="panel bg-surface-container">
+                  <summary className="cursor-pointer text-on-surface">
+                    {summary}
+                  </summary>
+                  <div className="mt-3 space-y-3">
+                    <ol className="list-decimal space-y-1 pl-5 text-xs text-on-surface-variant">
+                      <li>
+                        打开{" "}
+                        <a
+                          href="https://next.bgm.tv/demo/access-token"
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-primary underline"
+                        >
+                          next.bgm.tv/demo/access-token
+                        </a>{" "}
+                        （需先登录 Bangumi）
+                      </li>
+                      <li>点击生成，复制得到的令牌</li>
+                      <li>粘贴到下方并提交</li>
+                    </ol>
+
+                    <div className="flex flex-wrap gap-2">
+                      <input
+                        type="password"
+                        value={token}
+                        onChange={(event) => setToken(event.target.value)}
+                        placeholder="粘贴 Bangumi 个人访问令牌"
+                        autoComplete="off"
+                        className="input min-w-64 flex-1 font-mono text-xs"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void bindToken(token.trim())}
+                        disabled={binding || token.trim().length < 8}
+                        className="btn btn-primary"
+                      >
+                        {binding ? "校验中…" : "绑定"}
+                      </button>
+                    </div>
+
+                    {/*
+                      冲突确认：该 BGM 账号已被另一个本地账号绑定。
+                      内联面板而不是 `window.confirm` —— 需要说清「另一方会失去绑定」
+                      这个后果，而系统弹窗样式不可控、移动端表现也差。
+                    */}
+                    {conflict && (
+                      <div className="alert alert-warn space-y-2">
+                        <p>
+                          {conflict.bgmUsername
+                            ? `Bangumi 账号「${conflict.bgmUsername}」`
+                            : "这个 Bangumi 账号"}
+                          已经绑定到本站的另一个账号。
+                        </p>
+                        <p className="text-xs">
+                          如果你就是该 Bangumi 账号的主人（你能提供它的令牌），可以把绑定
+                          <strong>迁移</strong>到当前账号。迁移后，原来那个本地账号将不再
+                          关联这个 Bangumi 账号。
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void bindToken(conflict.token, true)}
+                            disabled={binding}
+                            className="btn btn-primary btn-sm"
+                          >
+                            {binding ? "迁移中…" : "迁移到当前账号"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConflict(null)}
+                            disabled={binding}
+                            className="btn btn-ghost btn-sm"
+                          >
+                            取消
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    <p className="text-xs text-secondary">
+                      该令牌等同于你的 Bangumi 账号密码，仅保存在本站服务端。请勿分享给他人；
+                      若怀疑泄露，可在 Bangumi 侧重新生成。
+                    </p>
+                  </div>
+                </details>
+  );
+
+  /*
+   * 个人令牌没有 refresh_token —— 过期只能请用户重新粘贴，因此必须**提前**
+   * 把状态显示出来。OAuth 绑定会自动续期，对它报「已过期」只会制造假警报，
+   * 所以 `unknown` 时不渲染任何提示。
+   */
+  const tokenExpiry = bgmPersonalToken
+    ? bgmTokenStatus(bgmExpiresAt)
+    : { status: "unknown" as const, daysLeft: null };
+
   return (
     <div className="space-y-6">
       <section className="panel space-y-3 p-5">
@@ -157,6 +272,25 @@ export default function SettingsClient({
         {bgmBound ? (
           <div className="space-y-3 text-sm">
             <p className="text-tertiary">已绑定：{bgmUsername}</p>
+            {tokenExpiry.status === "expired" && (
+              <div className="alert alert-warn space-y-1 text-xs">
+                <p className="font-medium">Bangumi 令牌已过期</p>
+                <p>
+                  导入收藏与同步会一直失败。用下方「更新令牌」粘贴一个刚生成的令牌即可恢复，
+                  已导入的数据不受影响。
+                </p>
+              </div>
+            )}
+            {tokenExpiry.status === "expiring" && (
+              <p className="text-xs text-on-surface-variant/70">
+                令牌将在 {tokenExpiry.daysLeft} 天内过期，建议现在更新。
+              </p>
+            )}
+            {tokenExpiry.status === "ok" && (
+              <p className="text-xs text-on-surface-variant/70">
+                令牌还有约 {tokenExpiry.daysLeft} 天有效期。
+              </p>
+            )}
             <div className="space-y-3">
               <div className="flex flex-wrap items-center gap-3">
                 <button
@@ -201,6 +335,7 @@ export default function SettingsClient({
                 </p>
               )}
             </div>
+            {tokenForm("更新令牌（令牌过期或失效时用它换新的）")}
           </div>
         ) : (
           <div className="space-y-4 text-sm">
@@ -238,92 +373,7 @@ export default function SettingsClient({
               </p>
             </div>
 
-            <details className="panel bg-surface-container">
-              <summary className="cursor-pointer text-on-surface">
-                或者：粘贴个人访问令牌
-              </summary>
-              <div className="mt-3 space-y-3">
-                <ol className="list-decimal space-y-1 pl-5 text-xs text-on-surface-variant">
-                  <li>
-                    打开{" "}
-                    <a
-                      href="https://next.bgm.tv/demo/access-token"
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-primary underline"
-                    >
-                      next.bgm.tv/demo/access-token
-                    </a>{" "}
-                    （需先登录 Bangumi）
-                  </li>
-                  <li>点击生成，复制得到的令牌</li>
-                  <li>粘贴到下方并提交</li>
-                </ol>
-
-                <div className="flex flex-wrap gap-2">
-                  <input
-                    type="password"
-                    value={token}
-                    onChange={(event) => setToken(event.target.value)}
-                    placeholder="粘贴 Bangumi 个人访问令牌"
-                    autoComplete="off"
-                    className="input min-w-64 flex-1 font-mono text-xs"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => void bindToken(token.trim())}
-                    disabled={binding || token.trim().length < 8}
-                    className="btn btn-primary"
-                  >
-                    {binding ? "校验中…" : "绑定"}
-                  </button>
-                </div>
-
-                {/*
-                  冲突确认：该 BGM 账号已被另一个本地账号绑定。
-                  内联面板而不是 `window.confirm` —— 需要说清「另一方会失去绑定」
-                  这个后果，而系统弹窗样式不可控、移动端表现也差。
-                */}
-                {conflict && (
-                  <div className="alert alert-warn space-y-2">
-                    <p>
-                      {conflict.bgmUsername
-                        ? `Bangumi 账号「${conflict.bgmUsername}」`
-                        : "这个 Bangumi 账号"}
-                      已经绑定到本站的另一个账号。
-                    </p>
-                    <p className="text-xs">
-                      如果你就是该 Bangumi 账号的主人（你能提供它的令牌），可以把绑定
-                      <strong>迁移</strong>到当前账号。迁移后，原来那个本地账号将不再
-                      关联这个 Bangumi 账号。
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => void bindToken(conflict.token, true)}
-                        disabled={binding}
-                        className="btn btn-primary btn-sm"
-                      >
-                        {binding ? "迁移中…" : "迁移到当前账号"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setConflict(null)}
-                        disabled={binding}
-                        className="btn btn-ghost btn-sm"
-                      >
-                        取消
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                <p className="text-xs text-secondary">
-                  该令牌等同于你的 Bangumi 账号密码，仅保存在本站服务端。请勿分享给他人；
-                  若怀疑泄露，可在 Bangumi 侧重新生成。
-                </p>
-              </div>
-            </details>
+            {tokenForm("或者：粘贴个人访问令牌")}
           </div>
         )}
       </section>

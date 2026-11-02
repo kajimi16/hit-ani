@@ -66,6 +66,8 @@ export default async function SettingsPage({
         qqBound={user.qqBound}
         bgmBound={user.bgmBound}
         bgmUsername={user.bgmUsername}
+        bgmExpiresAt={user.bgmExpiresAt}
+        bgmPersonalToken={user.bgmPersonalToken}
         oauthConfigured={isBgmOAuthConfigured()}
       />
 

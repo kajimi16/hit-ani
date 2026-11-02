@@ -343,6 +343,46 @@ export function isBgmTokenExpiring(expiresAt: Date, now = Date.now()): boolean {
   return expiresAt.getTime() - now <= REFRESH_THRESHOLD_MS;
 }
 
+/**
+ * **真的**过期了（与「即将过期」区分）。
+ *
+ * 这个区分是必要的：OAuth 令牌提前 1 天续期是善意的（留出刷新窗口），
+ * 但个人令牌没有 refresh_token —— 对它套用 24 小时窗口意味着**令牌还剩
+ * 23 小时就已经导不进来**，而报错还说「已过期」。曾经就是这样。
+ */
+export function isBgmTokenExpired(expiresAt: Date, now = Date.now()): boolean {
+  return expiresAt.getTime() <= now;
+}
+
+/**
+ * 该拿这份绑定怎么办 —— **纯决策**，不碰数据库。
+ *
+ * 抽出来的理由很实在：这个判断此前埋在 `getFreshBgmAccessToken` 里，
+ * 于是「个人令牌剩 23 小时会不会被误判成过期」这种回归**没有任何测试**
+ * 能覆盖（要覆盖就得先造一条绑定），而它恰恰是用户实际撞上的问题。
+ * 现在把它做成纯函数，规则可以直接断言（同 `planBinding` 的做法）。
+ */
+export type TokenPlan = "use" | "refresh" | "expired";
+
+export function planTokenUse(
+  binding: { personalToken: boolean; expiresAt: Date },
+  now = Date.now(),
+): TokenPlan {
+  /*
+   * 个人令牌没有 refresh_token：
+   * - 真的过期了 -> 只能请用户重新生成；
+   * - **还没过期就必须能用**（哪怕只剩 1 分钟）—— 套用 24 小时刷新窗口
+   *   会让令牌提前一天报废，且错报成「已过期」。
+   */
+  if (binding.personalToken) {
+    return isBgmTokenExpired(binding.expiresAt, now) ? "expired" : "use";
+  }
+
+  // OAuth：临近过期就续期
+  return isBgmTokenExpiring(binding.expiresAt, now) ? "refresh" : "use";
+}
+
+
 /** 个人令牌过期 —— 无 refresh_token，只能请用户重新生成。 */
 export class BgmTokenExpiredError extends Error {
   constructor() {
@@ -367,11 +407,11 @@ export async function getFreshBgmAccessToken(
   const binding = await prisma.bgmBinding.findUnique({ where: { userId } });
   if (!binding) throw new BgmNotBoundError();
 
-  if (!isBgmTokenExpiring(binding.expiresAt)) {
+  const plan = planTokenUse(binding);
+  if (plan === "expired") throw new BgmTokenExpiredError();
+  if (plan === "use") {
     return { accessToken: binding.accessToken, bgmUsername: binding.bgmUsername };
   }
-
-  if (binding.personalToken) throw new BgmTokenExpiredError();
 
   const config = readBgmOAuthConfig(origin);
   const refreshed: BgmTokenResponse = await refreshAccessToken({

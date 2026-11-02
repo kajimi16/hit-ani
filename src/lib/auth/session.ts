@@ -44,6 +44,16 @@ export interface SessionUser {
   bgmBound: boolean;
   bgmUsername: string | null;
   /**
+   * Bangumi 令牌的过期时刻（毫秒时间戳）；未绑定为 `null`。
+   *
+   * 用它把「令牌已过期 / 即将过期」**显示出来**：此前过期信息只存在于
+   * `bgm-oauth.ts` 的内部刷新逻辑里，界面上一个字都没有，用户只能等
+   * 到导入失败才发现 —— 而那时又找不到更新令牌的入口。
+   */
+  bgmExpiresAt: number | null;
+  /** 是否为个人访问令牌（无 refresh_token，过期只能请用户重新生成）。 */
+  bgmPersonalToken: boolean;
+  /**
    * 是否把站内操作同步写回 Bangumi。**默认 false** —— 见
    * `prisma/schema.prisma` 里 `User.mirrorToBgm` 的说明。
    */
@@ -70,7 +80,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
       email: true,
       studentNo: true,
       qqBinding: { select: { userId: true } },
-      bgmBinding: { select: { bgmUsername: true } },
+      bgmBinding: { select: { bgmUsername: true, expiresAt: true, personalToken: true } },
       jellyfinConnections: { select: { id: true }, take: 1 },
       mirrorToBgm: true,
       isAdmin: true,
@@ -102,6 +112,8 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     qqBound: user.qqBinding !== null,
     bgmBound: user.bgmBinding !== null,
     bgmUsername: user.bgmBinding?.bgmUsername ?? null,
+    bgmExpiresAt: user.bgmBinding?.expiresAt.getTime() ?? null,
+    bgmPersonalToken: user.bgmBinding?.personalToken ?? false,
     mirrorToBgm: user.mirrorToBgm,
     jellyfinConnected: user.jellyfinConnections.length > 0,
     isAdmin,
