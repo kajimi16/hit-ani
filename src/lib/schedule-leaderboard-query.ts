@@ -18,7 +18,6 @@
 
 import { prisma } from "@/lib/prisma";
 import { CollectionStatus } from "@/lib/collection";
-import type { Subject } from "@/lib/bgm/client";
 import type { LeaderboardEntry } from "@/lib/schedule-leaderboard";
 
 /**
@@ -27,8 +26,24 @@ import type { LeaderboardEntry } from "@/lib/schedule-leaderboard";
  * @param subjects 本周的条目 —— **直接来自搜索响应**，BGM 人数与评分从中取。
  * @param schoolId 本校本校标识，用于站内统计。
  */
+/**
+ * 排行榜只读这几个字段。
+ *
+ * 收窄成结构类型而不是直接用 v0 的 `Subject`：周历（旧接口）返回的条目
+ * 只有这些字段，用它硬套 `Subject` 就得编造一堆不存在的属性。
+ */
+export interface LeaderboardSubject {
+  id: number;
+  name: string;
+  name_cn?: string | null;
+  images?: { common?: string; large?: string } | null;
+  rating?: { score?: number } | null;
+  collection?: { doing?: number } | null;
+}
+
+
 export async function buildLeaderboard(input: {
-  subjects: Subject[];
+  subjects: LeaderboardSubject[];
   schoolId: string;
 }): Promise<LeaderboardEntry[]> {
   const subjectIds = input.subjects.map((subject) => subject.id);

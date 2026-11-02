@@ -26,8 +26,6 @@ const SORTS = [
   { value: "score", label: "评分" },
 ] as const;
 
-/** 空状态下的快捷标签 —— 给不愿打字的用户一个入口。 */
-const QUICK_TAGS = ["机战", "日常", "奇幻", "恋爱", "科幻", "治愈"];
 
 
 /**
@@ -249,20 +247,6 @@ export default async function HomePage({
             </button>
           </div>
 
-          {!isSearching && (
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs text-on-surface-variant">快捷筛选</span>
-              {QUICK_TAGS.map((tag) => (
-                <Link
-                  key={tag}
-                  href={`/?tags=${encodeURIComponent(tag)}`}
-                  className="badge transition-colors hover:bg-primary-container hover:text-on-primary-container"
-                >
-                  {tag}
-                </Link>
-              ))}
-            </div>
-          )}
         </form>
       </section>
 
@@ -341,9 +325,6 @@ export default async function HomePage({
           <div className="section-header">
             <h2 className="section-header__title">
               {isSearching ? "搜索结果" : "推荐"}
-              <span className="ml-3 align-middle text-sm text-on-surface-variant">
-                {grid.total} 个
-              </span>
             </h2>
             {isSearching && (
               <div className="ml-auto">

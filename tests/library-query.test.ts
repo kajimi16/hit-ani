@@ -36,7 +36,7 @@ test("合法排序被接受，非法值退回默认而不是报错", () => {
   }
 });
 
-test("视图默认是网格，非法值退回网格", () => {
+test("视图默认是列表，非法值退回默认", () => {
   assert.equal(parseLibraryQuery({}).view, DEFAULT_LIBRARY_VIEW);
   assert.equal(parseLibraryQuery({ view: "list" }).view, "list");
   for (const bad of ["LIST", "table", "", undefined]) {
@@ -115,11 +115,12 @@ test("未知排序退回「最近更新」，不抛错", () => {
 
 test("切排序不清空状态筛选与视图", () => {
   // 这是最容易漏的一处：分页、排序、视图三种链接都要保留另外两类参数。
-  const href = libraryHref({ status: "doing", sort: "score", view: "list", page: 3 });
+  // 用**非默认**视图：默认值按约定不写进 URL（见下一条），拿它来断言就恒为 null
+  const href = libraryHref({ status: "doing", sort: "score", view: "grid", page: 3 });
   const url = new URL(href, "http://x");
   assert.equal(url.searchParams.get("status"), "doing");
   assert.equal(url.searchParams.get("sort"), "score");
-  assert.equal(url.searchParams.get("view"), "list");
+  assert.equal(url.searchParams.get("view"), "grid");
   assert.equal(url.searchParams.get("page"), "3");
 });
 

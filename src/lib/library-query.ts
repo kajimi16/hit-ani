@@ -36,7 +36,7 @@ export const LIBRARY_PAGE_SIZE = 60;
 export const LIBRARY_GROUP_PREVIEW = 12;
 
 export const DEFAULT_LIBRARY_SORT: LibrarySort = "recent";
-export const DEFAULT_LIBRARY_VIEW: LibraryView = "grid";
+export const DEFAULT_LIBRARY_VIEW: LibraryView = "list";
 
 function isSort(value: unknown): value is LibrarySort {
   return typeof value === "string" && LIBRARY_SORTS.some((option) => option.value === value);

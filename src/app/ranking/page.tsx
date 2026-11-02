@@ -30,7 +30,7 @@ export default async function RankingPage({
   const parsedPage = Number(params.page);
   const page = Number.isInteger(parsedPage) && parsedPage >= 1 ? parsedPage : 1;
 
-  const { total, subjects, lastPage } = await listRanking({
+  const { subjects, lastPage } = await listRanking({
     type,
     page,
     hideNsfw: !(await getSiteNsfwEnabled()),
@@ -51,9 +51,6 @@ export default async function RankingPage({
     <div className="animate-rise space-y-5">
       <header className="space-y-1">
         <h1 className="text-2xl font-normal">排行榜</h1>
-        <p className="text-sm text-on-surface-variant">
-          按 Bangumi 评分排名，共 {total} 部在榜。名次取全站名次，因此筛选后不会连续。
-        </p>
       </header>
 
       <nav className="flex flex-wrap gap-2" aria-label="类型筛选">

@@ -6,6 +6,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
+import { hideNsfwByEpisode, hideNsfwBySubject } from "@/lib/nsfw-where";
 import { buildTimeline, TIMELINE_INCLUDES, type TimelineEvent } from "./types";
 
 /** 一次查询每类活动最多取多少条。四类各取这么多，再合并排序后截断。 */
@@ -83,8 +84,8 @@ export async function queryTimeline(options: TimelineOptions): Promise<TimelineE
    * R18 过滤。四类活动的关联路径不同：收藏与短评直接挂 `subject`，
    * 弹幕与进度则经由 `episode.subject` —— 写错一边就会漏掉那一类。
    */
-  const hideBySubject = options.hideNsfw ? { subject: { nsfw: false } } : {};
-  const hideByEpisode = options.hideNsfw ? { episode: { subject: { nsfw: false } } } : {};
+  const hideBySubject = hideNsfwBySubject(options.hideNsfw);
+  const hideByEpisode = hideNsfwByEpisode(options.hideNsfw);
 
   const [collections, reviews, danmakus, progress] = await Promise.all([
     prisma.collection.findMany({

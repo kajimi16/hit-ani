@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
-import { SubjectType, searchSubjects } from "@/lib/bgm/client";
+import { getCalendar } from "@/lib/bgm/client";
+import { prisma } from "@/lib/prisma";
 import { cookies } from "next/headers";
 import { getSessionUser } from "@/lib/auth/session";
 import {
@@ -13,7 +14,6 @@ import { buildLeaderboard } from "@/lib/schedule-leaderboard-query";
 import { NSFW_COOKIE, effectiveNsfwPreference, nsfwFilterValue } from "@/lib/nsfw";
 import { getSiteNsfwEnabled } from "@/lib/site-settings";
 import { withUpstreamCache } from "@/lib/cache/upstream-cache";
-import { isoDate, parseIsoDate, weekRange, weekdayLabel } from "@/lib/schedule";
 
 export const dynamic = "force-dynamic";
 
@@ -43,15 +43,12 @@ const SCHEDULE_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 export default async function SchedulePage({
   searchParams,
 }: {
-  searchParams: Promise<{ weekOffset?: string; rank?: string }>;
+  searchParams: Promise<{ rank?: string }>;
 }) {
   const params = await searchParams;
   const rankSort = isLeaderboardSort(params.rank) ? params.rank : DEFAULT_LEADERBOARD_SORT;
   const user = await getSessionUser();
-  const raw = Number(params.weekOffset ?? 0);
-  const weekOffset = Number.isFinite(raw) ? Math.min(Math.max(Math.trunc(raw), -8), 8) : 0;
 
-  const { start, end } = weekRange(new Date(), weekOffset);
   // NSFW 偏好与探索页同源（cookie），两处的过滤口径必须一致
   const nsfw = nsfwFilterValue(
     effectiveNsfwPreference((await cookies()).get(NSFW_COOKIE)?.value, await getSiteNsfwEnabled()),
@@ -66,53 +63,52 @@ export default async function SchedulePage({
    * 用 `isoDate(start)` 而不是 `weekOffset`：后者是相对量，跨周之后含义会变
    * （同一个 offset 指向不同的周），拿它当键会串到别的周。
    */
-  const cacheKey = `${isoDate(start)}|${nsfw ?? "all"}`;
-
-  const page = await withUpstreamCache(
-    { namespace: "schedule", key: cacheKey, ttlMs: SCHEDULE_CACHE_TTL_MS },
-    () =>
-      searchSubjects(
-        {
-          keyword: "",
-          sort: "heat",
-          filter: {
-            type: [SubjectType.Anime] as never,
-            air_date: [`>=${isoDate(start)}`, `<=${isoDate(end)}`],
-            ...(nsfw === undefined ? {} : { nsfw }),
-          },
-        },
-        { limit: 50 },
-      ),
     /*
-     * 上游长时间不可用时**不再让整页空着**。
+     * 数据源换成**周历**：它列的是「当前在播」的番，按星期分组。
      *
-     * 以前是 `.catch(() => null)` —— 上游一挂，页面上一天档期都没有。
-     * 缓存层内部已经处理了「吃陈旧数据」，走到这里的只剩「连陈旧数据都没有」，
-     * 那种情况下返回 null（空档期表）确实比让整页 500 好。
+     * 之前按 `air_date` 落在本周来筛 —— 那等于「本周首播」，播了半年的
+     * 年番会被整段排除；而用户要的是「今天有哪些番更新」。
+     *
+     * 缓存键不再含日期：周历描述的是「当前状态」，不随周次变化。
      */
-  ).catch(() => null);
+    const cacheKey = String(nsfw ?? "all");
+    const calendar = await withUpstreamCache(
+      { namespace: "schedule", key: cacheKey, ttlMs: SCHEDULE_CACHE_TTL_MS },
+      () => getCalendar(),
+    ).catch(() => null);
 
-  const byDate = new Map<string, NonNullable<typeof page>["data"]>();
-  for (const subject of page?.data ?? []) {
-    if (!subject.date) continue;
-    const list = byDate.get(subject.date) ?? [];
-    list.push(subject);
-    byDate.set(subject.date, list);
-  }
+    const allItems = (calendar ?? []).flatMap((day) => day.items);
 
-  // 即使某天没有新番也要展示这一天，避免整周结构断裂
-  const days = Array.from({ length: 7 }, (_, index) => {
-    const date = new Date(start.getTime() + index * 24 * 60 * 60 * 1000);
-    const key = isoDate(date);
-    return {
-      key,
-      label: weekdayLabel(parseIsoDate(key)!, start),
-      isToday: key === isoDate(new Date()),
-      items: (byDate.get(key) ?? []).sort(
-        (a, b) => (b.rating?.total ?? 0) - (a.rating?.total ?? 0),
-      ),
-    };
-  });
+    /*
+     * NSFW：周历接口**不返回 nsfw 标记**，只能用本地 `Subject.nsfw`
+     * （由详情回填补全）。它只覆盖我们判定过的条目；没补过的无法区分
+     * 「确认不是」与「尚未确认」—— 页面上如实说明这一点。
+     */
+    const hiddenIds = new Set<number>();
+    if (nsfw === false && allItems.length > 0) {
+      const flagged = await prisma.subject.findMany({
+        where: { id: { in: allItems.map((item) => item.id) }, nsfw: true },
+        select: { id: true },
+      });
+      for (const row of flagged) hiddenIds.add(row.id);
+    }
+
+    // 按星期 1..7（周一..周日）对齐；不依赖上游数组顺序
+    const today = new Date();
+    const todayWeekday = today.getDay() === 0 ? 7 : today.getDay();
+    const days = Array.from({ length: 7 }, (_, index) => {
+      const weekdayId = index + 1;
+      const source = calendar?.find((day) => day.weekday.id === weekdayId);
+      return {
+        key: String(weekdayId),
+        label: source?.weekday.cn ?? ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"][index],
+        isToday: weekdayId === todayWeekday,
+        items: (source?.items ?? [])
+          .filter((item) => !hiddenIds.has(item.id))
+          .sort((a, b) => (b.rating?.total ?? 0) - (a.rating?.total ?? 0)),
+      };
+    });
+
 
   /*
    * 排行榜：只看**本周这几十部**（与时间表同一批条目），因此校内统计的
@@ -121,37 +117,33 @@ export default async function SchedulePage({
    */
   const leaderboard = user
     ? rankLeaderboard(
-        await buildLeaderboard({ subjects: page?.data ?? [], schoolId: user.schoolId }),
+        await buildLeaderboard({ subjects: allItems, schoolId: user.schoolId }),
         rankSort,
       )
     : [];
 
   return (
     <div className="animate-rise space-y-6">
-      <section className="space-y-3">
-        <h1 className="text-2xl font-normal">新番时间表</h1>
-        <p className="text-sm text-on-surface-variant">
-          {isoDate(start)} ~ {isoDate(end)} · 共 {page?.total ?? 0} 部
-        </p>
-        <div className="flex gap-2 text-sm">
-          <Link href={`/schedule?weekOffset=${weekOffset - 1}`} className="btn btn-ghost btn-sm">
-            上一周
-          </Link>
-          <Link href="/schedule" className="btn btn-ghost btn-sm">
-            本周
-          </Link>
-          <Link href={`/schedule?weekOffset=${weekOffset + 1}`} className="btn btn-ghost btn-sm">
-            下一周
-          </Link>
-        </div>
-      </section>
+        <section className="space-y-3">
+          <h1 className="text-2xl font-normal">新番时间表</h1>
+          <p className="text-sm text-on-surface-variant">
+            当前在播的番，按放送星期排列 · 共 {allItems.length} 部
+          </p>
+          {/*
+            如实说明数据缺口：上游的周历接口只有星期，没有放送时刻
+            （实测 7 天返回体里不含任何 `HH:mm`），所以做不出「几点到几点」。
+          */}
+          <p className="text-xs text-on-surface-variant/70">
+            Bangumi 不提供各番的放送时刻，因此这里只能按星期排，无法显示具体几点更新。
+          </p>
+        </section>
 
-      {page === null && (
-        <p className="alert alert-danger">获取时间表失败，请稍后重试。</p>
-      )}
+        {calendar === null && (
+          <p className="alert alert-danger">获取时间表失败，请稍后重试。</p>
+        )}
 
       {/*
-        新番排行榜 —— 与时间表同一批条目（本周开播），两个板块的数据天然一致，
+        新番排行榜 —— 与时间表同一批条目（当前在播），两个板块的数据天然一致，
         不会出现「时间表里有、榜单里没有」的困惑。
 
         排序做成链接（`rank=` 查询参数）而不是客户端状态：这是服务端组件，
@@ -161,12 +153,12 @@ export default async function SchedulePage({
         <section className="space-y-3">
           <div className="flex flex-wrap items-center gap-3">
             <h2 className="text-lg font-medium">新番排行榜</h2>
-            <span className="text-xs text-on-surface-variant">本周开播 {leaderboard.length} 部</span>
+            <span className="text-xs text-on-surface-variant">本周在播 {leaderboard.length} 部</span>
             <div className="ml-auto flex flex-wrap items-center gap-2">
               {LEADERBOARD_SORTS.map((option) => (
                 <a
                   key={option.value}
-                  href={`/schedule?weekOffset=${weekOffset}&rank=${option.value}`}
+                  href={`/schedule?rank=${option.value}`}
                   aria-current={rankSort === option.value ? "true" : undefined}
                   className={`btn btn-sm ${rankSort === option.value ? "btn-primary" : "btn-ghost"}`}
                 >
@@ -259,7 +251,7 @@ export default async function SchedulePage({
             </h2>
 
             {day.items.length === 0 ? (
-              <p className="text-sm text-on-surface-variant">这天没有新番开播。</p>
+              <p className="text-sm text-on-surface-variant">这天没有在播的番。</p>
             ) : (
               <ul className="space-y-1">
                 {day.items.map((item) => (
@@ -283,7 +275,7 @@ export default async function SchedulePage({
                         </span>
                         <span className="schedule-item__meta block">
                           {item.rating?.score ? `${item.rating.score.toFixed(1)} 分` : "暂无评分"}
-                          {item.eps ? ` · ${item.eps} 集` : ""}
+                          {item.rating?.score ? ` · ${item.rating.score.toFixed(1)} 分` : ""}
                         </span>
                       </span>
                     </Link>

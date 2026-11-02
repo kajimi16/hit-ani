@@ -51,7 +51,9 @@ export default async function LibraryPage({
   if (!user) redirect("/login");
 
   const params = await searchParams;
-  const focused = statusBySlug(params.status);
+    // 默认落在「在看」：进来先看到正在追的，而不是一个混合列表
+    const focused =
+      statusBySlug(params.status) ?? COLLECTION_STATUSES.find((meta) => meta.slug === "doing") ?? null;
   const query = parseLibraryQuery(params);
 
   /*
@@ -59,7 +61,7 @@ export default async function LibraryPage({
    * 两处各写一遍必然漂移，而漂移的后果是**隐私失效**（私密收藏漏出来）。
    * 自己的页面 `viewerId === userId`，因此不会被过滤。
    */
-  const { rowsByType, countByType, watchedBySubject, totalForFocused } = await loadLibrary({
+  const { rowsByType, countByType, watchedBySubject, episodesBySubject, totalForFocused } = await loadLibrary({
     userId: user.id,
     viewerId: user.id,
     focused,
@@ -67,7 +69,7 @@ export default async function LibraryPage({
     hideNsfw: !(await getSiteNsfwEnabled()),
   });
 
-  const toItem = (row: LibraryRow) => toLibraryItem(row, watchedBySubject);
+  const toItem = (row: LibraryRow) => toLibraryItem(row, watchedBySubject, episodesBySubject);
 
   const hrefFor = (overrides: Partial<{ status: string; sort: typeof query.sort; view: typeof query.view; page: number }>) =>
     libraryHref({
@@ -78,7 +80,7 @@ export default async function LibraryPage({
     });
 
   const totalPages = focused ? Math.max(1, Math.ceil(totalForFocused / LIBRARY_PAGE_SIZE)) : 1;
-  const View = query.view === "list" ? "list" : "grid";
+    const View = query.view === "list" ? "list" : "grid";
 
   return (
     <div className="animate-rise space-y-6">
@@ -86,19 +88,6 @@ export default async function LibraryPage({
 
       {/* ---------------------------------------------------------- 状态分组导航 */}
       <nav className="flex flex-wrap gap-2">
-        <a
-          href={hrefFor({ status: undefined, page: 1 })}
-          className={`rounded border px-3 py-1.5 text-sm transition ${
-            focused === null
-              ? "border-primary bg-primary-container text-on-primary-container"
-              : "border-outline-variant bg-surface-container-low hover:border-outline"
-          }`}
-        >
-          全部
-          <span className="ml-2 text-xs text-on-surface-variant">
-            {[...countByType.values()].reduce((sum, n) => sum + n, 0)}
-          </span>
-        </a>
         {COLLECTION_STATUSES.map((meta) => {
           const active = focused?.value === meta.value;
           return (
@@ -180,7 +169,7 @@ export default async function LibraryPage({
                 这一页没有内容。<a href={hrefFor({ page: 1 })} className="text-primary underline">回到第 1 页</a>
               </p>
             ) : View === "list" ? (
-              <ul className="panel divide-y-0 p-0">
+                <ul className="panel grid gap-0 p-0 md:grid-cols-2">
                 {shown.map((row) => (
                   <LibraryListRow key={row.id} item={toItem(row)} />
                 ))}

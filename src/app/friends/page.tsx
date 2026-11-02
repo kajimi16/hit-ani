@@ -28,10 +28,6 @@ export default async function FriendsPage() {
     <div className="space-y-5">
       <div className="space-y-1">
         <h1 className="text-2xl font-normal">好友</h1>
-        <p className="text-sm text-on-surface-variant">
-          加好友后可以看到对方的追番列表（只读，不能修改）。
-          对方设为私密的收藏不会显示。
-        </p>
       </div>
 
       <FriendsClient

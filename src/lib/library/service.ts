@@ -15,6 +15,7 @@
 
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { hideNsfwBySubject } from "@/lib/nsfw-where";
 import { COLLECTION_STATUSES, statusLabel, type CollectionStatusValue } from "@/lib/collection";
 import {
   LIBRARY_GROUP_PREVIEW,
@@ -65,10 +66,19 @@ export interface LoadLibraryOptions {
   hideNsfw?: boolean;
 }
 
+/** 一个集数格子。 */
+export interface EpisodeCell {
+  id: number;
+  sort: number;
+  watched: boolean;
+}
+
 export interface LibraryData {
   rowsByType: Map<CollectionStatusValue, LibraryRow[]>;
   countByType: Map<number, number>;
   watchedBySubject: Map<number, number>;
+  /** 每个条目的集数格子（顺序 = 放送顺序）。 */
+  episodesBySubject: Map<number, EpisodeCell[]>;
   totalForFocused: number;
   /** 本次是否过滤掉了私密收藏（界面可据此说明）。 */
   hidesPrivate: boolean;
@@ -81,7 +91,7 @@ export async function loadLibrary(options: LoadLibraryOptions): Promise<LibraryD
     userId: options.userId,
     ...(hidesPrivate ? { isPrivate: false } : {}),
     // 与隐私过滤同一处：这里是所有列表查询的唯一 where 来源
-    ...(options.hideNsfw ? { subject: { nsfw: false } } : {}),
+    ...hideNsfwBySubject(options.hideNsfw),
   };
 
   const loadGroup = (type: CollectionStatusValue, take: number, skip = 0) =>
@@ -141,10 +151,40 @@ export async function loadLibrary(options: LoadLibraryOptions): Promise<LibraryD
     }
   }
 
+  /*
+   * 集数格子：每个条目有哪些集、哪些看过。
+   *
+   * 与上面的「已看集数」来自同一批数据，但这里需要**逐集**的顺序与状态 ——
+   * Bangumi 那种格子矩阵不是进度条，它同时是操作入口。
+   */
+  const episodesBySubject = new Map<number, EpisodeCell[]>();
+  if (allRows.length > 0) {
+    const subjectIds = [...new Set(allRows.map((row) => row.subjectId))];
+    const [episodes, doneRows] = await Promise.all([
+      prisma.episode.findMany({
+        where: { subjectId: { in: subjectIds } },
+        select: { id: true, subjectId: true, sort: true },
+        orderBy: { sort: "asc" },
+      }),
+      prisma.episodeProgress.findMany({
+        where: { userId: options.userId, type: 2, episode: { subjectId: { in: subjectIds } } },
+        select: { episodeId: true },
+      }),
+    ]);
+    const done = new Set(doneRows.map((row) => row.episodeId));
+    for (const episode of episodes) {
+      const list = episodesBySubject.get(episode.subjectId) ?? [];
+      list.push({ id: episode.id, sort: episode.sort, watched: done.has(episode.id) });
+      episodesBySubject.set(episode.subjectId, list);
+    }
+  }
+
+
   return {
     rowsByType,
     countByType: new Map(counts.map((row) => [row.type, row._count._all])),
     watchedBySubject,
+    episodesBySubject,
     totalForFocused,
     hidesPrivate,
   };
@@ -159,6 +199,7 @@ export async function loadLibrary(options: LoadLibraryOptions): Promise<LibraryD
 export function toLibraryItem(
   row: LibraryRow,
   watchedBySubject: Map<number, number>,
+  episodesBySubject: Map<number, EpisodeCell[]>,
 ): LibraryItem {
   return {
     collectionId: row.id,
@@ -171,6 +212,7 @@ export function toLibraryItem(
     myComment: row.comment,
     bgmRank: row.subject.rank,
     watchedEpisodes: watchedBySubject.get(row.subjectId) ?? 0,
+    episodes: episodesBySubject.get(row.subjectId) ?? [],
     totalEpisodes: row.subject._count.episodes,
     collectedAt: row.collectedAt?.toISOString() ?? null,
     resumePositionMs: row.playbackPositionMs,

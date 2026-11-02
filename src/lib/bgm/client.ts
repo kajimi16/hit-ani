@@ -334,6 +334,47 @@ async function request<T>(
  * ------------------------------------------------------------------ */
 
 /** 条目搜索：关键词 + 标签/评分/日期/排名筛选。 */
+/**
+ * 周历（当前在播的番按星期分组）。
+ *
+ * ## 为什么用这个接口
+ *
+ * 「新番」的正确口径是**有剧集在更新**，而不是「本周首播」—— 后者会把
+ * 播了半年的年番全部排除掉。`/v0` 没有时间表端点，只有这个旧接口提供
+ * 「当前在播 + 放送星期」。
+ *
+ * ## 一个必须知道的数据限制
+ *
+ * 这个接口返回的条目**没有放送时刻**（`air_time` 已被上游去掉，实测
+ * 7 天全部不含任何 `HH:mm`）。因此本项目的课表只能按**星期**排，
+ * 无法显示「几点到几点」—— 界面上如实说明，不编造时间。
+ */
+export interface CalendarSubject {
+  id: number;
+  name: string;
+  name_cn?: string;
+  air_date?: string;
+  air_weekday?: number;
+  images?: { large?: string; common?: string; medium?: string; small?: string };
+  rating?: { total?: number; count?: Record<string, number>; score?: number };
+  collection?: { wish?: number; collect?: number; doing?: number; on_hold?: number; dropped?: number };
+}
+
+export interface CalendarDay {
+  weekday: { id: number; cn: string; en: string; ja: string };
+  items: CalendarSubject[];
+}
+
+export function getCalendar(options: BgmRequestOptions = {}): Promise<CalendarDay[]> {
+  return request<CalendarDay[]>("/calendar", {
+    method: "GET",
+    accessToken: options.accessToken,
+    signal: options.signal,
+    timeoutMs: options.timeoutMs,
+  });
+}
+
+
 export function searchSubjects(
   body: SubjectSearchBody,
   query: QueryOf<"searchSubjects"> = {},

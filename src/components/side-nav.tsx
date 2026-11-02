@@ -8,7 +8,6 @@ import {
   IconDatabase,
   IconExplore,
   IconHistory,
-  IconFlag,
   IconLeaderboard,
   IconPeople,
   IconSettings,
@@ -78,13 +77,6 @@ export default function SideNav({ isAdmin, user }: Props) {
       label: "媒体源",
       icon: IconDatabase,
       match: (p) => p.startsWith("/sources"),
-    });
-    // 举报处理 —— 与 `/admin/reports` 的守卫一致（那边非管理员跳首页）
-    items.push({
-      href: "/admin/reports",
-      label: "举报",
-      icon: IconFlag,
-      match: (p) => p.startsWith("/admin/reports"),
     });
       // 网站管理 —— 站点级策略（与 /settings 的「用户自己的偏好」分开）
       items.push({

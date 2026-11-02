@@ -64,7 +64,7 @@ export default async function UserLibraryPage({
   const focused = statusBySlug(sp.status);
   const query = parseLibraryQuery(sp);
 
-  const { rowsByType, countByType, watchedBySubject, totalForFocused, hidesPrivate } =
+  const { rowsByType, countByType, watchedBySubject, episodesBySubject, totalForFocused, hidesPrivate } =
     await loadLibrary({
       userId: id,
       viewerId: viewer.id,
@@ -200,7 +200,7 @@ export default async function UserLibraryPage({
                 {shown.map((row) => (
                   <LibraryListRow
                     key={row.id}
-                    item={toLibraryItem(row, watchedBySubject)}
+                    item={toLibraryItem(row, watchedBySubject, episodesBySubject)}
                   />
                 ))}
               </ul>
@@ -209,7 +209,7 @@ export default async function UserLibraryPage({
                 {shown.map((row) => (
                   <LibraryGridCard
                     key={row.id}
-                    item={toLibraryItem(row, watchedBySubject)}
+                    item={toLibraryItem(row, watchedBySubject, episodesBySubject)}
                   />
                 ))}
               </div>

@@ -25,6 +25,7 @@ import {
   parseNsfwCookie,
 } from "@/lib/nsfw";
 import { parseSiteBoolean } from "@/lib/site-settings";
+import { hideNsfwByEpisode, hideNsfwBySubject } from "@/lib/nsfw-where";
 
 test("默认是「不显示」", () => {
   // 校内平台的默认值必须对所有人都合适。
@@ -110,5 +111,23 @@ test("站点设置缺省/来路不明的值时退回默认，而不是当成关�
   assert.equal(parseSiteBoolean(undefined, false), false);
   for (const bad of ["", "0", "no", "FALSE", " yes "]) {
     assert.equal(parseSiteBoolean(bad, true), true, `未知值 ${JSON.stringify(bad)} 不应被当成关闭`);
+  }
+});
+
+/* ================================================================== *
+ * R18 过滤的 Prisma 形状（追番 / 时光机共五处使用）
+ * ================================================================== */
+
+test("★ 关闭时必须产出 `nsfw: false`，且挂在正确的关系层级上", () => {
+  // 收藏/短评直接挂 subject；弹幕/进度要经由 episode.subject。
+  // 写成顶层 `{ nsfw: false }` 会静默不生效 —— 这正是要防的。
+  assert.deepEqual(hideNsfwBySubject(true), { subject: { nsfw: false } });
+  assert.deepEqual(hideNsfwByEpisode(true), { episode: { subject: { nsfw: false } } });
+});
+
+test("★ 未关闭（或未传）时不产生任何过滤 —— 否则会误伤未确认的条目", () => {
+  for (const value of [false, undefined]) {
+    assert.deepEqual(hideNsfwBySubject(value), {});
+    assert.deepEqual(hideNsfwByEpisode(value), {});
   }
 });

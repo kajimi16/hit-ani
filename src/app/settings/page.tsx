@@ -4,6 +4,7 @@ import AvatarSetting from "@/components/avatar-setting";
 import JellyfinManager from "@/components/jellyfin-manager";
 import MirrorSetting from "@/components/mirror-setting";
 import NsfwSetting from "@/components/nsfw-setting";
+import ReportsClient from "@/components/reports-client";
 import OAuthNoticeBanner from "@/components/oauth-notice-banner";
 import SettingsClient from "@/components/settings-client";
 import ThemePicker from "@/components/theme-picker";
@@ -78,6 +79,22 @@ export default async function SettingsPage({
         bgmPersonalToken={user.bgmPersonalToken}
         oauthConfigured={isBgmOAuthConfigured()}
       />
+
+      {/*
+        * 举报处理放在设置里，而不是侧栏里一个独立页面。
+        *
+        * 它是**低频的管理动作**，与「网站管理」同属管理员事务；单独占一个导航项
+        * 会让普通用户也注意到它，对管理员则多一次跳转。
+        */}
+      {user.isAdmin && (
+        <section className="space-y-3 border-t border-outline-variant pt-8">
+          <h2 className="text-lg font-semibold">举报处理</h2>
+          <p className="text-sm text-on-surface-variant">
+            处理其他用户提交的弹幕举报。屏蔽后该弹幕在所有读路径上不可见，但仍保留在库里以便追溯。
+          </p>
+          <ReportsClient />
+        </section>
+      )}
 
       <section className="space-y-3 border-t border-outline-variant pt-8">
         <h2 className="text-lg font-semibold">我的媒体服务器</h2>

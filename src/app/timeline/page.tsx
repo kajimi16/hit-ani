@@ -85,12 +85,7 @@ export default async function TimelinePage({
       </nav>
 
       <p className="text-xs text-on-surface-variant">
-        {scope === "school" ? (
-          <>
-            本校（{user.schoolId}）用户在本站的活动：收藏、评分、评论、弹幕与观看进度。
-            私密收藏不会出现在这里。
-          </>
-        ) : (
+        {scope === "school" ? null : (
           <>
             你在 Bangumi 上的收藏活动。
             Bangumi 网页版的时光机还包含好友动态与小组发言，

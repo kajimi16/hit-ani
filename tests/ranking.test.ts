@@ -135,3 +135,14 @@ test("where 条件本身：桩段与 rank<=0 都被排除", () => {
   assert.equal(where.rank.gt, 0, "必须用 gt（rank=0 表示暂无排名）");
   assert.equal(where.id.lt, STUB_SUBJECT_ID_MIN, "必须用 lt（基址本身是桩）");
 });
+
+test("★ 总开关关闭时，排行榜查询必须排除 R18 条目", () => {
+  // 该过滤漏掉时不会报错，只会让已标记的条目重新出现在榜单上。
+  const hidden = rankingWhere("all", true) as { nsfw?: boolean };
+  assert.equal(hidden.nsfw, false);
+
+  // 默认（含「站点允许」）不加这个键：`nsfw` 列不区分「确认不是」与「尚未确认」，
+  // 无条件过滤会把没检查过的条目一起藏掉。
+  const shown = rankingWhere("all", false) as { nsfw?: boolean };
+  assert.equal(shown.nsfw, undefined);
+});

@@ -18,6 +18,8 @@ export interface LibraryItem {
   /** 该用户在 BGM 的排名（越小越好），无则为 null */
   bgmRank: number | null;
   watchedEpisodes: number;
+  /** 逐集状态。空数组 = 还没同步过章节（不是「没有集」）。 */
+  episodes: { id: number; sort: number; watched: boolean }[];
   totalEpisodes: number;
   /** 加入收藏时间（可能未知） */
   collectedAt: string | null;
@@ -49,6 +51,50 @@ function Stars({ score }: { score: number }) {
  * 用 `SubjectCard` 同一套 9:16 比例（`SubjectCoverCard`），
  * 保持首页与追番页的封面裁切一致。
  */
+/**
+ * 集数格子矩阵 —— 追番列表里最有辨识度的部分。
+ *
+ * 蓝色实心 = 已看，灰色描边 = 未看。**不是进度条**：它同时是「看到哪了」的
+ * 状态展示，一格一集，长篇也被压成几行。
+ *
+ * 超过 `maxCells` 时截断并显示剩余数 —— 147 集的番如果全画出来，一张卡片
+ * 会撑满整屏，反而看不清。
+ */
+export function EpisodeGrid({
+  cells,
+  maxCells = 48,
+}: {
+  cells: LibraryItem["episodes"];
+  maxCells?: number;
+}) {
+  if (cells.length === 0) return null;
+  const shown = cells.slice(0, maxCells);
+
+  return (
+    <div className="flex flex-wrap gap-1" aria-label="集数进度">
+      {shown.map((cell) => (
+        <span
+          key={cell.id}
+          title={`第 ${cell.sort} 集${cell.watched ? "（已看）" : "（未看）"}`}
+          className={`flex h-5 min-w-5 items-center justify-center rounded-sm px-1 font-mono text-[10px] ${
+            cell.watched
+              ? "bg-primary text-on-primary"
+              : "border border-outline-variant text-on-surface-variant"
+          }`}
+        >
+          {Number.isInteger(cell.sort) ? cell.sort : cell.sort.toFixed(1)}
+        </span>
+      ))}
+      {cells.length > shown.length && (
+        <span className="self-center text-[10px] text-on-surface-variant">
+          +{cells.length - shown.length}
+        </span>
+      )}
+    </div>
+  );
+}
+
+
 export function LibraryGridCard({ item }: { item: LibraryItem }) {
   return (
     <Link href={`/subjects/${item.subjectId}`} className="subject-card">
@@ -120,6 +166,9 @@ export function LibraryListRow({ item }: { item: LibraryItem }) {
               <span className="text-primary">上次看到 {formatDuration(item.resumePositionMs)}</span>
             )}
           </div>
+
+          {/* 集数格子：蓝色=已看，灰色=未看 */}
+          <EpisodeGrid cells={item.episodes} />
 
           {/* 我的评分 / 评论 —— 列表视图的核心内容 */}
           {item.myRating !== null ? (

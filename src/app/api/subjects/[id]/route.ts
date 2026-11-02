@@ -5,6 +5,7 @@ import { subjectFieldsFromDetail } from "@/lib/bgm/subject-fields";
 import { parseIsoDate } from "@/lib/date";
 import { getSubject, getSubjectEpisodes } from "@/lib/bgm/client";
 import { getSiteBgmToken } from "@/lib/bgm/site-token";
+import { getSiteNsfwEnabled } from "@/lib/site-settings";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -86,6 +87,14 @@ export async function GET(
       );
     }
   }
+
+    /*
+     * 与页面层同一道闸。**不能只靠页面**：这个接口现在用站级令牌抓数据，
+     * R18 条目会成功返回，绕过页面层的 404 即可拿到 name/summary/章节。
+     */
+    if (subject.nsfw && !(await getSiteNsfwEnabled())) {
+      return NextResponse.json({ error: "条目不存在" }, { status: 404 });
+    }
 
   const episodeIds = subject.episodes.map((episode) => episode.id);
   const [danmakuCounts, schoolCounts, collection] = await Promise.all([

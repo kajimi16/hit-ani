@@ -329,9 +329,18 @@ export async function generateMetadata({
 
   const subject = await prisma.subject.findUnique({
     where: { id: subjectId },
-    select: { nameCn: true, name: true, summary: true, coverUrl: true, score: true },
+    select: { nameCn: true, name: true, summary: true, coverUrl: true, score: true, nsfw: true },
   });
   if (!subject) return {};
+
+  /*
+   * 站点关闭 R18 时，**元数据也不能泄露名字**。
+   *
+   * `generateMetadata` 与页面是两个独立的执行体：页面里的 `notFound()` 让
+   * 它渲染 404，但 metadata 已经先读过本地缓存并把标题写进了 `<title>` ——
+   * 于是「这一页不存在」的 404 页顶栏挂着那个条目的名字。
+   */
+  if (subject.nsfw && !(await getSiteNsfwEnabled())) return {};
 
   const title = subject.nameCn || subject.name;
   // 描述里带上评分：一眼能看出「这部番值不值得点」。
