@@ -86,6 +86,13 @@ export default function SideNav({ isAdmin, user }: Props) {
       icon: IconFlag,
       match: (p) => p.startsWith("/admin/reports"),
     });
+      // 网站管理 —— 站点级策略（与 /settings 的「用户自己的偏好」分开）
+      items.push({
+        href: "/admin/site",
+        label: "网站管理",
+        icon: IconSettings,
+        match: (p) => p.startsWith("/admin/site"),
+      });
   }
 
   const renderItem = (item: NavItem) => {

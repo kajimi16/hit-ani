@@ -19,10 +19,12 @@ import {
   DEFAULT_NSFW_PREFERENCE,
   NSFW_COOKIE,
   NSFW_LABELS,
+  effectiveNsfwPreference,
   isNsfwPreference,
   nsfwFilterValue,
   parseNsfwCookie,
 } from "@/lib/nsfw";
+import { parseSiteBoolean } from "@/lib/site-settings";
 
 test("默认是「不显示」", () => {
   // 校内平台的默认值必须对所有人都合适。
@@ -68,5 +70,45 @@ test("类型守卫只认这两个字面量", () => {
   assert.equal(isNsfwPreference("show"), true);
   for (const bad of ["", "SHOW", true, null, undefined, 1, {}]) {
     assert.equal(isNsfwPreference(bad), false);
+  }
+});
+
+/* ================================================================== *
+ * 站点总开关（管理员级）优先于设备偏好
+ * ================================================================== */
+
+test("★ 管理员关掉总开关后，设备上选了「显示」也必须隐藏", () => {
+  // cookie 可能是一年前写的，而总开关是现在的决定 —— 开关必须赢
+  assert.equal(effectiveNsfwPreference("show", false), "hide");
+  assert.equal(effectiveNsfwPreference("hide", false), "hide");
+  assert.equal(effectiveNsfwPreference(undefined, false), "hide");
+  assert.equal(effectiveNsfwPreference("garbage", false), "hide");
+});
+
+test("总开关打开时不覆盖用户自己的选择", () => {
+  assert.equal(effectiveNsfwPreference("show", true), "show");
+  assert.equal(effectiveNsfwPreference("hide", true), "hide");
+  // 没设置过 -> 默认「不显示」（与引入开关前一致）
+  assert.equal(effectiveNsfwPreference(undefined, true), "hide");
+});
+
+test("★ 总开关关掉时，过滤值必须真的生效（不能只藏界面）", () => {
+  // 界面藏起来但请求仍带 nsfw=undefined 的话，内容照样会出现在列表里
+  const preference = effectiveNsfwPreference("show", false);
+  assert.equal(nsfwFilterValue(preference), false);
+});
+
+test("★ 站点设置的字符串布尔：`\"false\"` 不能被读成 true", () => {
+  // 这正是 `Boolean(row.value)` 会犯的错：任何非空字符串都是 true
+  assert.equal(parseSiteBoolean("false", true), false);
+  assert.equal(parseSiteBoolean("true", false), true);
+  assert.equal(Boolean("false"), true, "对照：直接 Boolean 一定错");
+});
+
+test("站点设置缺省/来路不明的值时退回默认，而不是当成关闭", () => {
+  assert.equal(parseSiteBoolean(undefined, true), true, "没有该行 -> 默认值");
+  assert.equal(parseSiteBoolean(undefined, false), false);
+  for (const bad of ["", "0", "no", "FALSE", " yes "]) {
+    assert.equal(parseSiteBoolean(bad, true), true, `未知值 ${JSON.stringify(bad)} 不应被当成关闭`);
   }
 });

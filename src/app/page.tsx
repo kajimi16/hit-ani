@@ -11,7 +11,8 @@ import { cookies } from "next/headers";
 import { BGM_MAX_PAGE_SIZE, pageCount, pageOffset } from "@/lib/bgm/paging";
 import { recentCutoff, recommendQuery } from "@/lib/bgm/recommend";
 import { withUpstreamCache } from "@/lib/cache/upstream-cache";
-import { NSFW_COOKIE, nsfwFilterValue, parseNsfwCookie } from "@/lib/nsfw";
+import { NSFW_COOKIE, effectiveNsfwPreference, nsfwFilterValue } from "@/lib/nsfw";
+import { getSiteNsfwEnabled } from "@/lib/site-settings";
 
 export const metadata: Metadata = {
   title: "探索",
@@ -117,7 +118,9 @@ export default async function HomePage({
    * 这个值决定**请求哪些条目**，不能等客户端再补。
    * `nsfwFilterValue` 返回 undefined 时整个键都不传（见该函数说明）。
    */
-  const nsfw = nsfwFilterValue(parseNsfwCookie((await cookies()).get(NSFW_COOKIE)?.value));
+  const nsfw = nsfwFilterValue(
+    effectiveNsfwPreference((await cookies()).get(NSFW_COOKIE)?.value, await getSiteNsfwEnabled()),
+  );
 
   /**
    * 三个分区并行取数。

@@ -10,7 +10,8 @@ import {
   rankLeaderboard,
 } from "@/lib/schedule-leaderboard";
 import { buildLeaderboard } from "@/lib/schedule-leaderboard-query";
-import { NSFW_COOKIE, nsfwFilterValue, parseNsfwCookie } from "@/lib/nsfw";
+import { NSFW_COOKIE, effectiveNsfwPreference, nsfwFilterValue } from "@/lib/nsfw";
+import { getSiteNsfwEnabled } from "@/lib/site-settings";
 import { withUpstreamCache } from "@/lib/cache/upstream-cache";
 import { isoDate, parseIsoDate, weekRange, weekdayLabel } from "@/lib/schedule";
 
@@ -52,7 +53,9 @@ export default async function SchedulePage({
 
   const { start, end } = weekRange(new Date(), weekOffset);
   // NSFW 偏好与探索页同源（cookie），两处的过滤口径必须一致
-  const nsfw = nsfwFilterValue(parseNsfwCookie((await cookies()).get(NSFW_COOKIE)?.value));
+  const nsfw = nsfwFilterValue(
+    effectiveNsfwPreference((await cookies()).get(NSFW_COOKIE)?.value, await getSiteNsfwEnabled()),
+  );
 
   /*
    * 缓存键：周次 + NSFW 偏好。

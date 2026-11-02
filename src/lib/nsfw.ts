@@ -46,6 +46,23 @@ export function parseNsfwCookie(raw: string | undefined): NsfwPreference {
 }
 
 /**
+ * 实际生效的偏好 = **站点总开关 ∧ 设备偏好**。
+ *
+ * 管理员关掉站点总开关时，即使用户这台设备上早就选了「显示」也必须隐藏：
+ * 那个 cookie 可能是一年前写的，而总开关是现在的决定。反过来，开关打开时
+ * 不覆盖用户的设备偏好 —— 那才是他自己的选择。
+ *
+ * 纯函数，因此「关掉时必须隐藏」这条可以被直接断言；三个消费点
+ * （探索页 / 时间表 / 设置页）也都必须走它，不能各自 `if` 一遍。
+ */
+export function effectiveNsfwPreference(
+  rawCookie: string | undefined,
+  siteEnabled: boolean,
+): NsfwPreference {
+  return siteEnabled ? parseNsfwCookie(rawCookie) : "hide";
+}
+
+/**
  * 把偏好翻译成 BGM 搜索的 `nsfw` 过滤值。
  *
  * - `hide` → `false`：只要非 R18 条目（BGM 文档明确支持，无需权限）。

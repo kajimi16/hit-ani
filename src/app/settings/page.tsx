@@ -8,6 +8,7 @@ import OAuthNoticeBanner from "@/components/oauth-notice-banner";
 import SettingsClient from "@/components/settings-client";
 import ThemePicker from "@/components/theme-picker";
 import { isBgmOAuthConfigured } from "@/lib/auth/bgm-oauth";
+import { getSiteNsfwEnabled } from "@/lib/site-settings";
 import { describeOAuthResult } from "@/lib/auth/oauth-result";
 import { getSessionUser } from "@/lib/auth/session";
 
@@ -28,6 +29,13 @@ export default async function SettingsPage({
    * 那一下「没反应」。绑定失败尤其糟：是本站拒绝了他，界面上却一个字都没有。
    */
   const oauthNotice = describeOAuthResult(await searchParams);
+
+  /*
+   * 站点总开关。管理员关掉后，**普通用户的设置里根本不该出现这一项** ——
+   * 给一个「显示 / 不显示」的选项却两边都看不见内容，只会让人以为坏了。
+   * 因此这里是「不渲染」，而不是渲染成禁用。
+   */
+  const siteNsfwEnabled = await getSiteNsfwEnabled();
 
   return (
     <div className="space-y-8">
@@ -53,7 +61,7 @@ export default async function SettingsPage({
 
       {/* 外观与内容偏好都是设备级设置，与账号无关，因此放在最前 */}
       <ThemePicker />
-      <NsfwSetting />
+      {siteNsfwEnabled && <NsfwSetting />}
 
       {/* 同步开关是账号级设置，放在账号相关区块附近 */}
       <MirrorSetting

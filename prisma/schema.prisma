@@ -14,7 +14,7 @@ datasource db {
 
 /// 学校。`schoolId` 是「只看本校」筛选的根基，注册时由邮箱域名/学号白名单决定。
 model School {
-  id        String @id
+  id        String   @id
   name      String
   /// 允许注册的邮箱域名，如 ["hit.edu.cn"]
   domains   String[]
@@ -25,9 +25,9 @@ model School {
 
 /// 平台账号。QQ 与 Bangumi 均为「绑定」，不是登录身份本身。
 model User {
-  id           String   @id @default(cuid())
-  email        String?  @unique
-  studentNo    String?  @unique
+  id           String  @id @default(cuid())
+  email        String? @unique
+  studentNo    String? @unique
   /// scrypt 派生的口令散列，格式 `scrypt$<salt>$<hash>`
   passwordHash String
   /// 学校标识：校内弹幕/评论筛选的根基
@@ -36,34 +36,32 @@ model User {
   avatarUrl    String?
   /**
    * 是否把站内操作（收藏状态 / 评分 / 短评 / 单集进度）同步写回 Bangumi。
-   *
    * **默认关闭**。理由：写上游是**不可撤销**的（会覆盖用户在 Bangumi 上
    * 已有的内容），而用户并不知道本站会替他写。默认开启等于替他做了决定。
-   *
    * 用户可以在设置里显式打开 —— 那时他才是在知情的前提下选择同步。
    * 打开前界面会说明「会覆盖你在 Bangumi 上的对应内容」。
    */
-  mirrorToBgm Boolean @default(false)
+  mirrorToBgm  Boolean @default(false)
 
   /// 管理员：可修改共享的抓取源配置。
   /// 通过 `ADMIN_EMAILS` 环境变量在登录时自动授予（见 session.ts）。
-  isAdmin      Boolean  @default(false)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  isAdmin   Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  school      School            @relation(fields: [schoolId], references: [id])
-  qqBinding   QqBinding?
-  bgmBinding  BgmBinding?
-  collections Collection[]
-  progress    EpisodeProgress[]
-  danmakus    Danmaku[]
-  reviews     Review[]
-  danmakuReports DanmakuReport[]
+  school              School               @relation(fields: [schoolId], references: [id])
+  qqBinding           QqBinding?
+  bgmBinding          BgmBinding?
+  collections         Collection[]
+  progress            EpisodeProgress[]
+  danmakus            Danmaku[]
+  reviews             Review[]
+  danmakuReports      DanmakuReport[]
   jellyfinConnections JellyfinConnection[]
   /// 我关注的人（单向）
-  following   UserFollow[] @relation("follower")
+  following           UserFollow[]         @relation("follower")
   /// 关注我的人（单向）
-  followers   UserFollow[] @relation("followee")
+  followers           UserFollow[]         @relation("followee")
 
   @@index([schoolId])
 }
@@ -83,47 +81,45 @@ model QqBinding {
 ///
 /// `accessToken` 等值为账户级凭据（等同密码），仅服务端读写，**绝不通过 API 回显**。
 model BgmBinding {
-  userId        String   @id
-  bgmUserId     Int      @unique
+  userId        String    @id
+  bgmUserId     Int       @unique
   bgmUsername   String
   accessToken   String
   refreshToken  String
   expiresAt     DateTime
   /// true = 用户自行生成的个人访问令牌，不走 refresh 流程
-  personalToken Boolean  @default(false)
+  personalToken Boolean   @default(false)
   syncedAt      DateTime?
-  boundAt       DateTime @default(now())
+  boundAt       DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 /// Bangumi 条目本地缓存（读业务走本地，BGM 仅作同步源）
 model Subject {
-  id        Int       @id
-  type      Int
-  name      String
-  nameCn    String?
-  summary   String?
-  coverUrl  String?
-  airDate   DateTime?
-  score     Float?
-  rank      Int?
+  id              Int       @id
+  type            Int
+  name            String
+  nameCn          String?
+  summary         String?
+  coverUrl        String?
+  airDate         DateTime?
+  score           Float?
+  rank            Int?
   /// 评分人数（BGM `rating.total`）。与 `score` 一起构成「N 人评分」。
-  ratingTotal Int?
+  ratingTotal     Int?
   /// 1–10 分的评分直方图（BGM `rating.count`），形如 `{"8": 2708, "9": 3111}`。
   ///
   /// 存下来是为了渲染详情页右栏的评分直方图 —— 那是 Animeko 详情页的标志性
   /// 元素，而每次访问都回上游拉一遍评分分布纯属浪费。
   ratingHistogram Json?
 
-  /*
+  /**
    * Bangumi 全站的收藏人数（`Subject.collection`）。
-   *
    * 与本站自己的 `Collection` 计数是两回事：本站是校内小样本，而这里是
    * 「这部番在全网有多热」—— 一个几万人的数字，是判断要不要看的实际依据。
    * 用户明确要求导入它（此前详情页只显示本站的个位数，并附一句「不含
    * Bangumi 全站」，等于没给出任何可参考的流行度）。
-   *
    * 字段名对齐 Bangumi 的 `collect` / `doing` / `wish` / `on_hold` / `dropped`，
    * 但用 `Done` 而不是 `Collect` —— 本项目的 `CollectionStatus.Done` 就是「看过」，
    * 两套命名混用会让「3 是看过还是在看」这类映射错误再次发生
@@ -138,9 +134,9 @@ model Subject {
   ///
   /// 收藏导入时会从 `SlimSubject` 写入；但**直接打开一个未收藏的条目**时
   /// 是空的，由 `enrichSubject` 补上。
-  tags      String[]
-  cachedAt  DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  tags       String[]
+  cachedAt   DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   /// 详情（完整简介 + 章节）的同步时间。
   ///
@@ -190,7 +186,6 @@ model SubjectPerson {
   @@index([subjectId, sort])
 }
 
-
 model Episode {
   id        Int       @id
   subjectId Int
@@ -218,22 +213,21 @@ model Collection {
   type      Int
   comment   String?
   rating    Int?
-  /** 来源：bgm = 从 Bangumi 导入，local = 站内修改 */
+  /**
+   * 来源：bgm = 从 Bangumi 导入，local = 站内修改
+   */
   source    String   @default("bgm")
   /**
    * 该收藏在 Bangumi 上是否标记为**私密**。
-   *
    * 时光机会把用户的活动展示给同校其他人，而「私密收藏」正是用户明确表示
    * 不想被别人看到的东西。导入时必须把这个标记一并取回来，时光机的查询
    * 才能把 `true` 的排除掉 —— 否则等于替用户公开了他特意设为私密的内容。
-   *
    * 默认 `false`：站内自己加的收藏没有这个概念，按公开处理（它们本来就是
    * 在站内产生的行为）。
    */
   isPrivate Boolean  @default(false)
   /**
    * 本地的最后修改时间（Prisma `@updatedAt` 自动维护）。
-   *
    * 任何编辑都会刷新它 —— 因此它**不是**「加入收藏的时间」，
    * 按它排序等于按「最近动过」排序。
    */
@@ -241,11 +235,9 @@ model Collection {
 
   /**
    * 加入收藏的时间（来自 Bangumi 收藏记录的 `updated_at`）。
-   *
    * 为什么不能复用 `updatedAt`：那是 Prisma 自动维护的**本地**修改时间，
    * 改一次评分或评论就会刷新，于是「按加入时间排序」会变成「按最近动过排序」——
    * 那正是用户抱怨排序选项缺失时要的那个语义，用错了等于没修。
-   *
    * 可空：站内手动添加的收藏没有上游时间；导入时若上游缺该字段也为空。
    * 排序时用 `nulls: "last"` 让这些条目垫底，而不是混在中间。
    */
@@ -253,27 +245,23 @@ model Collection {
 
   /**
    * 上次看到的位置（毫秒）。用于「继续观看」跳到正确的时间点。
-   *
    * ## 为什么放在 `Collection` 而不是 `EpisodeProgress`
-   *
    * `EpisodeProgress` 记的是**每一集**的观/未观三元状态（Animeko 的
    * `EpisodeCollectionType`），粒度是集。续播要的是「这一集看到第几秒」——
    * 一条播放位置。放在条目级够用：一部番同一时刻只会在一个位置继续看，
    * 换集时覆盖即可，不必为每集存一行。
-   *
    * 可空：从未播放过时为 null（**不是 0** —— 0 表示「从片头继续」，
    * null 表示「没有可续播的位置」，界面据此决定是否显示进度）。
    */
   playbackPositionMs Int?
   /**
    * `playbackPositionMs` 属于**哪一集**（BGM 的 episodeId）。
-   *
    * 没有它就无法判断「这次续播该不该用这个位置」—— 位置是条目级的
    * （一部番同时只在一个位置续看），但只存位置会让**换集后仍用上一集的
    * 位置**续播：看完第 1 集自动切到第 2 集，第 2 集一开头就跳到第 1 集的
    * 片尾位置，于是立刻又触发「播完」。手动点开别的集也一样错。
    */
-  playbackEpisodeId Int?
+  playbackEpisodeId  Int?
 
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
@@ -320,8 +308,8 @@ model Danmaku {
   serviceId  String   @default("HitAni")
   createdAt  DateTime @default(now())
 
-  episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
-  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  episode Episode         @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  user    User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   reports DanmakuReport[]
 
   @@index([episodeId, playTimeMs])
@@ -335,15 +323,15 @@ model Danmaku {
 /// 否则违规内容没人能处理，风险落在运营方（学校）。
 /// 同一用户对同一弹幕只能举报一次（唯一约束）。
 model DanmakuReport {
-  id        String   @id @default(cuid())
-  danmakuId String
+  id         String    @id @default(cuid())
+  danmakuId  String
   reporterId String
   /// 举报理由
-  reason    String
+  reason     String
   /// 0待处理 1已屏蔽 2已驳回
-  status    Int      @default(0)
-  createdAt DateTime @default(now())
-  handledAt DateTime?
+  status     Int       @default(0)
+  createdAt  DateTime  @default(now())
+  handledAt  DateTime?
 
   danmaku  Danmaku @relation(fields: [danmakuId], references: [id], onDelete: Cascade)
   reporter User    @relation(fields: [reporterId], references: [id], onDelete: Cascade)
@@ -430,33 +418,33 @@ model MediaSource {
 ///
 /// `accessToken` 是用户在该服务器上的凭据，等同密码：仅服务端读写，**绝不回显**。
 model JellyfinConnection {
-  id            String   @id @default(cuid())
-  userId        String
+  id               String    @id @default(cuid())
+  userId           String
   /// 展示名，如「宿舍服务器」
-  name          String
+  name             String
   /// 服务器地址（已归一化，无尾斜杠）—— **服务端**用它调 API。
   /// 容器部署时通常是内部服务名（如 `http://jellyfin:8096`）。
-  baseUrl       String
+  baseUrl          String
   /// **浏览器侧**访问地址，用于生成播放 / 封面 URL。
   ///
   /// 为什么必须与服务端地址分开：容器部署时服务端走内部服务名，
   /// 而**学生浏览器解析不了那个名字**（它是 Docker 网络内的）。
   /// 留空则回退用 baseUrl（裸机部署下两者相同）。
-  publicBaseUrl String?
+  publicBaseUrl    String?
   /// Jellyfin 侧的 access token —— 敏感，绝不回显
-  accessToken   String
+  accessToken      String
   /// 该 token 所属的 Jellyfin 用户 id
-  remoteUserId  String
+  remoteUserId     String
   /// Jellyfin 侧用户名，仅用于展示
-  remoteUserName String
+  remoteUserName   String
   /// 服务器版本与名称，便于排查
-  serverName    String?
-  serverVersion String?
+  serverName       String?
+  serverVersion    String?
   /// 是否允许内网地址（Jellyfin 常在局域网）
-  allowPrivateHost Boolean @default(true)
-  lastCheckedAt DateTime?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  allowPrivateHost Boolean   @default(true)
+  lastCheckedAt    DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -503,11 +491,11 @@ model UpstreamCache {
 }
 
 model BgmCommentsCache {
-  subjectId Int      @id
-  payload   String
+  subjectId  Int      @id
+  payload    String
   /// BGM 的分页总数 —— 界面要显示「共 N 页」。
   totalPages Int
-  fetchedAt DateTime @default(now())
+  fetchedAt  DateTime @default(now())
 }
 
 /// 关注关系（**单向**）。
@@ -552,19 +540,42 @@ model UserFollow {
 /// 一个邮箱同一时刻只应有一个有效验证码：重发即覆盖，不留多份有效凭据
 /// （否则旧码也能用，等于把爆破面乘以「历史上发过多少次」）。
 model EmailVerification {
-  email     String
+  email      String
   /// 用途。目前只有 `register`，将来加「找回密码」时可区分。
-  purpose   String   @default("register")
+  purpose    String   @default("register")
   /// scrypt 散列，格式与 `User.passwordHash` 相同。
-  codeHash  String
+  codeHash   String
   /// 校验尝试次数。超过上限即作废 —— 否则 6 位数字可被在线穷举。
-  attempts  Int      @default(0)
-  expiresAt DateTime
+  attempts   Int      @default(0)
+  expiresAt  DateTime
   /// 发送时间，用于「N 秒内不可重发」的节流。
-  sentAt    DateTime @default(now())
+  sentAt     DateTime @default(now())
   /// 最近一次发送者的 IP，用于按 IP 限流（防同一人换邮箱轰炸）。
   sentFromIp String?
 
   @@id([email, purpose])
   @@index([expiresAt])
+}
+
+/// 站点级设置（键值对）。
+///
+/// ## 为什么单独一张表，而不是塞进 `.env`
+///
+/// 这些开关由**管理员在网页上**调整，改完要立即生效。放环境变量意味着
+/// 「改配置 → 改文件 → 重启容器」，既不是管理员能做的操作，也让「网站管理」
+/// 这一栏名不副实。
+///
+/// ## 为什么是 KV 而不是每项一列
+///
+/// 站点级开关会持续增加（NSFW、注册准入、维护公告……）。每次加一项都改表结构
+/// 意味着一次 migration 和生产库变更；KV 表加一项只是多一行。
+/// 代价是「值都是字符串」，因此**解析与默认值必须集中在 `lib/site-settings.ts`**，
+/// 不能让调用方各自 `Boolean(row.value)` —— 那样 `"false"` 会被读成 `true`。
+model SiteSetting {
+  key       String   @id
+  value     String
+  /// 最后修改人的用户 id，用于追溯。**故意不做外键** —— 设置属于站点，
+  /// 不该因为某个管理员账号被删而跟着消失或被级联清掉。
+  updatedBy String?
+  updatedAt DateTime @updatedAt
 }
