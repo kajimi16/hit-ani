@@ -25,6 +25,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { parseCollectedAt } from "@/lib/bgm/collected-at";
+import { getSiteBgmToken } from "@/lib/bgm/site-token";
 import { subjectFieldsFromDetail, subjectFieldsFromSlim } from "@/lib/bgm/subject-fields";
 import { parseIsoDate } from "@/lib/date";
 import {
@@ -274,7 +275,16 @@ export async function enrichSubject(
     };
   }
 
-  const detail = await withRetry(() => getSubject(subjectId), `subject ${subjectId}`);
+  /*
+   * 优先用**站级令牌**：`nsfw` 标记只有注册满 60 天的账号才看得到，
+   * 而条目详情是全局缓存 —— 用某个普通用户的令牌去拉，NSFW 条目会 404，
+   * 于是它永远拿不到标记。站级令牌拿不到时退回调用方给的令牌。
+   */
+  const detailToken = (await getSiteBgmToken()) ?? options.accessToken;
+  const detail = await withRetry(
+    () => getSubject(subjectId, detailToken ? { accessToken: detailToken } : {}),
+    `subject ${subjectId}`,
+  );
 
   // 字段清单在 `subject-fields.ts` 里集中定义 —— 此前这里与
   // `api/subjects/[id]/route.ts` 各写一份，结果两边漏的字段还不一样
@@ -289,7 +299,7 @@ export async function enrichSubject(
 
   await sleep(REQUEST_INTERVAL_MS);
 
-  const episodes = await fetchAllEpisodes(subjectId);
+  const episodes = await fetchAllEpisodes(subjectId, detailToken);
   let episodeCount = 0;
 
   for (const episode of episodes) {
@@ -315,7 +325,7 @@ export async function enrichSubject(
       ? await importEpisodeProgress(options.userId, subjectId, options.accessToken)
       : 0;
 
-  const staffCount = await syncSubjectPersons(subjectId);
+  const staffCount = await syncSubjectPersons(subjectId, detailToken);
 
   // 标记完成 —— 下次访问直接走缓存
   await prisma.subject.update({
@@ -341,7 +351,7 @@ export async function enrichSubject(
  * 失败时**不抛出**：制作人员是详情页的附加信息，拿不到就不显示那个板块，
  * 没道理因此让整个条目页报错。返回 0 表示这次没同步到。
  */
-async function syncSubjectPersons(subjectId: number): Promise<number> {
+async function syncSubjectPersons(subjectId: number, accessToken?: string): Promise<number> {
   const existing = await prisma.subject.findUnique({
     where: { id: subjectId },
     select: { staffSyncedAt: true, _count: { select: { persons: true } } },
@@ -350,7 +360,7 @@ async function syncSubjectPersons(subjectId: number): Promise<number> {
 
   let persons;
   try {
-    persons = await withRetry(() => getSubjectPersons(subjectId), `persons ${subjectId}`, 2);
+    persons = await withRetry(() => getSubjectPersons(subjectId, accessToken ? { accessToken } : {}), `persons ${subjectId}`, 2);
   } catch (error) {
     console.warn(`[bgm-import] 制作人员同步失败（不影响条目）：${String(error)}`);
     return 0;
@@ -393,14 +403,18 @@ async function syncSubjectPersons(subjectId: number): Promise<number> {
 }
 
 /** 分页拉某条目全部章节。 */
-async function fetchAllEpisodes(subjectId: number): Promise<Episode[]> {
+async function fetchAllEpisodes(subjectId: number, accessToken?: string): Promise<Episode[]> {
   const all: Episode[] = [];
   let offset = 0;
   let total = Number.POSITIVE_INFINITY;
 
   while (offset < total) {
     const page = await withRetry(
-      () => getSubjectEpisodes(subjectId, { limit: PAGE_SIZE, offset }),
+      () => getSubjectEpisodes(
+          subjectId,
+          { limit: PAGE_SIZE, offset },
+          accessToken ? { accessToken } : {},
+        ),
       `episodes subject=${subjectId} offset=${offset}`,
     );
     total = page.total;

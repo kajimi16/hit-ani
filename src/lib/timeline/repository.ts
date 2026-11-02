@@ -32,6 +32,8 @@ export interface TimelineOptions {
    * BGM 侧动作的数据。
    */
   bgmOnly?: boolean;
+  /** 站点总开关关闭时排除 R18 条目（四类查询都要各自带上）。 */
+  hideNsfw?: boolean;
 }
 
 /**
@@ -77,10 +79,17 @@ export async function queryTimeline(options: TimelineOptions): Promise<TimelineE
    */
   const skip = options.bgmOnly === true;
 
+  /*
+   * R18 过滤。四类活动的关联路径不同：收藏与短评直接挂 `subject`，
+   * 弹幕与进度则经由 `episode.subject` —— 写错一边就会漏掉那一类。
+   */
+  const hideBySubject = options.hideNsfw ? { subject: { nsfw: false } } : {};
+  const hideByEpisode = options.hideNsfw ? { episode: { subject: { nsfw: false } } } : {};
+
   const [collections, reviews, danmakus, progress] = await Promise.all([
     prisma.collection.findMany({
       // 私密收藏排除 —— 见上方隐私约束
-      where: { ...userFilter, isPrivate: false },
+      where: { ...userFilter, isPrivate: false, ...hideBySubject },
       /*
        * `nulls: "last"` 是必需的，不是修饰。
        *
@@ -94,14 +103,14 @@ export async function queryTimeline(options: TimelineOptions): Promise<TimelineE
       include: TIMELINE_INCLUDES.collection,
     }),
     skip ? Promise.resolve([]) : prisma.review.findMany({
-      where: userFilter,
+      where: { ...userFilter, ...hideBySubject },
       orderBy: [{ createdAt: "desc" }, { id: "asc" }],
       take: PER_SOURCE_LIMIT,
       include: TIMELINE_INCLUDES.review,
     }),
     skip ? Promise.resolve([]) : prisma.danmaku.findMany({
       // 只取正常状态的弹幕 —— 被屏蔽/删除的不该在时光机里复现
-      where: { ...userFilter, status: 0 },
+      where: { ...userFilter, status: 0, ...hideByEpisode },
       orderBy: [{ createdAt: "desc" }, { id: "asc" }],
       take: PER_SOURCE_LIMIT,
       include: TIMELINE_INCLUDES.danmaku,
@@ -114,7 +123,7 @@ export async function queryTimeline(options: TimelineOptions): Promise<TimelineE
        * 时产生。把它当活动流出来，等于把「我撤销了一次标记」广播给同校的人，
        * 既没有信息量，也不是用户想公开的动作。用户明确要求不要记它。
        */
-      where: { ...userFilter, type: { not: 0 } },
+      where: { ...userFilter, type: { not: 0 }, ...hideByEpisode },
       orderBy: [{ updatedAt: "desc" }],
       take: PER_SOURCE_LIMIT,
       include: TIMELINE_INCLUDES.progress,

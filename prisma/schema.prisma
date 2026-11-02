@@ -130,13 +130,24 @@ model Subject {
   bgmDone    Int?
   bgmOnHold  Int?
   bgmDropped Int?
+
+  /**
+   * 是否为 R18 / NSFW 条目（BGM `Subject.nsfw`）。
+   * ## 为什么需要自己存一份
+   * BGM 的 `nsfw` **只对「已登录且注册满 60 天」的账号可见**
+   * （`bangumi/server/internal/auth/domain.go` 的 `AllowNSFW`）；无权限时
+   * NSFW 条目直接返回 404 —— 没法在读取时临时判断，只能在**拿到过的那一次**记下来。
+   * ## 默认 false 的语义
+   * 「已知不是」或「尚未确认」，两者在库里无法区分。管理页已如实写明这一点。
+   */
+  nsfw      Boolean  @default(false)
   /// 作品标签（BGM `tags` 的 name 列表）。
   ///
   /// 收藏导入时会从 `SlimSubject` 写入；但**直接打开一个未收藏的条目**时
   /// 是空的，由 `enrichSubject` 补上。
-  tags       String[]
-  cachedAt   DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  tags      String[]
+  cachedAt  DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   /// 详情（完整简介 + 章节）的同步时间。
   ///

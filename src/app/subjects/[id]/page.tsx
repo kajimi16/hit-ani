@@ -18,6 +18,7 @@ import { histogramBars } from "@/lib/subject/rating";
 import { prisma } from "@/lib/prisma";
 import { getBgmComments } from "@/lib/bgm/comments-service";
 import { enrichSubject } from "@/lib/bgm/import";
+import { getSiteNsfwEnabled } from "@/lib/site-settings";
 
 export const dynamic = "force-dynamic";
 
@@ -86,6 +87,17 @@ export default async function SubjectPage({
       </div>
     );
   }
+
+  /*
+   * 站点总开关关闭时，R18 条目**直接当作不存在**（404，而不是一个「已隐藏」页）。
+   *
+   * 为什么是 404：知道「某个条目存在、只是被管理员藏了」本身就是一种信息；
+   * 而 404 与「这个 id 不存在」无法区分，语义上也与上游一致 —— 无权限的账号
+   * 请求 NSFW 条目时 BGM 返回的就是 404。
+   *
+   * `nsfw` 默认 false，因此「尚未确认」的条目不会被误伤，只有明确标记过的才拦。
+   */
+  if (subject.nsfw && !(await getSiteNsfwEnabled())) notFound();
 
   const episodeIds = subject.episodes.map((episode) => episode.id);
   const [counts, schoolCounts, collection, enabledSources, collectionStats, hotReviews, bgmComments] =

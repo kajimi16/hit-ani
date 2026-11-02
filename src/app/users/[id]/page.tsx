@@ -8,6 +8,7 @@ import { getSessionUser } from "@/lib/auth/session";
 import { COLLECTION_STATUSES, statusBySlug } from "@/lib/collection";
 import { getUserProfile } from "@/lib/friends/repository";
 import { loadLibrary, toLibraryItem } from "@/lib/library/service";
+import { getSiteNsfwEnabled } from "@/lib/site-settings";
 import { LIBRARY_PAGE_SIZE, LIBRARY_SORTS, LIBRARY_VIEWS, parseLibraryQuery } from "@/lib/library-query";
 
 export const dynamic = "force-dynamic";
@@ -64,7 +65,13 @@ export default async function UserLibraryPage({
   const query = parseLibraryQuery(sp);
 
   const { rowsByType, countByType, watchedBySubject, totalForFocused, hidesPrivate } =
-    await loadLibrary({ userId: id, viewerId: viewer.id, focused, query });
+    await loadLibrary({
+      userId: id,
+      viewerId: viewer.id,
+      focused,
+      query,
+      hideNsfw: !(await getSiteNsfwEnabled()),
+    });
 
   const hrefFor = (overrides: Record<string, string | undefined>) => {
     const search = new URLSearchParams();

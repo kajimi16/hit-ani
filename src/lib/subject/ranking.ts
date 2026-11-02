@@ -30,17 +30,28 @@ export interface RankingFilters {
  *
  * 导出以便测试直接断言「桩与 rank=0 被排除」，而不用把页面渲染出来。
  */
-export function rankingWhere(type: string) {
+export function rankingWhere(type: string, hideNsfw = false) {
   return {
     rank: { gt: 0 },
     id: { lt: STUB_SUBJECT_ID_MIN },
     ...(type === "all" ? {} : { type: Number(type) }),
+    /*
+     * 站点总开关关闭时排除 R18 条目。
+     *
+     * 只在关闭时加这个键：`nsfw` 列本身不区分「确认不是」与「尚未确认」，
+     * 无条件过滤会把没检查过的条目一起藏掉。
+     */
+    ...(hideNsfw ? { nsfw: false } : {}),
   };
 }
 
 /** 读取一页排行榜数据。 */
-export async function listRanking({ type, page }: RankingFilters) {
-  const where = rankingWhere(type);
+export async function listRanking({
+  type,
+  page,
+  hideNsfw = false,
+}: RankingFilters & { hideNsfw?: boolean }) {
+  const where = rankingWhere(type, hideNsfw);
 
   /*
    * `rank` 是可空列，**必须显式 `nulls`** —— Postgres 在 `ASC` 下默认把

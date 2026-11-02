@@ -11,6 +11,7 @@ import {
   parseLibraryQuery,
 } from "@/lib/library-query";
 import { loadLibrary, toLibraryItem, type LibraryRow } from "@/lib/library/service";
+import { getSiteNsfwEnabled } from "@/lib/site-settings";
 
 export const dynamic = "force-dynamic";
 
@@ -63,6 +64,7 @@ export default async function LibraryPage({
     viewerId: user.id,
     focused,
     query,
+    hideNsfw: !(await getSiteNsfwEnabled()),
   });
 
   const toItem = (row: LibraryRow) => toLibraryItem(row, watchedBySubject);

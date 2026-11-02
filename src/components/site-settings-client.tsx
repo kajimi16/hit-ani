@@ -64,8 +64,8 @@ export default function SiteSettingsClient({ initialNsfwEnabled }: Props) {
       <h2 className="font-medium">R18 / NSFW 内容</h2>
       <p className="text-sm text-on-surface-variant">
         {enabled
-          ? "允许在探索页与时间表里出现 R18 条目。每个用户仍可在自己的设置里选择是否显示（默认不显示）。"
-          : "探索页与时间表不再请求 R18 条目，普通用户的设置里也不会出现该选项。"}
+          ? "允许出现 R18 条目。每个用户仍可在自己的设置里选择是否显示（默认不显示）。"
+          : "探索页与时间表不再请求 R18 条目；排行榜、追番、时光机与条目页会排除已标记为 R18 的内容；普通用户的设置里也不再出现该选项。"}
       </p>
 
       {/*
@@ -78,8 +78,8 @@ export default function SiteSettingsClient({ initialNsfwEnabled }: Props) {
         因此历史条目里哪些是 R18，我们现在读不出来。
       */}
       <p className="text-xs text-on-surface-variant/70">
-        范围：探索页与时间表。已通过「导入收藏」落到本地的条目、以及排行榜中来自本地缓存的部分不在其内
-        —— Bangumi 的 R18 标记需要账号权限才能读取，历史条目无法回溯判定。
+        说明：R18 标记来自 Bangumi，<strong>需要账号权限才能读取</strong>（登录且注册满 60 天）。
+        尚未补全标记的条目无法判断，执行 <code>npm run nsfw:backfill</code> 可补全。
       </p>
 
       <div className="flex flex-wrap items-center gap-3">

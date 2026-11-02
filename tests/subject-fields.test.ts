@@ -28,6 +28,7 @@ function detail(overrides: Partial<Subject> = {}): Subject {
     type: 2,
     name: "異国日記",
     name_cn: "异国日记",
+    nsfw: false,
     summary: "简介正文",
     date: "2026-01-04",
     images: { large: "https://lain.bgm.tv/large.jpg", common: "https://lain.bgm.tv/common.jpg" },
@@ -189,4 +190,20 @@ test("轻量映射优先用大图，退化到 common", () => {
     "L",
   );
   assert.equal(subjectFieldsFromSlim({ name: "x", images: { common: "C" } }).coverUrl, "C");
+});
+
+/* ================================================================== *
+ * R18 标记：只由详情写入，轻量映射绝不携带
+ * ================================================================== */
+
+test("★ 详情映射带走 R18 标记（这是唯一能学到它的路径）", () => {
+  assert.equal(subjectFieldsFromDetail(detail({ nsfw: true })).nsfw, true);
+  assert.equal(subjectFieldsFromDetail(detail({ nsfw: false })).nsfw, false);
+});
+
+test("★ 轻量映射绝不能带 nsfw —— 否则每次重新导入都会把已知的 true 冲成 false", () => {
+  // 与 ratingTotal / ratingHistogram 同一类风险：`update: fields` 会整列覆盖，
+  // 而 `SlimSubject` 根本没有这个字段，带上它等于「每次导入都声称它不 NSFW」。
+  const keys = Object.keys(subjectFieldsFromSlim({ name: "x" }));
+  assert.equal(keys.includes("nsfw"), false, "轻量映射不该出现 nsfw");
 });

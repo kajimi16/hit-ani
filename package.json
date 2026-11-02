@@ -33,7 +33,8 @@
     "check:rendered": "tsx scripts/check-rendered-text.ts",
     "admin:grant": "tsx scripts/admin-grant.ts",
     "admin:grant:docker": "docker compose run --rm --no-deps -v ./scripts/admin-grant.ts:/app/scripts/admin-grant.ts:ro migrate npx tsx scripts/admin-grant.ts",
-    "cache:prune:docker": "docker compose run --rm --no-deps -v ./scripts/prune-cache.ts:/app/scripts/prune-cache.ts:ro migrate npx tsx scripts/prune-cache.ts"
+    "cache:prune:docker": "docker compose run --rm --no-deps -v ./scripts/prune-cache.ts:/app/scripts/prune-cache.ts:ro migrate npx tsx scripts/prune-cache.ts",
+    "nsfw:backfill": "tsx --env-file=.env scripts/backfill-nsfw.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.0",

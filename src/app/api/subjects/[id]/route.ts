@@ -4,6 +4,7 @@ import { countByEpisodeIds } from "@/lib/danmaku/repository";
 import { subjectFieldsFromDetail } from "@/lib/bgm/subject-fields";
 import { parseIsoDate } from "@/lib/date";
 import { getSubject, getSubjectEpisodes } from "@/lib/bgm/client";
+import { getSiteBgmToken } from "@/lib/bgm/site-token";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -34,9 +35,11 @@ export async function GET(
 
   if (!subject || subject.episodes.length === 0) {
     try {
+      // 站级令牌：只有它能看到 NSFW 条目的 `nsfw` 标记（详见 `lib/bgm/site-token.ts`）
+      const siteToken = await getSiteBgmToken();
       const [detail, page] = await Promise.all([
-        getSubject(subjectId),
-        getSubjectEpisodes(subjectId, { limit: 100 }),
+        getSubject(subjectId, siteToken ? { accessToken: siteToken } : {}),
+        getSubjectEpisodes(subjectId, { limit: 100 }, siteToken ? { accessToken: siteToken } : {}),
       ]);
 
       // 这里此前漏了 `ratingTotal` 与 `ratingHistogram` —— 于是走这条路径

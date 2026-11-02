@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import TimelineList from "@/components/timeline-list";
 import { getSessionUser } from "@/lib/auth/session";
 import { queryTimeline } from "@/lib/timeline/repository";
+import { getSiteNsfwEnabled } from "@/lib/site-settings";
 
 export const dynamic = "force-dynamic";
 
@@ -55,9 +56,9 @@ export default async function TimelinePage({
   const events =
     scope === "bgm"
       ? user.bgmUsername
-        ? await queryTimeline({ bgmUsername: user.bgmUsername, bgmOnly: true })
+        ? await queryTimeline({ bgmUsername: user.bgmUsername, bgmOnly: true, hideNsfw: !(await getSiteNsfwEnabled()) })
         : []
-      : await queryTimeline({ schoolId: user.schoolId });
+      : await queryTimeline({ schoolId: user.schoolId, hideNsfw: !(await getSiteNsfwEnabled()) });
 
   // 没绑 BGM 时「我的 Bangumi 时光机」无内容可看，给出可操作的去向
   const bgmUnavailable = scope === "bgm" && !user.bgmBound;

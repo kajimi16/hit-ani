@@ -7,6 +7,7 @@ import {
   RANKING_TYPES,
   listRanking,
 } from "@/lib/subject/ranking";
+import { getSiteNsfwEnabled } from "@/lib/site-settings";
 
 export const metadata: Metadata = {
   title: "排行榜",
@@ -29,7 +30,11 @@ export default async function RankingPage({
   const parsedPage = Number(params.page);
   const page = Number.isInteger(parsedPage) && parsedPage >= 1 ? parsedPage : 1;
 
-  const { total, subjects, lastPage } = await listRanking({ type, page });
+  const { total, subjects, lastPage } = await listRanking({
+    type,
+    page,
+    hideNsfw: !(await getSiteNsfwEnabled()),
+  });
 
   /** 只换一个参数时保留另一个 —— 否则点「下一页」会跳回默认类型。 */
   const hrefFor = (next: { page?: number; type?: string }) => {

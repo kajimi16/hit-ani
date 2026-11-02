@@ -61,6 +61,8 @@ export interface LoadLibraryOptions {
   viewerId: string | null;
   focused: { value: CollectionStatusValue } | null;
   query: LibraryQuery;
+  /** 站点总开关关闭时排除 R18 条目。 */
+  hideNsfw?: boolean;
 }
 
 export interface LibraryData {
@@ -78,6 +80,8 @@ export async function loadLibrary(options: LoadLibraryOptions): Promise<LibraryD
   const baseWhere = {
     userId: options.userId,
     ...(hidesPrivate ? { isPrivate: false } : {}),
+    // 与隐私过滤同一处：这里是所有列表查询的唯一 where 来源
+    ...(options.hideNsfw ? { subject: { nsfw: false } } : {}),
   };
 
   const loadGroup = (type: CollectionStatusValue, take: number, skip = 0) =>

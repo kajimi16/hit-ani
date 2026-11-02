@@ -50,6 +50,13 @@ export interface SubjectFields {
   bgmOnHold: number | null;
   bgmDropped: number | null;
   tags: string[];
+  /**
+   * R18 标记。
+   *
+   * **只由「详情」映射写入**：`SlimSubject` 没有这个字段，若让轻量映射也
+   * 输出它，每次重新导入收藏都会把已知的 `true` 覆盖成 `false`。
+   */
+  nsfw: boolean;
 }
 
 /**
@@ -91,6 +98,8 @@ export function subjectFieldsFromDetail(detail: Subject): SubjectFields {
     bgmDropped: detail.collection?.dropped ?? null,
     // 上游已按热度排序，前几个就是最相关的标签
     tags: (detail.tags ?? []).map((tag) => tag.name),
+    // 无权限时上游根本不会返回 NSFW 条目（404），因此拿到的值可信
+    nsfw: detail.nsfw === true,
   };
 }
 
@@ -131,6 +140,7 @@ export type SlimSubjectFields = Omit<
   | "bgmDone"
   | "bgmOnHold"
   | "bgmDropped"
+  | "nsfw"
 > & {
   /** **条件键**：上游给了可解析的日期时才有，否则缺席（而不是 null）。 */
   airDate?: Date;
