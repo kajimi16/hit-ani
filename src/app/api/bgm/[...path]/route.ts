@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { BGM_USER_AGENT } from "@/lib/bgm/client";
 import {
+  forceSearchNsfw,
   normalizeBgmImageUrls,
   proxyCacheKey,
   resolveProxyPolicy,
@@ -81,12 +82,17 @@ export async function POST(
     return NextResponse.json({ error: "不支持的代理路径" }, { status: 404 });
   }
 
-  const body = await request.text();
+  let body = await request.text();
   if (body.length > 64 * 1024) {
     return NextResponse.json({ error: "请求体过大" }, { status: 413 });
   }
 
   try {
+    // 公开代理不能成为 NSFW 旁路；站点关闭时强制 filter.nsfw=false。
+    if (policy.upstreamPath === "/v0/search/subjects") {
+      body = forceSearchNsfw(body, await getSiteNsfwEnabled());
+    }
+
     const data = await fetchUpstream(
       policy.upstreamPath,
       new URL(request.url).searchParams,

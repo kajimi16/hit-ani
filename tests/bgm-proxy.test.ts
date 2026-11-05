@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  forceSearchNsfw,
   normalizeBgmImageUrls,
   proxyCacheKey,
   resolveProxyPolicy,
@@ -56,4 +57,28 @@ test("图片地址统一升级 https，其他字符串不动", () => {
   assert.equal(output.url, "https://bgm.tv/subject/8");
   assert.equal(output.name, "http 不是图片地址");
   assert.equal(output.list[0], "https://lain.bgm.tv/a.jpg");
+});
+
+test("站点关闭 NSFW 时搜索代理强制 filter.nsfw=false", () => {
+  const input = JSON.stringify({
+    keyword: "test",
+    sort: "heat",
+    filter: { type: [2], tag: ["原创"], nsfw: true },
+  });
+  const output = JSON.parse(forceSearchNsfw(input, false));
+  assert.equal(output.filter.nsfw, false);
+  assert.deepEqual(output.filter.type, [2]);
+  assert.deepEqual(output.filter.tag, ["原创"]);
+  assert.equal(output.keyword, "test");
+});
+
+test("站点开启 NSFW 时保持原请求体", () => {
+  const input = JSON.stringify({ keyword: "x", filter: { nsfw: true } });
+  assert.equal(forceSearchNsfw(input, true), input);
+});
+
+test("搜索代理拒绝非法请求体", () => {
+  assert.throws(() => forceSearchNsfw("not json", false));
+  assert.throws(() => forceSearchNsfw("[]", false));
+  assert.throws(() => forceSearchNsfw("null", false));
 });

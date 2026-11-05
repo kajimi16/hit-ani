@@ -68,6 +68,34 @@ export function resolveProxyPolicy(path: string[], method: string): ProxyPolicy 
   return null;
 }
 
+/**
+ * 搜索代理的 NSFW 闸门。
+ *
+ * `/api/search` 一直把 `filter.nsfw` 固定为 false；这个公开代理不能成为
+ * 「客户端自带 `nsfw:true` 就看 R18」的旁路。站点关闭 NSFW 时强制覆盖。
+ */
+export function forceSearchNsfw(body: string, allowNsfw: boolean): string {
+  if (allowNsfw) return body;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    throw new Error("请求体不是合法 JSON");
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("搜索请求体必须是对象");
+  }
+  const payload = parsed as Record<string, unknown>;
+  const rawFilter = payload.filter;
+  const filter: Record<string, unknown> =
+    rawFilter !== null && typeof rawFilter === "object" && !Array.isArray(rawFilter)
+      ? { ...(rawFilter as Record<string, unknown>) }
+      : {};
+  filter.nsfw = false;
+  payload.filter = filter;
+  return JSON.stringify(payload);
+}
+
 /** 缓存键：路径 + 排序后的查询串（同一路径不同筛选不能串）。 */
 export function proxyCacheKey(path: string[], searchParams: URLSearchParams): string {
   const entries = [...searchParams.entries()].sort(([a, av], [b, bv]) =>
